@@ -21,6 +21,9 @@ class Tile(ABC):
         self.r = r
         self.s = s
 
+    def get_coordinates(self) -> tuple[int, int, int]:
+        return self.q, self.r, self.s
+
     @abstractmethod
     def get_resource(self) -> Resource:
         pass
