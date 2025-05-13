@@ -9,7 +9,7 @@ from game_engine.board.tile_factory import TileFactory
 from game_engine.common.resources import Resource
 from game_engine.common.game_config import GameConfig
 from game_engine.board.vertex import Vertex, Edge
-from game_engine.player import Player
+from game_engine.player.player import Player
 
 
 class GameBoard:

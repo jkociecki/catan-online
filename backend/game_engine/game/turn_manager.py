@@ -58,15 +58,12 @@ class TurnManager:
         return dice1, dice2
 
     def _handle_robber(self):
-
+        """Handle robber placement when a 7 is rolled"""
         for player in self.players:
             total_resources = sum(player.player_resources.resources.values())
             if total_resources > 7:
-                resources_to_discard = total_resources // 2
-                #nwm kurwa co dalej
-
-
-
+                player.must_discard = True
+                player.resources_to_discard = total_resources // 2
 
     def _distribute_resources(self, dice_value: int):
 
