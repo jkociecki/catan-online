@@ -9,7 +9,7 @@ from game_engine.board.tile_factory import TileFactory
 from game_engine.common.resources import Resource
 from game_engine.common.game_config import GameConfig
 from game_engine.board.vertex import Vertex, Edge
-from game_engine.player import Player
+from game_engine.player.player import Player
 
 
 class GameBoard:
@@ -221,6 +221,62 @@ class GameBoard:
                 return edge_key
         return None
 
+    def serialize_board(self):
+        tiles_data = []
+        for tile in self.tiles:
+            q, r, s = tile.get_coordinates()
+            tile_data = {
+                "coordinates": {"q": q, "r": r, "s": s},
+                "resource": str(tile.get_resource()),
+                "number": tile.number if hasattr(tile, 'number') else None,
+                "has_robber": tile.has_robber if hasattr(tile, 'has_robber') else False
+            }
+            tiles_data.append(tile_data)
+
+        vertices_data = {}
+        for vertex_key, vertex in self.vertices.items():
+            vertex_coords = list(vertex_key)
+            key = str([(x, y, z) for x, y, z in vertex_coords])
+
+            building_data = None
+            if vertex.building is not None:
+                building_data = {
+                    "type": vertex.building.building_type.name,
+                    "player_id": vertex.building.player.id if hasattr(vertex.building.player, 'id') else str(
+                        vertex.building.player),
+                    "player_color": vertex.building.player.color if hasattr(vertex.building.player, 'color') else None
+                }
+
+            vertices_data[key] = {
+                "coordinates": vertex_coords,
+                "building": building_data
+            }
+
+        edges_data = {}
+        for edge_key, edge in self.edges.items():
+            edge_coords = list(edge_key)
+            key = str([(x, y, z) for x, y, z in edge_coords])
+
+            road_data = None
+            if edge.road is not None:
+                road_data = {
+                    "player_id": edge.road.player.id if hasattr(edge.road.player, 'id') else str(edge.road.player),
+                    "player_color": edge.road.player.color if hasattr(edge.road.player, 'color') else None
+                }
+
+            edges_data[key] = {
+                "coordinates": edge_coords,
+                "road": road_data
+            }
+
+        board_data = {
+            "tiles": tiles_data,
+            "vertices": vertices_data,
+            "edges": edges_data
+        }
+
+        return board_data
+
 
 if __name__ == '__main__':
 
@@ -229,8 +285,7 @@ if __name__ == '__main__':
     config = GameConfig()
     board = GameBoard(config)
 
-    print_board(board)
-    print(board.vertices)
+    print(board.serialize_board())
 
 
 

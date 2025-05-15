@@ -12,6 +12,9 @@ class Resource(Enum):
     WOOD = "wood"
     DESERT = "desert"
 
+    def __str__(self):
+        return self.value
+
 @dataclass
 class PlayerResources:
 

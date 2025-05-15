@@ -19,6 +19,7 @@ class DevelopmentCard:
         self.card_type = card_type
         self.played: bool = False
         self.turn_bought: int = 0
+        self.can_be_played: bool = True
 
 
     def can_play(self, current_turn):
@@ -27,6 +28,11 @@ class DevelopmentCard:
     def play(self):
         if self.card_type != DevelopmentCardType.VICTORY_POINT:
             self.played = True
+
+    def get_can_be_played(self):
+        return self.can_be_played and self.played
+
+
 
 
 
