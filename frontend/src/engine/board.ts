@@ -10,8 +10,10 @@ import {
   assertPlaceSettlement,
   assertPlaceCity
 } from './tileHelpers';
-import { Hex } from './types';
+import { Hex, Resource } from './types';
 import { BasicGameConfig } from '../game/config';
+import { BoardData } from './board/BoardService';
+import { Tile, TileType } from './tile';
 
 /**
  * This will be the class for a Catan Board,
@@ -26,6 +28,15 @@ import { BasicGameConfig } from '../game/config';
  * -- board.addRoad(tile (coords?), edge, player)
  * -- (all the associated checking methods)
  */
+
+const resourceMap: { [key: string]: Resource } = {
+  'wood': Resource.Wood,
+  'brick': Resource.Clay,
+  'ore': Resource.Stone,
+  'sheep': Resource.Sheep,
+  'wheat': Resource.Wheat,
+  'desert': Resource.Desert
+};
 
 export class Board {
   private hexagons: Hex[];
@@ -47,6 +58,54 @@ export class Board {
 
   getTile(hex: Hex) {
     return this.tiles[HexUtils.getID(hex)];
+  }
+
+  loadFromData(data: BoardData) {
+    // Update tiles
+    data.tiles.forEach(tileData => {
+      const hexId = `${tileData.coordinates.q},${tileData.coordinates.r},${tileData.coordinates.s}`;
+      const tile = this.tiles[hexId];
+      if (tile && tile.getTileType() === TileType.TILE) {
+        const gameTile = tile as Tile;
+        const resource = resourceMap[tileData.resource.toLowerCase()];
+        if (resource !== undefined) {
+          gameTile.setResource(resource);
+        }
+        if (tileData.number !== null) {
+          gameTile.setDiceNumber(tileData.number);
+        }
+      }
+    });
+
+    // Update vertices (buildings)
+    Object.entries(data.vertices).forEach(([_, vertexData]) => {
+      if (vertexData.building) {
+        const coords = vertexData.coordinates[0];
+        const hexId = `${coords[0]},${coords[1]},${coords[2]}`;
+        const tile = this.tiles[hexId];
+        if (tile) {
+          const player = new Player(vertexData.building.player_id, vertexData.building.player_color || '');
+          if (vertexData.building.type === 'SETTLEMENT') {
+            this.placeSettlement(hexId, TileCornerDir.N, player, true);
+          } else if (vertexData.building.type === 'CITY') {
+            this.placeCity(hexId, TileCornerDir.N, player);
+          }
+        }
+      }
+    });
+
+    // Update edges (roads)
+    Object.entries(data.edges).forEach(([_, edgeData]) => {
+      if (edgeData.road) {
+        const coords = edgeData.coordinates[0];
+        const hexId = `${coords[0]},${coords[1]},${coords[2]}`;
+        const tile = this.tiles[hexId];
+        if (tile) {
+          const player = new Player(edgeData.road.player_id, edgeData.road.player_color || '');
+          this.placeRoad(hexId, TileEdgeDir.NE, player);
+        }
+      }
+    });
   }
 
   /**
