@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import GameService from '../../engine/board/GameService';
 import { BoardService } from '../../engine/board/BoardService';
@@ -99,7 +99,8 @@ export default function OnlineGame() {
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   
-  const gameDirector = new GameDirector();
+  // Use useMemo to create gameDirector once
+  const gameDirector = useMemo(() => new GameDirector(), []);
 
   const fetchRandomBoardIfNeeded = useCallback(async () => {
     if (!initialGameState) {
@@ -149,6 +150,7 @@ export default function OnlineGame() {
       try {
         // Connect to WebSocket if not already connected
         if (!GameService.isConnected()) {
+          console.log(`Attempting to connect to room: ${roomId}`);
           await GameService.connectToRoom(roomId);
           setIsConnected(true);
           

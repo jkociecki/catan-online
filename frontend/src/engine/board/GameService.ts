@@ -5,8 +5,9 @@ class GameService {
     private clientId: string | null = null;
     
     // Change these URLs to match your exact backend configuration
-    private static readonly API_URL = 'http://localhost:8000/api';
-    private static readonly WS_URL = 'ws://localhost:8000/ws';
+private static readonly API_URL = 'http://localhost:8000/api';
+// Zmodyfikowany WebSocket URL - uwzględniając poprawną ścieżkę
+private static readonly WS_URL = 'ws://localhost:8000';
 
     private constructor() {}
 
@@ -50,7 +51,7 @@ class GameService {
                 this.socket = new WebSocket(wsUrl);
 
                 this.socket.onopen = () => {
-                    console.log('WebSocket connected successfully');
+                    console.log('WebSocket connected successfully!');
                     // Request client ID immediately after connection
                     this.sendMessage({
                         type: 'get_client_id'

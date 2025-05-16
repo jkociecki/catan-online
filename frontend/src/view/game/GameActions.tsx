@@ -1,4 +1,4 @@
-import React, { useState, useEffect, ReactNode } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import GameService from '../../engine/board/GameService';
 
@@ -48,6 +48,7 @@ const ResourceCounter = styled.div`
   gap: 10px;
 `;
 
+// Zmieniam definicję komponentu Resource, żeby przyjmował tylko jedno dziecko
 const Resource = styled.div`
   display: flex;
   align-items: center;
@@ -59,6 +60,10 @@ const Resource = styled.div`
 
 const ResourceIcon = styled.span`
   margin-right: 5px;
+`;
+
+const ResourceText = styled.span`
+  display: inline-block;
 `;
 
 const BuildInstructions = styled.div`
@@ -145,12 +150,12 @@ export default function GameActions({
           sortedResources.map(([resource, count]) => (
             <Resource key={resource}>
               <ResourceIcon>{resourceIcons[resource] || '📦'}</ResourceIcon>
-              <span>{resource}: {count}</span>
+              {/* <ResourceText>{resource}: {count}</ResourceText> */}
             </Resource>
           ))
         ) : (
           <Resource>
-            <span>No resources yet</span>
+            <ResourceText>No resources yet</ResourceText>
           </Resource>
         )}
       </ResourceCounter>

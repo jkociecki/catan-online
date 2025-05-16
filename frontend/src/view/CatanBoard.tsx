@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, HexUtils } from 'react-hexgrid';
+import { Layout } from 'react-hexgrid';
 import { Board } from '../engine/board';
 import styled from 'styled-components';
 import { Corners } from './corner/CatanCorners';
@@ -63,7 +63,7 @@ export const CatanBoard: React.FC<Props> = ({
         f0: Math.sqrt(3), f1: Math.sqrt(3) / 2, f2: 0, f3: 3 / 2,
         b0: Math.sqrt(3) / 3, b1: -1 / 3, b2: 0, b3: 2 / 3
       }
-      };
+  };
 
   const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
