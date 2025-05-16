@@ -16,7 +16,7 @@ class TileFactory:
                 return DesertTile()
             case Resource.WHEAT:
                 return WheatTile(number)
-            case Resource.DESERT.ORE:
+            case Resource.ORE:  # Poprawione z Resource.DESERT.ORE
                 return OreTile(number)
             case Resource.SHEEP:
                 return SheepTile(number)
