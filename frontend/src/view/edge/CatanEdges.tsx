@@ -1,5 +1,4 @@
-import { Component } from 'react';
-import PropTypes from 'prop-types';
+import React, { Component } from 'react';
 import { Board } from '../../engine/board';
 import { Hex } from '../../engine/types';
 import { TileEdge } from '../../engine/tileHelpers';
@@ -7,6 +6,7 @@ import { HexUtils } from 'react-hexgrid';
 import { BaseTile, TileType } from '../../engine/tile';
 import { Edge as EdgeData } from '../../engine/edge';
 import { Edge } from './CatanEdge';
+import { useLayout } from '../context/LayoutContext';
 
 function shouldRenderEdge(board: Board, hex: Hex, edge: TileEdge): boolean {
   const tile = board.getTile(hex);
@@ -22,19 +22,14 @@ interface Props {
   hexagons: Hex[];
   board: Board;
   onClick: (Edge: EdgeData, tile: BaseTile) => void;
-  layout: any;
 }
 
-export class Edges extends Component<Props> {
-  static contextTypes = {
-    layout: PropTypes.object
-  };
+export function Edges({ board, hexagons, onClick }: Props) {
+  const layout = useLayout();
 
-  render() {
-    const { board, hexagons, onClick, layout } = this.props;
-
-    return (
-      hexagons
+  return (
+    <>
+      {hexagons
         // Get every hex coords and tile data
         .map((hex) => ({
           hexCoords: HexUtils.hexToPixel(hex, layout),
@@ -45,7 +40,7 @@ export class Edges extends Component<Props> {
         }))
         // Render
         .map(({ hexCoords, tile, renderNE, renderNW, renderW }, i: number) => (
-          <>
+          <React.Fragment key={`hex-${i}`}>
             {renderW && (
               <Edge
                 key={`edge-${i}-W`}
@@ -88,8 +83,8 @@ export class Edges extends Component<Props> {
                 onClick={onClick}
               />
             )}
-          </>
-        ))
-    );
-  }
+          </React.Fragment>
+        ))}
+    </>
+  );
 }

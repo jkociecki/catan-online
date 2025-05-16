@@ -8,6 +8,7 @@ import { Corner as CornerData } from '../engine/corner';
 import { Edge as EdgeData } from '../engine/edge';
 import { BaseTile } from '../engine/tile';
 import { Edges } from './edge/CatanEdges';
+import { LayoutContext } from './context/LayoutContext';
 
 interface Props {
   board: Board;
@@ -75,21 +76,21 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
         version="1.1"
         xmlns="http://www.w3.org/2000/svg"
       >
-        <Layout size={layoutConfig.size} spacing={layoutConfig.spacing} flat={layoutConfig.flat} origin={layoutConfig.origin}>
-          <Tiles hexagons={hexagons} board={board} />
-          <Edges
-            hexagons={hexagons}
-            board={board}
-            onClick={handleEdgeClick}
-            layout={hexLayout}
-          />
-          <Corners
-            hexagons={hexagons}
-            board={board}
-            onClick={handleCornerClick}
-            layout={hexLayout}
-          />
-        </Layout>
+        <LayoutContext.Provider value={hexLayout}>
+          <Layout size={layoutConfig.size} spacing={layoutConfig.spacing} flat={layoutConfig.flat} origin={layoutConfig.origin}>
+            <Tiles hexagons={hexagons} board={board} />
+            <Edges
+              hexagons={hexagons}
+              board={board}
+              onClick={handleEdgeClick}
+            />
+            <Corners
+              hexagons={hexagons}
+              board={board}
+              onClick={handleCornerClick}
+            />
+          </Layout>
+        </LayoutContext.Provider>
       </StyledSvg>
     </StyledWrapper>
   );

@@ -9,7 +9,7 @@ interface Props {
   tile: BaseTile;
 }
 
-const StyledCircle = styled.circle<{ corner: CornerData }>`
+const StyledCircle = styled.circle<{ $corner: CornerData }>`
   fill: gray;
   stroke: black;
   stroke-width: 0.2;
@@ -20,9 +20,9 @@ const StyledCircle = styled.circle<{ corner: CornerData }>`
     opacity: 1;
   }
 
-  ${({ corner }) => css`
-    fill: ${corner.getOwner()?.getColor() || 'gray'};
-    opacity: ${!!corner.getOwner() ? 1 : 0};
+  ${({ $corner }) => css`
+    fill: ${$corner.getOwner()?.getColor() || 'gray'};
+    opacity: ${!!$corner.getOwner() ? 1 : 0};
   `}
 `;
 
@@ -33,7 +33,7 @@ export function Corner({ corner, tile, coords, onClick }: Props) {
       cx={coords.x}
       cy={coords.y}
       onClick={() => onClick?.(corner, tile)}
-      corner={corner}
+      $corner={corner}
     />
   );
 }

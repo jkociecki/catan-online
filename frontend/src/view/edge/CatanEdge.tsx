@@ -12,7 +12,7 @@ interface Props {
   position: TileEdge;
 }
 
-const StyledRect = styled.rect<{ position: TileEdge; edge: EdgeData }>`
+const StyledRect = styled.rect<{ $position: TileEdge; $edge: EdgeData }>`
   fill: gray;
   stroke: black;
   stroke-width: 0.2;
@@ -24,13 +24,13 @@ const StyledRect = styled.rect<{ position: TileEdge; edge: EdgeData }>`
     opacity: 0.7;
   }
 
-  ${({ position, edge }) =>
+  ${({ $position, $edge }) =>
     css`
       transform: rotate(
-        ${position === TileEdge.NE ? 300 : position === TileEdge.NW ? 60 : 0}deg
+        ${$position === TileEdge.NE ? 300 : $position === TileEdge.NW ? 60 : 0}deg
       );
-      fill: ${edge.getOwner()?.getColor() || 'gray'};
-      opacity: ${!!edge.getOwner() ? 0.7 : 0};
+      fill: ${$edge.getOwner()?.getColor() || 'gray'};
+      opacity: ${!!$edge.getOwner() ? 0.7 : 0};
     `}
 `;
 
@@ -42,8 +42,8 @@ export function Edge({ edge, tile, coords, height, onClick, position }: Props) {
       x={coords.x}
       y={coords.y}
       onClick={() => onClick?.(edge, tile)}
-      position={position}
-      edge={edge}
+      $position={position}
+      $edge={edge}
     />
   );
 }
