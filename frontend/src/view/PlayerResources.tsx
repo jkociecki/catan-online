@@ -14,19 +14,45 @@ interface PlayerResources {
 export const PlayerResourcesDisplay: React.FC = () => {
     const [playerData, setPlayerData] = useState<PlayerResources | null>(null);
 
-    useEffect(() => {
-        const fetchPlayerData = async () => {
-            try {
-                const response = await fetch('http://localhost:8000/api/player/');
-                const data = await response.json();
+    const fetchPlayerData = async () => {
+        try {
+            console.log('Fetching player data...');
+            const response = await fetch('http://localhost:8000/api/player/');
+            const data = await response.json();
+            console.log('Received player data:', data);
+            if (data.player) {
+                console.log('Setting new player data:', data.player);
                 setPlayerData(data.player);
-            } catch (error) {
-                console.error('Error fetching player data:', error);
             }
+        } catch (error) {
+            console.error('Error fetching player data:', error);
+        }
+    };
+
+    useEffect(() => {
+        // Initial fetch
+        fetchPlayerData();
+
+        // Add event listener for resource updates
+        const handleResourceUpdate = (event: Event) => {
+            console.log('Resource update event received:', event);
+            fetchPlayerData();
         };
 
-        fetchPlayerData();
+        console.log('Adding resourcesUpdated event listener');
+        window.addEventListener('resourcesUpdated', handleResourceUpdate);
+
+        // Cleanup
+        return () => {
+            console.log('Removing resourcesUpdated event listener');
+            window.removeEventListener('resourcesUpdated', handleResourceUpdate);
+        };
     }, []);
+
+    // Add effect to log state changes
+    useEffect(() => {
+        console.log('Player data state updated:', playerData);
+    }, [playerData]);
 
     if (!playerData) {
         return <div>Loading player resources...</div>;

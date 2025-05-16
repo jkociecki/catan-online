@@ -32,11 +32,14 @@ def get_random_board(request):
 def create_player_with_resources(request):
     global current_player
     config = GameConfig()
-    current_player = Player(PlayerColor.RED, config)  # Creating a player with RED color
     
-    # Add 4 of each resource
-    for resource in [Resource.WHEAT, Resource.BRICK, Resource.ORE, Resource.SHEEP, Resource.WOOD]:
-        current_player.add_resource(resource, 4)
+    # Only create a new player if one doesn't exist
+    if not current_player:
+        current_player = Player(PlayerColor.RED, config)  # Creating a player with RED color
+        
+        # Add 4 of each resource only when creating a new player
+        for resource in [Resource.WHEAT, Resource.BRICK, Resource.ORE, Resource.SHEEP, Resource.WOOD]:
+            current_player.add_resource(resource, 4)
     
     # Get player's resources
     resources = current_player.player_resources.resources

@@ -79,6 +79,12 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
       });
       const data = await response.json();
       console.log('Settlement build response:', data);
+
+      if (data.status === 'success') {
+        console.log('Dispatching resourcesUpdated event after settlement build');
+        console.log('Player data from response:', data.player);
+        window.dispatchEvent(new Event('resourcesUpdated'));
+      }
     } catch (error) {
       console.error('Error building settlement:', error);
     }
@@ -102,6 +108,12 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
       });
       const data = await response.json();
       console.log('Road build response:', data);
+
+      if (data.status === 'success') {
+        console.log('Dispatching resourcesUpdated event after road build');
+        console.log('Player data from response:', data.player);
+        window.dispatchEvent(new Event('resourcesUpdated'));
+      }
     } catch (error) {
       console.error('Error building road:', error);
     }
