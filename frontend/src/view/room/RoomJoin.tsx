@@ -83,14 +83,20 @@ export default function RoomJoin() {
       setStatus(`Room created! Room ID: ${newRoomId}. Connecting...`);
       
       // Then connect to it via WebSocket
-      await GameService.connectToRoom(newRoomId);
-      setStatus(`Connected to room ${newRoomId}! Redirecting...`);
-      
-      // Finally navigate to the room
-      navigate(`/room/${newRoomId}`);
+      try {
+        await GameService.connectToRoom(newRoomId);
+        setStatus(`Connected to room ${newRoomId}! Redirecting...`);
+        
+        // Finally navigate to the room
+        navigate(`/room/${newRoomId}`);
+      } catch (connectError) {
+        console.error("Error connecting to room:", connectError);
+        setError(`Created room but couldn't connect. Please try joining with room ID: ${newRoomId}`);
+        setIsLoading(false);
+      }
     } catch (err) {
-      console.error("Room creation or connection error:", err);
-      setError(err instanceof Error ? err.message : 'Failed to create or connect to room');
+      console.error("Room creation error:", err);
+      setError(err instanceof Error ? err.message : 'Failed to create room');
       setIsLoading(false);
     }
   };
@@ -111,7 +117,7 @@ export default function RoomJoin() {
       navigate(`/room/${roomId}`);
     } catch (err) {
       console.error("Room join error:", err);
-      setError(err instanceof Error ? err.message : 'Failed to join room - room might not exist');
+      setError('Failed to join room - make sure the server is running and the room ID is correct');
       setIsLoading(false);
     }
   };

@@ -6,7 +6,7 @@ class GameService {
     
     // Change these URLs to match your exact backend configuration
     private static readonly API_URL = 'http://localhost:8000/api';
-    private static readonly WS_URL = 'ws://localhost:8000';
+    private static readonly WS_URL = 'ws://localhost:8000/ws';
 
     private constructor() {}
 
@@ -45,7 +45,7 @@ class GameService {
             this.disconnectFromRoom();
 
             try {
-                const wsUrl = `${GameService.WS_URL}/ws/game/${roomId}/`;
+                const wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
                 console.log(`Connecting to WebSocket: ${wsUrl}`);
                 this.socket = new WebSocket(wsUrl);
 
@@ -69,8 +69,7 @@ class GameService {
 
                 this.socket.onerror = (error) => {
                     console.error('WebSocket error:', error);
-                    // Don't reject here as onclose will be called after error
-                    // This allows for better error handling
+                    reject(new Error('WebSocket connection failed'));
                 };
 
                 this.socket.onmessage = (event) => {
@@ -180,7 +179,7 @@ class GameService {
                     type: 'get_client_id'
                 });
             } else {
-                console.error("Cannot get client ID: WebSocket not connected");
+                reject(new Error("Cannot get client ID: WebSocket not connected"));
             }
         });
     }

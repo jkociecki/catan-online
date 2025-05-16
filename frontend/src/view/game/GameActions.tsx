@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, ReactNode } from 'react';
 import styled from 'styled-components';
 import GameService from '../../engine/board/GameService';
 
@@ -18,8 +18,10 @@ const ActionsContainer = styled.div`
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 `;
 
-const ActionButton = styled.button<{ disabled: boolean }>`
-  background-color: ${props => props.disabled ? '#cccccc' : '#4caf50'};
+const ActionButton = styled.button<{ disabled: boolean; active?: boolean }>`
+  background-color: ${props => 
+    props.active ? '#2196F3' : 
+    props.disabled ? '#cccccc' : '#4caf50'};
   color: white;
   border: none;
   padding: 10px 15px;
@@ -29,7 +31,9 @@ const ActionButton = styled.button<{ disabled: boolean }>`
   opacity: ${props => props.disabled ? 0.7 : 1};
   
   &:hover {
-    background-color: ${props => props.disabled ? '#cccccc' : '#45a049'};
+    background-color: ${props => 
+      props.active ? '#1976D2' : 
+      props.disabled ? '#cccccc' : '#45a049'};
   }
 `;
 
@@ -50,10 +54,19 @@ const Resource = styled.div`
   padding: 5px 10px;
   background-color: #eee;
   border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 `;
 
 const ResourceIcon = styled.span`
   margin-right: 5px;
+`;
+
+const BuildInstructions = styled.div`
+  background-color: #e3f2fd;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: 4px;
+  font-style: italic;
 `;
 
 export default function GameActions({
@@ -64,6 +77,15 @@ export default function GameActions({
   canBuildRoad
 }: GameActionsProps) {
   const [buildMode, setBuildMode] = useState<string | null>(null);
+  const [hasRolled, setHasRolled] = useState<boolean>(false);
+
+  // Reset build mode and hasRolled when turn changes
+  useEffect(() => {
+    if (!isMyTurn) {
+      setBuildMode(null);
+      setHasRolled(false);
+    }
+  }, [isMyTurn]);
 
   const handleBuild = (type: string) => {
     if (!isMyTurn) return;
@@ -71,6 +93,11 @@ export default function GameActions({
     // Toggle build mode
     if (buildMode === type) {
       setBuildMode(null);
+      // Notify game service about exiting build mode
+      GameService.sendMessage({
+        type: 'enter_build_mode',
+        build_type: null
+      });
     } else {
       setBuildMode(type);
       // Notify the game service about entering build mode
@@ -82,21 +109,18 @@ export default function GameActions({
   };
 
   const handleRollDice = () => {
-    if (!isMyTurn) return;
+    if (!isMyTurn || hasRolled) return;
     
-    GameService.sendMessage({
-      type: 'game_action',
-      action: 'roll_dice'
-    });
+    GameService.rollDice();
+    setHasRolled(true);
   };
 
   const handleEndTurn = () => {
     if (!isMyTurn) return;
     
-    GameService.sendMessage({
-      type: 'game_action',
-      action: 'end_turn'
-    });
+    GameService.endTurn();
+    setBuildMode(null);
+    setHasRolled(false);
   };
 
   // Resource icons mapping
@@ -108,49 +132,57 @@ export default function GameActions({
     'ORE': '⛰️'
   };
 
+  // Sort resources for consistent display
+  const sortedResources = Object.entries(myResources || {})
+    .sort(([a], [b]) => a.localeCompare(b));
+
   return (
     <ActionsContainer>
       <h3>Game Actions</h3>
       
       <ResourceCounter>
-        {Object.entries(myResources || {}).map(([resource, count]) => (
-          <Resource key={resource}>
-            <>
+        {sortedResources.length > 0 ? (
+          sortedResources.map(([resource, count]) => (
+            <Resource key={resource}>
               <ResourceIcon>{resourceIcons[resource] || '📦'}</ResourceIcon>
-              {resource}: {count}
-            </>
+              <span>{resource}: {count}</span>
+            </Resource>
+          ))
+        ) : (
+          <Resource>
+            <span>No resources yet</span>
           </Resource>
-        ))}
+        )}
       </ResourceCounter>
       
       <ActionGroup>
         <ActionButton 
-          disabled={!isMyTurn} 
+          disabled={!isMyTurn || hasRolled} 
           onClick={handleRollDice}
         >
           Roll Dice
         </ActionButton>
         
         <ActionButton 
-          disabled={!isMyTurn || !canBuildSettlement} 
+          disabled={!isMyTurn || !hasRolled || !canBuildSettlement} 
+          active={buildMode === 'settlement'}
           onClick={() => handleBuild('settlement')}
-          style={{backgroundColor: buildMode === 'settlement' ? '#2196F3' : undefined}}
         >
           Build Settlement
         </ActionButton>
         
         <ActionButton 
-          disabled={!isMyTurn || !canBuildCity} 
+          disabled={!isMyTurn || !hasRolled || !canBuildCity} 
+          active={buildMode === 'city'}
           onClick={() => handleBuild('city')}
-          style={{backgroundColor: buildMode === 'city' ? '#2196F3' : undefined}}
         >
           Build City
         </ActionButton>
         
         <ActionButton 
-          disabled={!isMyTurn || !canBuildRoad} 
+          disabled={!isMyTurn || !hasRolled || !canBuildRoad} 
+          active={buildMode === 'road'}
           onClick={() => handleBuild('road')}
-          style={{backgroundColor: buildMode === 'road' ? '#2196F3' : undefined}}
         >
           Build Road
         </ActionButton>
@@ -158,7 +190,7 @@ export default function GameActions({
       
       <ActionGroup>
         <ActionButton 
-          disabled={!isMyTurn} 
+          disabled={!isMyTurn || !hasRolled} 
           onClick={handleEndTurn}
         >
           End Turn
@@ -166,15 +198,27 @@ export default function GameActions({
       </ActionGroup>
       
       {buildMode && (
-        <div>
+        <BuildInstructions>
           <p>Click on the board to build a {buildMode}</p>
           <ActionButton 
             disabled={false} 
             onClick={() => setBuildMode(null)}
           >
-            Cancel
+            Cancel Building
           </ActionButton>
-        </div>
+        </BuildInstructions>
+      )}
+
+      {!isMyTurn && (
+        <BuildInstructions>
+          Waiting for other player's turn to complete...
+        </BuildInstructions>
+      )}
+      
+      {isMyTurn && !hasRolled && (
+        <BuildInstructions>
+          Roll the dice to start your turn!
+        </BuildInstructions>
       )}
     </ActionsContainer>
   );

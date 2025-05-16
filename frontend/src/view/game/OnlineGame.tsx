@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import GameService from '../../engine/board/GameService';
 import { BoardService } from '../../engine/board/BoardService';
-import { CatanBoard } from '../../view/CatanBoard';
+import { CatanBoard } from '../CatanBoard';
 import { Board } from '../../engine/board';
 import { GameDirector } from '../../game/GameDirector';
 import styled from 'styled-components';
@@ -97,6 +97,7 @@ export default function OnlineGame() {
   const [diceResult, setDiceResult] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
   
   const gameDirector = new GameDirector();
 
@@ -133,6 +134,7 @@ export default function OnlineGame() {
     }
   }, [initialGameState, gameDirector]);
 
+  // Setup WebSocket connection
   useEffect(() => {
     if (!roomId) {
       // Redirect if room ID is missing
@@ -140,40 +142,54 @@ export default function OnlineGame() {
       return;
     }
 
-    // Load board if not provided in state
-    fetchRandomBoardIfNeeded();
-    
-    // Connect to WebSocket
-    const connectToRoom = async () => {
-      if (!GameService.isConnected()) {
-        try {
-          setLoading(true);
+    const setupConnection = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        // Connect to WebSocket if not already connected
+        if (!GameService.isConnected()) {
           await GameService.connectToRoom(roomId);
+          setIsConnected(true);
           
-          // Get client ID after connection
-          const id = await GameService.getClientId();
-          setMyPlayerId(id);
-          
-          // Request game state
-          GameService.getGameState();
-          
-          setLoading(false);
-        } catch (err) {
-          console.error('Failed to connect to room', err);
-          setError('Failed to connect to the game room. Please try again.');
-          setLoading(false);
+          // Try to get client ID
+          try {
+            const id = await GameService.getClientId();
+            setMyPlayerId(id);
+            console.log("Got player ID:", id);
+          } catch (idErr) {
+            console.warn("Couldn't get client ID immediately, will try again later", idErr);
+          }
+        } else {
+          setIsConnected(true);
         }
-      } else {
-        // If already connected, just get client ID
-        GameService.getClientId().then(id => {
-          setMyPlayerId(id);
-        });
+        
+        // Fetch board data if needed
+        await fetchRandomBoardIfNeeded();
+        
+        // Request game state once connected
+        GameService.getGameState();
+        
+        setLoading(false);
+      } catch (err) {
+        console.error("Failed to setup game connection:", err);
+        setError(`Connection error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setIsConnected(false);
+        setLoading(false);
       }
     };
     
-    connectToRoom();
+    setupConnection();
     
-    // Set up event handlers
+    // Cleanup on unmount
+    return () => {
+      // No need to disconnect on page navigation within the app
+    };
+  }, [roomId, fetchRandomBoardIfNeeded, navigate]);
+  
+  // Setup WebSocket event handlers
+  useEffect(() => {
+    // Handle game state updates
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
       
@@ -182,7 +198,7 @@ export default function OnlineGame() {
         setGameState(data.game_state);
         
         // Update board
-        if (data.game_state.board) {
+        if (data.game_state.board && board) {
           const updatedBoard = new Board(2, gameDirector.getConfig());
           updatedBoard.loadFromData(data.game_state.board);
           setBoard(updatedBoard);
@@ -211,7 +227,7 @@ export default function OnlineGame() {
         setGameState(data.game_state);
         
         // Update board
-        if (data.game_state.board) {
+        if (data.game_state.board && board) {
           const updatedBoard = new Board(2, gameDirector.getConfig());
           updatedBoard.loadFromData(data.game_state.board);
           setBoard(updatedBoard);
@@ -228,6 +244,19 @@ export default function OnlineGame() {
           }
         }
       }
+    };
+    
+    const handleClientId = (data: any) => {
+      if (data.player_id) {
+        console.log("Received client ID:", data.player_id);
+        setMyPlayerId(data.player_id);
+      }
+    };
+    
+    const handlePlayerJoined = (data: any) => {
+      console.log("Player joined:", data);
+      // Request updated game state when a player joins
+      GameService.getGameState();
     };
     
     const handleDiceRoll = (data: any) => {
@@ -251,49 +280,58 @@ export default function OnlineGame() {
     };
     
     const handleDisconnect = () => {
-      navigate('/');
+      setIsConnected(false);
+      setError("Disconnected from game server. Try refreshing the page.");
     };
     
-    GameService.addEventHandler('game_update', handleGameUpdate);
-    GameService.addEventHandler('game_state', handleGameState);
-    GameService.addEventHandler('dice_roll', handleDiceRoll);
-    GameService.addEventHandler('build_mode', handleBuildModeEnter);
-    GameService.addEventHandler('error', handleError);
-    GameService.addEventHandler('disconnect', handleDisconnect);
+    // Register event handlers
+    if (isConnected) {
+      GameService.addEventHandler('game_update', handleGameUpdate);
+      GameService.addEventHandler('game_state', handleGameState);
+      GameService.addEventHandler('client_id', handleClientId);
+      GameService.addEventHandler('player_joined', handlePlayerJoined);
+      GameService.addEventHandler('dice_roll', handleDiceRoll);
+      GameService.addEventHandler('build_mode', handleBuildModeEnter);
+      GameService.addEventHandler('error', handleError);
+      GameService.addEventHandler('disconnect', handleDisconnect);
+    }
     
-    // Cleanup
+    // Cleanup event handlers
     return () => {
-      GameService.removeEventHandler('game_update', handleGameUpdate);
-      GameService.removeEventHandler('game_state', handleGameState);
-      GameService.removeEventHandler('dice_roll', handleDiceRoll);
-      GameService.removeEventHandler('build_mode', handleBuildModeEnter);
-      GameService.removeEventHandler('error', handleError);
-      GameService.removeEventHandler('disconnect', handleDisconnect);
+      if (isConnected) {
+        GameService.removeEventHandler('game_update', handleGameUpdate);
+        GameService.removeEventHandler('game_state', handleGameState);
+        GameService.removeEventHandler('client_id', handleClientId);
+        GameService.removeEventHandler('player_joined', handlePlayerJoined);
+        GameService.removeEventHandler('dice_roll', handleDiceRoll);
+        GameService.removeEventHandler('build_mode', handleBuildModeEnter);
+        GameService.removeEventHandler('error', handleError);
+        GameService.removeEventHandler('disconnect', handleDisconnect);
+      }
     };
-  }, [roomId, gameDirector, navigate, fetchRandomBoardIfNeeded, myPlayerId]);
+  }, [isConnected, board, gameDirector, myPlayerId]);
   
-  // Get my resources
+  // Player-related helper functions
   const getMyResources = () => {
     const myPlayer = players.find(p => p.id === myPlayerId);
     return myPlayer ? myPlayer.resources : {};
   };
   
-  // Check if it's my turn
   const isMyTurn = () => {
     return myPlayerId === currentPlayerId;
   };
   
-  // Check if I can build specific items
   const canBuildSettlement = () => {
     const myPlayer = players.find(p => p.id === myPlayerId);
     if (!myPlayer) return false;
     
     const resources = myPlayer.resources || {};
     return (
-      resources.WOOD >= 1 && 
+      (myPlayer.settlements_left > 0) &&
+      (resources.WOOD >= 1 && 
       resources.BRICK >= 1 && 
       resources.SHEEP >= 1 && 
-      resources.WHEAT >= 1
+      resources.WHEAT >= 1)
     );
   };
   
@@ -302,7 +340,7 @@ export default function OnlineGame() {
     if (!myPlayer) return false;
     
     const resources = myPlayer.resources || {};
-    return resources.ORE >= 3 && resources.WHEAT >= 2;
+    return (myPlayer.cities_left > 0) && (resources.ORE >= 3 && resources.WHEAT >= 2);
   };
   
   const canBuildRoad = () => {
@@ -310,10 +348,10 @@ export default function OnlineGame() {
     if (!myPlayer) return false;
     
     const resources = myPlayer.resources || {};
-    return resources.WOOD >= 1 && resources.BRICK >= 1;
+    return (myPlayer.roads_left > 0) && (resources.WOOD >= 1 && resources.BRICK >= 1);
   };
   
-  // Handle corner click (for settlements/cities)
+  // Handle building actions
   const handleCornerClick = (corner: any, tile: any) => {
     if (!isMyTurn() || !buildMode || !board) return;
     
@@ -335,7 +373,6 @@ export default function OnlineGame() {
     }
   };
   
-  // Handle edge click (for roads)
   const handleEdgeClick = (edge: any, tile: any) => {
     if (!isMyTurn() || buildMode !== 'road' || !board) return;
     
