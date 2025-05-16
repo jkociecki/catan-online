@@ -61,12 +61,50 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
       }
   };
 
-  const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
+  const handleCornerClick = async (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
+    try {
+      // Get the corner index in the tile's corners array
+      const cornerIndex = tile.getCorners().indexOf(corner);
+
+      const response = await fetch('http://localhost:8000/api/build/settlement/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tileCoords: tile.tileId,
+          cornerIndex: cornerIndex
+        })
+      });
+      const data = await response.json();
+      console.log('Settlement build response:', data);
+    } catch (error) {
+      console.error('Error building settlement:', error);
+    }
   };
 
-  const handleEdgeClick = (edge: EdgeData, tile: BaseTile) => {
+  const handleEdgeClick = async (edge: EdgeData, tile: BaseTile) => {
     console.log('clicked edge!', edge, tile);
+    try {
+      // Get the edge index in the tile's edges array
+      const edgeIndex = tile.getEdges().indexOf(edge);
+
+      const response = await fetch('http://localhost:8000/api/build/road/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tileCoords: tile.tileId,
+          edgeIndex: edgeIndex
+        })
+      });
+      const data = await response.json();
+      console.log('Road build response:', data);
+    } catch (error) {
+      console.error('Error building road:', error);
+    }
   };
 
   return (

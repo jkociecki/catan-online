@@ -4,6 +4,7 @@ import { CatanBoard } from './view/CatanBoard';
 import { Game } from './game/Game';
 import { GameDirector } from './game/GameDirector';
 import { useEffect, useState } from 'react';
+import { PlayerResourcesDisplay } from './view/PlayerResources';
 
 /**
  * What's next?
@@ -40,9 +41,16 @@ export default function App() {
   return (
     <div className="App">
       <h1>Catan</h1>
-      <Game director={gameDirector}>
-        <CatanBoard board={board} />
-      </Game>
+      <div style={{ display: 'flex', gap: '20px', padding: '20px' }}>
+        <div style={{ flex: 1 }}>
+          <Game director={gameDirector}>
+            <CatanBoard board={board} />
+          </Game>
+        </div>
+        <div style={{ width: '300px' }}>
+          <PlayerResourcesDisplay />
+        </div>
+      </div>
     </div>
   );
 }
