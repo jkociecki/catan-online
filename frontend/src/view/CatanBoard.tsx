@@ -11,6 +11,8 @@ import { Edges } from './edge/CatanEdges';
 
 interface Props {
   board: Board;
+  onCornerClick?: (corner: CornerData, tile: BaseTile) => void;
+  onEdgeClick?: (edge: EdgeData, tile: BaseTile) => void;
 }
 
 const StyledWrapper = styled.div`
@@ -29,7 +31,11 @@ const StyledSvg = styled.svg`
   left: 0;
 `;
 
-export const CatanBoard: React.FC<Props> = ({ board }) => {
+export const CatanBoard: React.FC<Props> = ({ 
+  board, 
+  onCornerClick, 
+  onEdgeClick 
+}) => {
   const hexagons = board.getHexes();
 
   // Tworzenie poprawnego obiektu layoutu zgodnego z biblioteką react-hexgrid
@@ -58,14 +64,20 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
         f0: Math.sqrt(3), f1: Math.sqrt(3) / 2, f2: 0, f3: 3 / 2,
         b0: Math.sqrt(3) / 3, b1: -1 / 3, b2: 0, b3: 2 / 3
       }
-  };
+      };
 
   const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
+    if (onCornerClick) {
+      onCornerClick(corner, tile);
+    }
   };
 
   const handleEdgeClick = (edge: EdgeData, tile: BaseTile) => {
     console.log('clicked edge!', edge, tile);
+    if (onEdgeClick) {
+      onEdgeClick(edge, tile);
+    }
   };
 
   return (

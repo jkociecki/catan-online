@@ -37,8 +37,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "game_api.apps.GameApiConfig",
+   # "game_api.apps.GameApiConfig",
     "corsheaders",
+    'channels',
+    'game_api',
 ]
 
 MIDDLEWARE = [
@@ -71,7 +73,12 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "backend.wsgi.application"
-
+ASGI_APPLICATION = 'catan_game.asgi.application'
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases

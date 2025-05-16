@@ -36,4 +36,6 @@ class PlayerResources:
         
         if resource != Resource.DESERT and self.has_enough_resource(resource, amount):
             self.resources[resource] = self.resources.get(resource, 0) - amount
-            
+
+    def serialize(self):
+        return {r.name: count for r, count in self.resources.items()}
