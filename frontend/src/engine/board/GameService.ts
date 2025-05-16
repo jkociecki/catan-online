@@ -7,7 +7,7 @@ class GameService {
     // Change these URLs to match your exact backend configuration
 private static readonly API_URL = 'http://localhost:8000/api';
 // Zmodyfikowany WebSocket URL - uwzględniając poprawną ścieżkę
-private static readonly WS_URL = 'ws://localhost:8000';
+private static readonly WS_URL = 'ws://localhost:8000/ws';
 
     private constructor() {}
 
