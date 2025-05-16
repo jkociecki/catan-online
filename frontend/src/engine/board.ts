@@ -10,15 +10,10 @@ import {
   assertPlaceSettlement,
   assertPlaceCity
 } from './tileHelpers';
-<<<<<<< HEAD
-import { Hex } from './types';
-import { BasicGameConfig } from '../game/config';
-=======
 import { Hex, Resource } from './types';
 import { BasicGameConfig } from '../game/config';
 import { BoardData } from './board/BoardService';
 import { Tile, TileType } from './tile';
->>>>>>> feature/connecting-backend-frontend
 
 /**
  * This will be the class for a Catan Board,
@@ -34,8 +29,6 @@ import { Tile, TileType } from './tile';
  * -- (all the associated checking methods)
  */
 
-<<<<<<< HEAD
-=======
 const resourceMap: { [key: string]: Resource } = {
   'wood': Resource.Wood,
   'brick': Resource.Clay,
@@ -45,7 +38,6 @@ const resourceMap: { [key: string]: Resource } = {
   'desert': Resource.Desert
 };
 
->>>>>>> feature/connecting-backend-frontend
 export class Board {
   private hexagons: Hex[];
   private tiles: Tiles;
@@ -68,8 +60,6 @@ export class Board {
     return this.tiles[HexUtils.getID(hex)];
   }
 
-<<<<<<< HEAD
-=======
   loadFromData(data: BoardData) {
     // Update tiles
     data.tiles.forEach(tileData => {
@@ -118,7 +108,6 @@ export class Board {
     });
   }
 
->>>>>>> feature/connecting-backend-frontend
   /**
    *
    * @param tileId

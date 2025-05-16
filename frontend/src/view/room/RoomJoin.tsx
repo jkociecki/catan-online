@@ -22,7 +22,12 @@ const Button = styled.button`
   cursor: pointer;
   font-size: 16px;
   
-  &:hover {
+  &:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+  
+  &:hover:not(:disabled) {
     background-color: #45a049;
   }
 `;
@@ -39,23 +44,53 @@ const Input = styled.input`
 const ErrorMessage = styled.div`
   color: red;
   margin: 10px 0;
+  padding: 10px;
+  background-color: #ffeeee;
+  border-radius: 4px;
+  border: 1px solid #ffcccc;
+`;
+
+const LoadingIndicator = styled.div`
+  margin: 20px 0;
+  color: #333;
+  font-style: italic;
+`;
+
+const StatusMessage = styled.div`
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #e8f5e9;
+  border-radius: 4px;
+  border: 1px solid #c8e6c9;
+  color: #2e7d32;
 `;
 
 export default function RoomJoin() {
   const [roomId, setRoomId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleCreate = async () => {
     setIsLoading(true);
     setError(null);
+    setStatus("Creating a new game room...");
     
     try {
+      // First create a room
       const newRoomId = await GameService.createRoom();
+      setStatus(`Room created! Room ID: ${newRoomId}. Connecting...`);
+      
+      // Then connect to it via WebSocket
+      await GameService.connectToRoom(newRoomId);
+      setStatus(`Connected to room ${newRoomId}! Redirecting...`);
+      
+      // Finally navigate to the room
       navigate(`/room/${newRoomId}`);
     } catch (err) {
-      setError('Failed to create room');
+      console.error("Room creation or connection error:", err);
+      setError(err instanceof Error ? err.message : 'Failed to create or connect to room');
       setIsLoading(false);
     }
   };
@@ -68,12 +103,15 @@ export default function RoomJoin() {
     
     setIsLoading(true);
     setError(null);
+    setStatus(`Connecting to room ${roomId}...`);
     
     try {
       await GameService.connectToRoom(roomId);
+      setStatus(`Connected to room ${roomId}! Redirecting...`);
       navigate(`/room/${roomId}`);
     } catch (err) {
-      setError('Failed to join room - room might not exist');
+      console.error("Room join error:", err);
+      setError(err instanceof Error ? err.message : 'Failed to join room - room might not exist');
       setIsLoading(false);
     }
   };
@@ -103,8 +141,9 @@ export default function RoomJoin() {
         </Button>
       </div>
       
+      {status && <StatusMessage>{status}</StatusMessage>}
       {error && <ErrorMessage>{error}</ErrorMessage>}
-      {isLoading && <div>Loading...</div>}
+      {isLoading && <LoadingIndicator>Loading... Please wait.</LoadingIndicator>}
     </Container>
   );
 }

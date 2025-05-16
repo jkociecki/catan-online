@@ -26,10 +26,24 @@ export class BoardService {
     private static readonly API_URL = 'http://localhost:8000/api';
 
     static async getRandomBoard(): Promise<BoardData> {
-        const response = await fetch(`${this.API_URL}/board/`);
-        if (!response.ok) {
-            throw new Error('Failed to fetch board data');
+        try {
+            const response = await fetch(`${this.API_URL}/board/`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Failed to fetch board data: ${response.status} ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log("Received board data:", data);
+            return data;
+        } catch (error) {
+            console.error("Error fetching board:", error);
+            throw error;
         }
-        return response.json();
     }
-} 
+}

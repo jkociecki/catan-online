@@ -3,6 +3,10 @@ class GameService {
     private socket: WebSocket | null = null;
     private callbacks: {[key: string]: ((data: any) => void)[]} = {};
     private clientId: string | null = null;
+    
+    // Change these URLs to match your exact backend configuration
+    private static readonly API_URL = 'http://localhost:8000/api';
+    private static readonly WS_URL = 'ws://localhost:8000';
 
     private constructor() {}
 
@@ -14,47 +18,90 @@ class GameService {
     }
 
     public async createRoom(): Promise<string> {
-        const response = await fetch('http://localhost:8000/api/room/create/');
-        const data = await response.json();
-        return data.room_id;
+        try {
+            console.log("Attempting to create a new room...");
+            const response = await fetch(`${GameService.API_URL}/room/create/`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! Status: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            console.log("Created room with ID:", data.room_id);
+            return data.room_id;
+        } catch (error) {
+            console.error("Error creating room:", error);
+            throw error;
+        }
     }
 
     public connectToRoom(roomId: string): Promise<void> {
         return new Promise((resolve, reject) => {
             this.disconnectFromRoom();
 
-            this.socket = new WebSocket(`ws://localhost:8000/ws/game/${roomId}/`);
+            try {
+                const wsUrl = `${GameService.WS_URL}/ws/game/${roomId}/`;
+                console.log(`Connecting to WebSocket: ${wsUrl}`);
+                this.socket = new WebSocket(wsUrl);
 
-            this.socket.onopen = () => {
-                console.log('WebSocket connected');
-                resolve();
-            };
+                this.socket.onopen = () => {
+                    console.log('WebSocket connected successfully');
+                    // Request client ID immediately after connection
+                    this.sendMessage({
+                        type: 'get_client_id'
+                    });
+                    resolve();
+                };
 
-            this.socket.onclose = (event) => {
-                console.log('WebSocket disconnected:', event);
-                this.socket = null;
-                this.dispatchEvent('disconnect', {});
-            };
+                this.socket.onclose = (event) => {
+                    console.log('WebSocket disconnected:', event);
+                    if (event.code !== 1000) {
+                        console.error(`WebSocket closed abnormally. Code: ${event.code}, Reason: ${event.reason}`);
+                    }
+                    this.socket = null;
+                    this.dispatchEvent('disconnect', { code: event.code, reason: event.reason });
+                };
 
-            this.socket.onerror = (error) => {
-                console.error('WebSocket error:', error);
+                this.socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    // Don't reject here as onclose will be called after error
+                    // This allows for better error handling
+                };
+
+                this.socket.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('WebSocket message received:', data);
+                        
+                        // Save client ID if present
+                        if (data.type === 'client_id' && data.player_id) {
+                            this.clientId = data.player_id;
+                            console.log('Set client ID:', this.clientId);
+                        }
+                        
+                        // Dispatch event based on message type
+                        if (data.type) {
+                            this.dispatchEvent(data.type, data);
+                        }
+                    } catch (err) {
+                        console.error('Error parsing WebSocket message:', err, event.data);
+                    }
+                };
+            } catch (error) {
+                console.error('Error creating WebSocket:', error);
                 reject(error);
-            };
-
-            this.socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                console.log('WebSocket message:', data);
-                
-                // Dispatch event based on message type
-                if (data.type) {
-                    this.dispatchEvent(data.type, data);
-                }
-            };
+            }
         });
     }
 
     public disconnectFromRoom(): void {
         if (this.socket) {
+            console.log("Disconnecting from WebSocket");
             this.socket.close();
             this.socket = null;
         }
@@ -62,9 +109,11 @@ class GameService {
 
     public sendMessage(message: any): void {
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify(message));
+            const messageStr = JSON.stringify(message);
+            console.log('Sending WebSocket message:', message);
+            this.socket.send(messageStr);
         } else {
-            console.error('WebSocket not connected');
+            console.error('WebSocket not connected, message not sent:', message);
         }
     }
 
@@ -96,22 +145,43 @@ class GameService {
             return this.clientId;
         }
         
-        return new Promise((resolve) => {
-            // First try to get from a message event
+        return new Promise((resolve, reject) => {
+            // Set a timeout to make sure we don't wait forever
+            const timeout = setTimeout(() => {
+                reject(new Error("Timeout waiting for client ID"));
+            }, 5000);
+            
             const handler = (data: any) => {
                 if (data.player_id) {
                     this.clientId = data.player_id;
-                    this.removeEventHandler('player_joined', handler);
-                    resolve(data.player_id); // Use data.player_id directly
+                    this.removeEventHandler('client_id', handler);
+                    clearTimeout(timeout);
+                    resolve(data.player_id);
                 }
             };
             
-            this.addEventHandler('player_joined', handler);
+            this.addEventHandler('client_id', handler);
             
-            // Also send a request to get ID
-            this.sendMessage({
-                type: 'get_client_id'
-            });
+            // Also try player_joined event
+            const joinHandler = (data: any) => {
+                if (data.player_id) {
+                    this.clientId = data.player_id;
+                    this.removeEventHandler('player_joined', joinHandler);
+                    clearTimeout(timeout);
+                    resolve(data.player_id);
+                }
+            };
+            
+            this.addEventHandler('player_joined', joinHandler);
+            
+            // Request client ID explicitly if connected
+            if (this.isConnected()) {
+                this.sendMessage({
+                    type: 'get_client_id'
+                });
+            } else {
+                console.error("Cannot get client ID: WebSocket not connected");
+            }
         });
     }
 
@@ -130,7 +200,35 @@ class GameService {
         });
     }
 
-    // Add more game actions as needed
+    public buildCity(coords: any): void {
+        this.sendMessage({
+            type: 'game_action',
+            action: 'build_city',
+            coords: coords
+        });
+    }
+
+    public buildRoad(coords: any): void {
+        this.sendMessage({
+            type: 'game_action',
+            action: 'build_road',
+            coords: coords
+        });
+    }
+
+    public rollDice(): void {
+        this.sendMessage({
+            type: 'game_action',
+            action: 'roll_dice'
+        });
+    }
+
+    public endTurn(): void {
+        this.sendMessage({
+            type: 'game_action',
+            action: 'end_turn'
+        });
+    }
 }
 
 export default GameService.getInstance();

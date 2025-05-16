@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import GameService from '../../engine/board/GameService';
+import { BoardService } from '../../engine/board/BoardService';
 import { CatanBoard } from '../../view/CatanBoard';
 import { Board } from '../../engine/board';
 import { GameDirector } from '../../game/GameDirector';
@@ -35,6 +36,10 @@ const SidePanel = styled.div`
 const GameLayout = styled.div`
   display: flex;
   flex-direction: row;
+  
+  @media (max-width: 768px) {
+    flex-direction: column;
+  }
 `;
 
 const GameStatus = styled.div`
@@ -58,11 +63,30 @@ const LeaveButton = styled.button`
   }
 `;
 
+const LoadingMessage = styled.div`
+  text-align: center;
+  padding: 40px;
+  font-size: 20px;
+  color: #666;
+`;
+
+const ErrorMessage = styled.div`
+  background-color: #ffeeee;
+  color: #d32f2f;
+  padding: 15px;
+  border-radius: 5px;
+  margin: 20px 0;
+  border: 1px solid #ffcccc;
+`;
+
 export default function OnlineGame() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { roomId: urlRoomId } = useParams();
+  
+  // Use roomId from URL params if available, otherwise from location state
+  const roomId = urlRoomId || location.state?.roomId;
   const initialGameState = location.state?.gameState;
-  const roomId = location.state?.roomId;
   
   const [board, setBoard] = useState<Board | null>(null);
   const [gameState, setGameState] = useState<any>(initialGameState);
@@ -71,42 +95,79 @@ export default function OnlineGame() {
   const [myPlayerId, setMyPlayerId] = useState<string>('');
   const [buildMode, setBuildMode] = useState<string | null>(null);
   const [diceResult, setDiceResult] = useState<number | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   
   const gameDirector = new GameDirector();
 
+  const fetchRandomBoardIfNeeded = useCallback(async () => {
+    if (!initialGameState) {
+      try {
+        const boardData = await BoardService.getRandomBoard();
+        const newBoard = new Board(2, gameDirector.getConfig());
+        newBoard.loadFromData(boardData);
+        setBoard(newBoard);
+        setGameState({ board: boardData, players: [] });
+        setLoading(false);
+      } catch (err) {
+        console.error('Failed to fetch random board', err);
+        setError('Failed to load game board. Please try again.');
+        setLoading(false);
+      }
+    } else {
+      const newBoard = new Board(2, gameDirector.getConfig());
+      newBoard.loadFromData(initialGameState.board);
+      setBoard(newBoard);
+      setGameState(initialGameState);
+      
+      // Set players and current player
+      if (initialGameState.players) {
+        setPlayers(initialGameState.players);
+        const currentPlayerIndex = initialGameState.current_player_index || 0;
+        if (initialGameState.players.length > 0) {
+          setCurrentPlayerId(initialGameState.players[currentPlayerIndex].id);
+        }
+      }
+      
+      setLoading(false);
+    }
+  }, [initialGameState, gameDirector]);
+
   useEffect(() => {
-    if (!initialGameState || !roomId) {
-      // Redirect if game state or room ID is missing
+    if (!roomId) {
+      // Redirect if room ID is missing
       navigate('/');
       return;
     }
 
-    // Load board from game state
-    const newBoard = new Board(2, gameDirector.getConfig());
-    newBoard.loadFromData(initialGameState.board);
-    setBoard(newBoard);
+    // Load board if not provided in state
+    fetchRandomBoardIfNeeded();
     
-    // Set players and current player
-    setPlayers(initialGameState.players);
-    if (initialGameState.players.length > 0) {
-      const currentPlayerIndex = initialGameState.current_player_index || 0;
-      setCurrentPlayerId(initialGameState.players[currentPlayerIndex].id);
-    }
-    
-    // Save my player ID
-    GameService.getClientId().then(id => {
-      setMyPlayerId(id);
-    });
-    
-    // Connect to WebSocket if not already connected
+    // Connect to WebSocket
     const connectToRoom = async () => {
       if (!GameService.isConnected()) {
         try {
+          setLoading(true);
           await GameService.connectToRoom(roomId);
+          
+          // Get client ID after connection
+          const id = await GameService.getClientId();
+          setMyPlayerId(id);
+          
+          // Request game state
+          GameService.getGameState();
+          
+          setLoading(false);
         } catch (err) {
           console.error('Failed to connect to room', err);
-          navigate('/');
+          setError('Failed to connect to the game room. Please try again.');
+          setLoading(false);
         }
+      } else {
+        // If already connected, just get client ID
+        GameService.getClientId().then(id => {
+          setMyPlayerId(id);
+        });
       }
     };
     
@@ -114,25 +175,59 @@ export default function OnlineGame() {
     
     // Set up event handlers
     const handleGameUpdate = (data: any) => {
+      console.log("Game update received:", data);
+      
       // Update game state
-      setGameState(data.game_state);
-      
-      // Update board
-      const updatedBoard = new Board(2, gameDirector.getConfig());
-      updatedBoard.loadFromData(data.game_state.board);
-      setBoard(updatedBoard);
-      
-      // Update players
-      setPlayers(data.game_state.players);
-      
-      // Update current player
-      const currentPlayerIndex = data.game_state.current_player_index || 0;
-      if (data.game_state.players.length > 0) {
-        setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
+      if (data.game_state) {
+        setGameState(data.game_state);
+        
+        // Update board
+        if (data.game_state.board) {
+          const updatedBoard = new Board(2, gameDirector.getConfig());
+          updatedBoard.loadFromData(data.game_state.board);
+          setBoard(updatedBoard);
+        }
+        
+        // Update players
+        if (data.game_state.players) {
+          setPlayers(data.game_state.players);
+          
+          // Update current player
+          const currentPlayerIndex = data.game_state.current_player_index || 0;
+          if (data.game_state.players.length > 0) {
+            setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
+          }
+        }
       }
       
       // Clear build mode when game state updates
       setBuildMode(null);
+    };
+    
+    const handleGameState = (data: any) => {
+      console.log("Game state received:", data);
+      
+      if (data.game_state) {
+        setGameState(data.game_state);
+        
+        // Update board
+        if (data.game_state.board) {
+          const updatedBoard = new Board(2, gameDirector.getConfig());
+          updatedBoard.loadFromData(data.game_state.board);
+          setBoard(updatedBoard);
+        }
+        
+        // Update players
+        if (data.game_state.players) {
+          setPlayers(data.game_state.players);
+          
+          // Update current player
+          const currentPlayerIndex = data.game_state.current_player_index || 0;
+          if (data.game_state.players.length > 0) {
+            setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
+          }
+        }
+      }
     };
     
     const handleDiceRoll = (data: any) => {
@@ -150,24 +245,32 @@ export default function OnlineGame() {
       }
     };
     
+    const handleError = (data: any) => {
+      console.error("Game error:", data.message);
+      setError(data.message || "An unknown error occurred");
+    };
+    
     const handleDisconnect = () => {
       navigate('/');
     };
     
     GameService.addEventHandler('game_update', handleGameUpdate);
+    GameService.addEventHandler('game_state', handleGameState);
     GameService.addEventHandler('dice_roll', handleDiceRoll);
     GameService.addEventHandler('build_mode', handleBuildModeEnter);
+    GameService.addEventHandler('error', handleError);
     GameService.addEventHandler('disconnect', handleDisconnect);
     
     // Cleanup
     return () => {
       GameService.removeEventHandler('game_update', handleGameUpdate);
+      GameService.removeEventHandler('game_state', handleGameState);
       GameService.removeEventHandler('dice_roll', handleDiceRoll);
       GameService.removeEventHandler('build_mode', handleBuildModeEnter);
+      GameService.removeEventHandler('error', handleError);
       GameService.removeEventHandler('disconnect', handleDisconnect);
-      GameService.disconnectFromRoom();
     };
-  }, [initialGameState, roomId, gameDirector, navigate]);
+  }, [roomId, gameDirector, navigate, fetchRandomBoardIfNeeded, myPlayerId]);
   
   // Get my resources
   const getMyResources = () => {
@@ -216,7 +319,12 @@ export default function OnlineGame() {
     
     if (buildMode === 'settlement' || buildMode === 'city') {
       // Get coordinates for the corner
-      const coords = corner.getCoordinates();
+      const coords = [];
+      for (const coord of corner.tiles) {
+        coords.push(Array.from(coord));
+      }
+      
+      console.log(`Building ${buildMode} at:`, coords);
       
       // Send build action to server
       GameService.sendMessage({
@@ -232,7 +340,12 @@ export default function OnlineGame() {
     if (!isMyTurn() || buildMode !== 'road' || !board) return;
     
     // Get coordinates for the edge
-    const coords = edge.getCoordinates();
+    const coords = [];
+    for (const coord of edge.tiles) {
+      coords.push(Array.from(coord));
+    }
+    
+    console.log("Building road at:", coords);
     
     // Send build action to server
     GameService.sendMessage({
@@ -247,16 +360,22 @@ export default function OnlineGame() {
     navigate('/');
   };
   
+  if (loading) {
+    return <LoadingMessage>Loading game...</LoadingMessage>;
+  }
+  
   if (!board) {
-    return <div>Loading game...</div>;
+    return <ErrorMessage>Failed to load game board. Please try again.</ErrorMessage>;
   }
 
   return (
     <GameContainer>
       <GameHeader>
-        <h2>Catan Online Game</h2>
+        <h2>Catan Online Game - Room: {roomId}</h2>
         <LeaveButton onClick={handleLeaveGame}>Leave Game</LeaveButton>
       </GameHeader>
+      
+      {error && <ErrorMessage>{error}</ErrorMessage>}
       
       {diceResult && (
         <GameStatus>

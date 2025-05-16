@@ -49,6 +49,12 @@ class GameConsumer(AsyncWebsocketConsumer):
                 room['game_state'].add_player(player)
                 room['players'].append(self.player_id)
 
+                # Send client_id to the new player
+                await self.send(text_data=json.dumps({
+                    'type': 'client_id',
+                    'player_id': self.player_id
+                }))
+
                 # Notify about new player
                 await self.channel_layer.group_send(
                     self.room_group_name,
@@ -84,6 +90,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             }))
 
     async def disconnect(self, close_code):
+        print(f"WebSocket disconnected with code: {close_code}")
+
         # Leave room group
         await self.channel_layer.group_discard(
             self.room_group_name,
@@ -95,6 +103,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             room = game_rooms[self.room_id]
             if self.player_id in room['players']:
                 room['players'].remove(self.player_id)
+
+                # Remove player from game state
+                for i, player in enumerate(room['game_state'].players):
+                    if player.id == self.player_id:
+                        room['game_state'].players.pop(i)
+                        break
 
                 # Notify about player leaving
                 await self.channel_layer.group_send(
@@ -112,137 +126,165 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     # Receive message from WebSocket
     async def receive(self, text_data):
-        data = json.loads(text_data)
-        message_type = data.get('type')
+        try:
+            data = json.loads(text_data)
+            message_type = data.get('type')
+            print(f"Received message type: {message_type} from player {self.player_id}")
 
-        if self.room_id not in game_rooms:
-            await self.send(text_data=json.dumps({
-                'type': 'error',
-                'message': 'Game room not found'
-            }))
-            return
-
-        room = game_rooms[self.room_id]
-
-        if message_type == 'create_room':
-            # Room already created on connect
-            await self.send(text_data=json.dumps({
-                'type': 'room_created',
-                'room_id': self.room_id,
-                'player_id': self.player_id
-            }))
-
-        elif message_type == 'join_room':
-            # Already handled in connect
-            pass
-
-        elif message_type == 'get_game_state':
-            await self.send(text_data=json.dumps({
-                'type': 'game_state',
-                'game_state': self.serialize_game_state(room['game_state'])
-            }))
-
-        elif message_type == 'get_client_id':
-            await self.send(text_data=json.dumps({
-                'type': 'client_id',
-                'player_id': self.player_id
-            }))
-
-        elif message_type == 'enter_build_mode':
-            build_type = data.get('build_type')
-
-            # Notify all players about the build mode
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'build_mode',
-                    'player_id': self.player_id,
-                    'build_type': build_type
-                }
-            )
-
-        elif message_type == 'game_action':
-            # Process game actions (build, trade, etc.)
-            action = data.get('action')
-
-            # Only process actions if game has started
-            if not room['started']:
+            if self.room_id not in game_rooms:
                 await self.send(text_data=json.dumps({
                     'type': 'error',
-                    'message': 'Game has not started yet'
+                    'message': 'Game room not found'
                 }))
                 return
 
-            # Handle different game actions
-            if action == 'roll_dice':
-                result = await self.process_dice_roll(room['game_state'])
+            room = game_rooms[self.room_id]
 
-                if result:
-                    # Game state is updated after rolling dice
+            if message_type == 'create_room':
+                # Room already created on connect
+                await self.send(text_data=json.dumps({
+                    'type': 'room_created',
+                    'room_id': self.room_id,
+                    'player_id': self.player_id
+                }))
+
+            elif message_type == 'join_room':
+                # Already handled in connect
+                pass
+
+            elif message_type == 'get_game_state':
+                await self.send(text_data=json.dumps({
+                    'type': 'game_state',
+                    'game_state': self.serialize_game_state(room['game_state'])
+                }))
+
+            elif message_type == 'get_client_id':
+                await self.send(text_data=json.dumps({
+                    'type': 'client_id',
+                    'player_id': self.player_id
+                }))
+
+            elif message_type == 'enter_build_mode':
+                build_type = data.get('build_type')
+
+                # Notify all players about the build mode
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'build_mode',
+                        'player_id': self.player_id,
+                        'build_type': build_type
+                    }
+                )
+
+            elif message_type == 'game_action':
+                # Process game actions (build, trade, etc.)
+                action = data.get('action')
+
+                # Only process actions if game has started
+                if not room['started'] and len(room['players']) >= 2:
+                    # If we have at least 2 players, we can start the game manually
+                    room['started'] = True
                     await self.channel_layer.group_send(
                         self.room_group_name,
                         {
-                            'type': 'game_update',
-                            'action': 'roll_dice',
-                            'player_id': self.player_id,
+                            'type': 'game_start',
                             'game_state': self.serialize_game_state(room['game_state'])
                         }
                     )
+                elif not room['started']:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Game has not started yet, need at least 2 players'
+                    }))
+                    return
 
-            elif action == 'build_settlement':
-                # Process settlement building
-                coords = data.get('coords')
-                result = await self.process_build_settlement(room['game_state'], self.player_id, coords)
+                # Handle different game actions
+                if action == 'roll_dice':
+                    result = await self.process_dice_roll(room['game_state'])
 
-                if result:
-                    # Notify all players about the build
-                    await self.channel_layer.group_send(
-                        self.room_group_name,
-                        {
-                            'type': 'game_update',
-                            'action': 'build_settlement',
-                            'player_id': self.player_id,
-                            'coords': coords,
-                            'game_state': self.serialize_game_state(room['game_state'])
-                        }
-                    )
+                    if result:
+                        # Game state is updated after rolling dice
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_update',
+                                'action': 'roll_dice',
+                                'player_id': self.player_id,
+                                'game_state': self.serialize_game_state(room['game_state'])
+                            }
+                        )
 
-            elif action == 'build_city':
-                coords = data.get('coords')
-                result = await self.process_build_city(room['game_state'], self.player_id, coords)
+                elif action == 'build_settlement':
+                    # Process settlement building
+                    coords = data.get('coords')
+                    result = await self.process_build_settlement(room['game_state'], self.player_id, coords)
 
-                if result:
-                    # Notify all players about the build
-                    await self.channel_layer.group_send(
-                        self.room_group_name,
-                        {
-                            'type': 'game_update',
-                            'action': 'build_city',
-                            'player_id': self.player_id,
-                            'coords': coords,
-                            'game_state': self.serialize_game_state(room['game_state'])
-                        }
-                    )
+                    if result:
+                        # Notify all players about the build
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_update',
+                                'action': 'build_settlement',
+                                'player_id': self.player_id,
+                                'coords': coords,
+                                'game_state': self.serialize_game_state(room['game_state'])
+                            }
+                        )
 
-            elif action == 'build_road':
-                coords = data.get('coords')
-                result = await self.process_build_road(room['game_state'], self.player_id, coords)
+                elif action == 'build_city':
+                    coords = data.get('coords')
+                    result = await self.process_build_city(room['game_state'], self.player_id, coords)
 
-                if result:
-                    # Notify all players about the build
-                    await self.channel_layer.group_send(
-                        self.room_group_name,
-                        {
-                            'type': 'game_update',
-                            'action': 'build_road',
-                            'player_id': self.player_id,
-                            'coords': coords,
-                            'game_state': self.serialize_game_state(room['game_state'])
-                        }
-                    )
+                    if result:
+                        # Notify all players about the build
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_update',
+                                'action': 'build_city',
+                                'player_id': self.player_id,
+                                'coords': coords,
+                                'game_state': self.serialize_game_state(room['game_state'])
+                            }
+                        )
 
-            elif action == 'end_turn':
-                result = await self.process_end_turn(room['game_state'])
+                elif action == 'build_road':
+                    coords = data.get('coords')
+                    result = await self.process_build_road(room['game_state'], self.player_id, coords)
+
+                    if result:
+                        # Notify all players about the build
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_update',
+                                'action': 'build_road',
+                                'player_id': self.player_id,
+                                'coords': coords,
+                                'game_state': self.serialize_game_state(room['game_state'])
+                            }
+                        )
+
+                elif action == 'end_turn':
+                    result = await self.process_end_turn(room['game_state'])
+                    if result:
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_update',
+                                'action': 'end_turn',
+                                'player_id': self.player_id,
+                                'game_state': self.serialize_game_state(room['game_state'])
+                            }
+                        )
+        except Exception as e:
+            print(f"Error processing WebSocket message: {str(e)}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Server error: {str(e)}'
+            }))
 
     # Helper methods
     def serialize_game_state(self, game_state):
@@ -253,14 +295,15 @@ class GameConsumer(AsyncWebsocketConsumer):
             players_data.append({
                 'id': player.id,
                 'color': player.color.value,
-                'resources': player.player_resources.serialize(),
+                'resources': player.player_resources.serialize() if hasattr(player.player_resources,
+                                                                            'serialize') else player.player_resources.resources,
                 'victory_points': player.victory_points,
                 'settlements_left': player.settlements_left,
                 'cities_left': player.cities_left,
                 'roads_left': player.roads_left
             })
 
-        current_player_index = game_state.current_player_index if hasattr(game_state, 'turn_manager') else 0
+        current_player_index = game_state.current_player_index if hasattr(game_state, 'current_player_index') else 0
 
         return {
             'board': board_data,
@@ -280,56 +323,62 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not player:
             return False
 
-        # Convert coords to the format expected by the game engine
-        # (This would depend on how your frontend sends coordinates)
-        vertex_coords = set([tuple(coord) for coord in coords])
+        try:
+            # Convert coords to the format expected by the game engine
+            vertex_coords = set([tuple(coord) for coord in coords])
 
-        # Assuming your game has a method to handle settlement building
-        # This might need to be adapted based on your game engine
-        if hasattr(game_state, 'turn_manager'):
-            return game_state.turn_manager.build_settlement(player, vertex_coords)
-        return False
+            # Assuming your game has a method to handle settlement building
+            if hasattr(game_state, 'turn_manager'):
+                return game_state.turn_manager.build_settlement(player, vertex_coords)
+            return False
+        except Exception as e:
+            print(f"Error building settlement: {str(e)}")
+            return False
 
     @database_sync_to_async
     def process_dice_roll(self, game_state):
         """Roll dice and distribute resources"""
         if not hasattr(game_state, 'turn_manager'):
+            # Initialize turn manager if not already done
+            if len(game_state.players) > 1:
+                game_state.turn_manager = game_state.players[0]
+                return True
             return False
 
-        dice1, dice2 = game_state.turn_manager.roll_dice()
-        dice_total = dice1 + dice2
+        try:
+            dice1, dice2 = game_state.turn_manager.roll_dice()
+            dice_total = dice1 + dice2
 
-        # Notify all players about the dice roll
-        self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'dice_roll',
-                'result': dice_total
-            }
-        )
+            # Notify all players about the dice roll
+            self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'dice_roll',
+                    'result': dice_total
+                }
+            )
 
-        return True
+            return True
+        except Exception as e:
+            print(f"Error rolling dice: {str(e)}")
+            return False
 
     @database_sync_to_async
     def process_end_turn(self, game_state):
         """End the current player's turn"""
         if not hasattr(game_state, 'turn_manager'):
+            # Initialize turn manager if not already done
+            if len(game_state.players) > 1:
+                game_state.turn_manager = game_state.players[0]
+
             return False
 
-        game_state.turn_manager.end_turn()
-
-        # Notify all players about the turn change
-        self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'game_update',
-                'action': 'end_turn',
-                'player_id': self.player_id,
-                'game_state': self.serialize_game_state(game_state)
-            }
-        )
-
-        return True
+        try:
+            game_state.turn_manager.end_turn()
+            return True
+        except Exception as e:
+            print(f"Error ending turn: {str(e)}")
+            return False
 
     @database_sync_to_async
     def process_build_road(self, game_state, player_id, coords):
@@ -343,12 +392,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not player:
             return False
 
-        # Convert coords to the format expected by the game engine
-        edge_coords = set([tuple(coord) for coord in coords])
+        try:
+            # Convert coords to the format expected by the game engine
+            edge_coords = set([tuple(coord) for coord in coords])
 
-        if hasattr(game_state, 'turn_manager'):
-            return game_state.turn_manager.build_road(player, edge_coords)
-        return False
+            if hasattr(game_state, 'turn_manager'):
+                return game_state.turn_manager.build_road(player, edge_coords)
+            return False
+        except Exception as e:
+            print(f"Error building road: {str(e)}")
+            return False
 
     @database_sync_to_async
     def process_build_city(self, game_state, player_id, coords):
@@ -362,12 +415,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not player:
             return False
 
-        # Convert coords to the format expected by the game engine
-        vertex_coords = set([tuple(coord) for coord in coords])
+        try:
+            # Convert coords to the format expected by the game engine
+            vertex_coords = set([tuple(coord) for coord in coords])
 
-        if hasattr(game_state, 'turn_manager'):
-            return game_state.turn_manager.build_city(player, vertex_coords)
-        return False
+            if hasattr(game_state, 'turn_manager'):
+                return game_state.turn_manager.build_city(player, vertex_coords)
+            return False
+        except Exception as e:
+            print(f"Error building city: {str(e)}")
+            return False
 
     # Event handlers
     async def player_joined(self, event):
