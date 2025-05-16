@@ -14,9 +14,9 @@ class GameConfig:
 
                  wheat_tiles: int = 4,
                  sheep_tiles: int = 4,
-                 ore_tiles: int = 4,
+                 ore_tiles: int = 3,
                  wood_tiles: int = 4,
-                 brick_tiles: int = 4,
+                 brick_tiles: int = 3,
                  desert_tiles: int = 1,
 
                  monopoly_cards_count: int = 5,

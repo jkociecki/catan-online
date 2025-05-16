@@ -1,27 +1,19 @@
-import { Board } from './engine/board';
+import { Routes, Route, BrowserRouter } from 'react-router-dom';
 import './styles.css';
-import { CatanBoard } from './view/CatanBoard';
-import { Game } from './game/Game';
-import { GameDirector } from './game/GameDirector';
-
-/**
- * What's next?
- * - Edge Component for tiles
- * - Corner/Edge suggestion style (dashed around the edge/corner?, player color)
- * - click-to-build (road or settlement)
- * - [Debug] Toggle diceNumbers
- */
+import RoomJoin from './view/room/RoomJoin';
+import RoomLobby from './view/room/LobbyRoom';
+import OnlineGame from './view/game/OnlineGame';
 
 export default function App() {
-  const gameDirector = new GameDirector();
-  const board = new Board(2, gameDirector.getConfig());
-
   return (
-    <div className="App">
-      <h1>Catan</h1>
-        <Game director={gameDirector}>
-          <CatanBoard board={board} />
-        </Game>
-    </div>
+    <BrowserRouter>
+      <div className="App">
+        <Routes>
+          <Route path="/" element={<RoomJoin />} />
+          <Route path="/room/:roomId" element={<RoomLobby roomId={window.location.pathname.split('/').pop() || ''} />} />
+          <Route path="/game" element={<OnlineGame />} />
+        </Routes>
+      </div>
+    </BrowserRouter>
   );
 }

@@ -1,0 +1,6 @@
+pytest~=8.3.4
+pytest-cov==4.1.0  # dla raportów pokrycia kodu testami
+django~=5.2
+django-cors-headers==4.3.1 
+channels~=4.2.2
+xlwings~=0.32.1
