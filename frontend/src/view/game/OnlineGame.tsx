@@ -83,11 +83,11 @@ export default function OnlineGame() {
   const location = useLocation();
   const navigate = useNavigate();
   const { roomId: urlRoomId } = useParams();
-  
+
   // Use roomId from URL params if available, otherwise from location state
   const roomId = urlRoomId || location.state?.roomId;
   const initialGameState = location.state?.gameState;
-  
+
   const [board, setBoard] = useState<Board | null>(null);
   const [gameState, setGameState] = useState<any>(initialGameState);
   const [currentPlayerId, setCurrentPlayerId] = useState<string>('');
@@ -98,7 +98,7 @@ export default function OnlineGame() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  
+
   // Use useMemo to create gameDirector once
   const gameDirector = useMemo(() => new GameDirector(), []);
 
@@ -121,7 +121,7 @@ export default function OnlineGame() {
       newBoard.loadFromData(initialGameState.board);
       setBoard(newBoard);
       setGameState(initialGameState);
-      
+
       // Set players and current player
       if (initialGameState.players) {
         setPlayers(initialGameState.players);
@@ -130,7 +130,7 @@ export default function OnlineGame() {
           setCurrentPlayerId(initialGameState.players[currentPlayerIndex].id);
         }
       }
-      
+
       setLoading(false);
     }
   }, [initialGameState, gameDirector]);
@@ -146,14 +146,22 @@ export default function OnlineGame() {
     const setupConnection = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
+        // Check if user is authenticated
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          // Redirect to login if not authenticated
+          navigate('/login', { state: { returnTo: `/game/${roomId}` } });
+          return;
+        }
+
         // Connect to WebSocket if not already connected
         if (!GameService.isConnected()) {
           console.log(`Attempting to connect to room: ${roomId}`);
           await GameService.connectToRoom(roomId);
           setIsConnected(true);
-          
+
           // Try to get client ID
           try {
             const id = await GameService.getClientId();
@@ -165,13 +173,13 @@ export default function OnlineGame() {
         } else {
           setIsConnected(true);
         }
-        
+
         // Fetch board data if needed
         await fetchRandomBoardIfNeeded();
-        
+
         // Request game state once connected
         GameService.getGameState();
-        
+
         setLoading(false);
       } catch (err) {
         console.error("Failed to setup game connection:", err);
@@ -180,36 +188,36 @@ export default function OnlineGame() {
         setLoading(false);
       }
     };
-    
+
     setupConnection();
-    
+
     // Cleanup on unmount
     return () => {
       // No need to disconnect on page navigation within the app
     };
   }, [roomId, fetchRandomBoardIfNeeded, navigate]);
-  
+
   // Setup WebSocket event handlers
   useEffect(() => {
     // Handle game state updates
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
-      
+
       // Update game state
       if (data.game_state) {
         setGameState(data.game_state);
-        
+
         // Update board
         if (data.game_state.board && board) {
           const updatedBoard = new Board(2, gameDirector.getConfig());
           updatedBoard.loadFromData(data.game_state.board);
           setBoard(updatedBoard);
         }
-        
+
         // Update players
         if (data.game_state.players) {
           setPlayers(data.game_state.players);
-          
+
           // Update current player
           const currentPlayerIndex = data.game_state.current_player_index || 0;
           if (data.game_state.players.length > 0) {
@@ -217,28 +225,28 @@ export default function OnlineGame() {
           }
         }
       }
-      
+
       // Clear build mode when game state updates
       setBuildMode(null);
     };
-    
+
     const handleGameState = (data: any) => {
       console.log("Game state received:", data);
-      
+
       if (data.game_state) {
         setGameState(data.game_state);
-        
+
         // Update board
         if (data.game_state.board && board) {
           const updatedBoard = new Board(2, gameDirector.getConfig());
           updatedBoard.loadFromData(data.game_state.board);
           setBoard(updatedBoard);
         }
-        
+
         // Update players
         if (data.game_state.players) {
           setPlayers(data.game_state.players);
-          
+
           // Update current player
           const currentPlayerIndex = data.game_state.current_player_index || 0;
           if (data.game_state.players.length > 0) {
@@ -247,45 +255,45 @@ export default function OnlineGame() {
         }
       }
     };
-    
+
     const handleClientId = (data: any) => {
       if (data.player_id) {
         console.log("Received client ID:", data.player_id);
         setMyPlayerId(data.player_id);
       }
     };
-    
+
     const handlePlayerJoined = (data: any) => {
       console.log("Player joined:", data);
       // Request updated game state when a player joins
       GameService.getGameState();
     };
-    
+
     const handleDiceRoll = (data: any) => {
       setDiceResult(data.result);
-      
+
       // Hide dice result after 3 seconds
       setTimeout(() => {
         setDiceResult(null);
       }, 3000);
     };
-    
+
     const handleBuildModeEnter = (data: any) => {
       if (data.player_id === myPlayerId) {
         setBuildMode(data.build_type);
       }
     };
-    
+
     const handleError = (data: any) => {
       console.error("Game error:", data.message);
       setError(data.message || "An unknown error occurred");
     };
-    
+
     const handleDisconnect = () => {
       setIsConnected(false);
       setError("Disconnected from game server. Try refreshing the page.");
     };
-    
+
     // Register event handlers
     if (isConnected) {
       GameService.addEventHandler('game_update', handleGameUpdate);
@@ -297,7 +305,7 @@ export default function OnlineGame() {
       GameService.addEventHandler('error', handleError);
       GameService.addEventHandler('disconnect', handleDisconnect);
     }
-    
+
     // Cleanup event handlers
     return () => {
       if (isConnected) {
@@ -312,60 +320,60 @@ export default function OnlineGame() {
       }
     };
   }, [isConnected, board, gameDirector, myPlayerId]);
-  
+
   // Player-related helper functions
   const getMyResources = () => {
     const myPlayer = players.find(p => p.id === myPlayerId);
     return myPlayer ? myPlayer.resources : {};
   };
-  
+
   const isMyTurn = () => {
     return myPlayerId === currentPlayerId;
   };
-  
+
   const canBuildSettlement = () => {
     const myPlayer = players.find(p => p.id === myPlayerId);
     if (!myPlayer) return false;
-    
+
     const resources = myPlayer.resources || {};
     return (
       (myPlayer.settlements_left > 0) &&
-      (resources.WOOD >= 1 && 
-      resources.BRICK >= 1 && 
-      resources.SHEEP >= 1 && 
-      resources.WHEAT >= 1)
+      (resources.WOOD >= 1 &&
+        resources.BRICK >= 1 &&
+        resources.SHEEP >= 1 &&
+        resources.WHEAT >= 1)
     );
   };
-  
+
   const canBuildCity = () => {
     const myPlayer = players.find(p => p.id === myPlayerId);
     if (!myPlayer) return false;
-    
+
     const resources = myPlayer.resources || {};
     return (myPlayer.cities_left > 0) && (resources.ORE >= 3 && resources.WHEAT >= 2);
   };
-  
+
   const canBuildRoad = () => {
     const myPlayer = players.find(p => p.id === myPlayerId);
     if (!myPlayer) return false;
-    
+
     const resources = myPlayer.resources || {};
     return (myPlayer.roads_left > 0) && (resources.WOOD >= 1 && resources.BRICK >= 1);
   };
-  
+
   // Handle building actions
   const handleCornerClick = (corner: any, tile: any) => {
     if (!isMyTurn() || !buildMode || !board) return;
-    
+
     if (buildMode === 'settlement' || buildMode === 'city') {
       // Get coordinates for the corner
       const coords = [];
       for (const coord of corner.tiles) {
         coords.push(Array.from(coord));
       }
-      
+
       console.log(`Building ${buildMode} at:`, coords);
-      
+
       // Send build action to server
       GameService.sendMessage({
         type: 'game_action',
@@ -374,18 +382,18 @@ export default function OnlineGame() {
       });
     }
   };
-  
+
   const handleEdgeClick = (edge: any, tile: any) => {
     if (!isMyTurn() || buildMode !== 'road' || !board) return;
-    
+
     // Get coordinates for the edge
     const coords = [];
     for (const coord of edge.tiles) {
       coords.push(Array.from(coord));
     }
-    
+
     console.log("Building road at:", coords);
-    
+
     // Send build action to server
     GameService.sendMessage({
       type: 'game_action',
@@ -393,16 +401,16 @@ export default function OnlineGame() {
       coords: coords
     });
   };
-  
+
   const handleLeaveGame = () => {
     GameService.disconnectFromRoom();
     navigate('/');
   };
-  
+
   if (loading) {
     return <LoadingMessage>Loading game...</LoadingMessage>;
   }
-  
+
   if (!board) {
     return <ErrorMessage>Failed to load game board. Please try again.</ErrorMessage>;
   }
@@ -413,32 +421,32 @@ export default function OnlineGame() {
         <h2>Catan Online Game - Room: {roomId}</h2>
         <LeaveButton onClick={handleLeaveGame}>Leave Game</LeaveButton>
       </GameHeader>
-      
+
       {error && <ErrorMessage>{error}</ErrorMessage>}
-      
+
       {diceResult && (
         <GameStatus>
           <h3>Dice Roll: {diceResult}</h3>
         </GameStatus>
       )}
-      
+
       <GameLayout>
         <BoardContainer>
-          <CatanBoard 
-            board={board} 
+          <CatanBoard
+            board={board}
             onCornerClick={handleCornerClick}
             onEdgeClick={handleEdgeClick}
           />
         </BoardContainer>
-        
+
         <SidePanel>
-          <PlayersList 
-            players={players} 
+          <PlayersList
+            players={players}
             currentPlayerId={currentPlayerId}
             isMyTurn={isMyTurn()}
           />
-          
-          <GameActions 
+
+          <GameActions
             isMyTurn={isMyTurn()}
             myResources={getMyResources()}
             canBuildSettlement={canBuildSettlement()}

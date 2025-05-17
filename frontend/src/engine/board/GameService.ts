@@ -1,15 +1,15 @@
 class GameService {
     private static instance: GameService;
     private socket: WebSocket | null = null;
-    private callbacks: {[key: string]: ((data: any) => void)[]} = {};
+    private callbacks: { [key: string]: ((data: any) => void)[] } = {};
     private clientId: string | null = null;
-    
-    // Change these URLs to match your exact backend configuration
-private static readonly API_URL = 'http://localhost:8000/api';
-// Zmodyfikowany WebSocket URL - uwzględniając poprawną ścieżkę
-private static readonly WS_URL = 'ws://localhost:8000/ws';
 
-    private constructor() {}
+    // Change these URLs to match your exact backend configuration
+    private static readonly API_URL = 'http://localhost:8000/api';
+    // Zmodyfikowany WebSocket URL - uwzględniając poprawną ścieżkę
+    private static readonly WS_URL = 'ws://localhost:8000/ws';
+
+    private constructor() { }
 
     public static getInstance(): GameService {
         if (!GameService.instance) {
@@ -27,11 +27,11 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     'Accept': 'application/json',
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP error! Status: ${response.status}`);
             }
-            
+
             const data = await response.json();
             console.log("Created room with ID:", data.room_id);
             return data.room_id;
@@ -46,7 +46,15 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
             this.disconnectFromRoom();
 
             try {
-                const wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
+                // Get auth token if available
+                const authToken = localStorage.getItem('auth_token');
+                let wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
+
+                // Add token to URL if available
+                if (authToken) {
+                    wsUrl += `?token=${authToken}`;
+                }
+
                 console.log(`Connecting to WebSocket: ${wsUrl}`);
                 this.socket = new WebSocket(wsUrl);
 
@@ -77,13 +85,13 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     try {
                         const data = JSON.parse(event.data);
                         console.log('WebSocket message received:', data);
-                        
+
                         // Save client ID if present
                         if (data.type === 'client_id' && data.player_id) {
                             this.clientId = data.player_id;
                             console.log('Set client ID:', this.clientId);
                         }
-                        
+
                         // Dispatch event based on message type
                         if (data.type) {
                             this.dispatchEvent(data.type, data);
@@ -144,13 +152,13 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
         if (this.clientId) {
             return this.clientId;
         }
-        
+
         return new Promise((resolve, reject) => {
             // Set a timeout to make sure we don't wait forever
             const timeout = setTimeout(() => {
                 reject(new Error("Timeout waiting for client ID"));
             }, 5000);
-            
+
             const handler = (data: any) => {
                 if (data.player_id) {
                     this.clientId = data.player_id;
@@ -159,9 +167,9 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     resolve(data.player_id);
                 }
             };
-            
+
             this.addEventHandler('client_id', handler);
-            
+
             // Also try player_joined event
             const joinHandler = (data: any) => {
                 if (data.player_id) {
@@ -171,9 +179,9 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     resolve(data.player_id);
                 }
             };
-            
+
             this.addEventHandler('player_joined', joinHandler);
-            
+
             // Request client ID explicitly if connected
             if (this.isConnected()) {
                 this.sendMessage({
