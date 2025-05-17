@@ -45,4 +45,6 @@ export class Corner {
   hasCity(): boolean {
     return this.occupation?.reward === Reward.City;
   }
+
+  
 }

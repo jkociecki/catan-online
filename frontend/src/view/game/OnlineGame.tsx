@@ -425,15 +425,82 @@ export default function OnlineGame() {
     );
   };
 
-  // Handle building actions
-  const handleCornerClick = (corner: any, tile: any) => {
-    if (!isMyTurn() || !buildMode || !board) return;
+const handleCornerClick = (corner: any, tile: any) => {
+  if (!isMyTurn() || !buildMode || !board) return;
+  
+  console.log("clicked corner!", corner, tile);
 
-    if (buildMode === "settlement" || buildMode === "city") {
-      // Get coordinates for the corner
-      const coords = [];
-      for (const coord of corner.tiles) {
-        coords.push(Array.from(coord));
+  if (buildMode === "settlement" || buildMode === "city") {
+    try {
+      // Instead of trying to get coordinates from the corner,
+      // extract them from the tile's ID which is in the format "q,r,s"
+      const coords: number[][] = [];
+      
+      if (tile && tile.tileId) {
+        // Convert the tileId string (like "-1,1,0") to an array of numbers
+        const tileCoords = tile.tileId.split(',').map(Number);
+        if (tileCoords.length === 3) {
+          coords.push(tileCoords);
+          
+          // Find which corner this is in the tile
+          let cornerIndex = -1;
+          if (tile.corners) {
+            for (let i = 0; i < tile.corners.length; i++) {
+              if (tile.corners[i] === corner) {
+                cornerIndex = i;
+                break;
+              }
+            }
+          }
+          
+          console.log(`Corner index in tile: ${cornerIndex}`);
+          
+          // If we found the corner's index, add it as metadata
+          if (cornerIndex !== -1) {
+            // Add the corner direction as additional data
+            // This is assuming the corners array is ordered according to TileCornerDir enum
+            GameService.sendMessage({
+              type: "game_action",
+              action: `build_${buildMode}`,
+              coords: coords,
+              corner_index: cornerIndex
+            });
+            return;
+          }
+        }
+      }
+      
+      // Alternative approach: try to use a simplified coordinate
+      if (tile && typeof tile.getCornerCoordinates === 'function') {
+        // If the tile has a method to get corner coordinates
+        const cornerCoords = tile.getCornerCoordinates(corner);
+        if (cornerCoords) {
+          coords.push(cornerCoords);
+        }
+      } 
+      
+      // If we still don't have coordinates, try one more approach with the tile ID
+      if (coords.length === 0 && tile && tile.tileId) {
+        const tileCoords = tile.tileId.split(',').map(Number);
+        if (tileCoords.length === 3) {
+          coords.push(tileCoords);
+        }
+      }
+
+      // Upewnij się, że mamy poprawne koordynaty zanim wyślemy wiadomość
+      if (coords.length === 0) {
+        console.error("No coordinates found for corner. Using fallback method.");
+        
+        // Fallback: If we can't determine coordinates from the corner or tile,
+        // send a special message indicating we need the server to resolve the position
+        GameService.sendMessage({
+          type: "game_action",
+          action: `build_${buildMode}`,
+          fallback: true,
+          // Include any useful identifiers
+          tile_id: tile?.tileId || null
+        });
+        return;
       }
 
       console.log(`Building ${buildMode} at:`, coords);
@@ -444,16 +511,100 @@ export default function OnlineGame() {
         action: `build_${buildMode}`,
         coords: coords,
       });
+    } catch (err) {
+      console.error("Error processing corner click:", err);
+      setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
     }
-  };
+  }
+};
 
-  const handleEdgeClick = (edge: any, tile: any) => {
-    if (!isMyTurn() || buildMode !== "road" || !board) return;
+// Podobnie naprawiamy funkcję handleEdgeClick
+const handleEdgeClick = (edge: any, tile: any) => {
+  if (!isMyTurn() || buildMode !== "road" || !board) return;
 
+  try {
     // Get coordinates for the edge
-    const coords = [];
-    for (const coord of edge.tiles) {
-      coords.push(Array.from(coord));
+    const coords: number[][] = [];
+    
+    // Sprawdź czy edge.tiles istnieje i jest iterowalny
+    if (edge.tiles && typeof edge.tiles[Symbol.iterator] === 'function') {
+      for (const coord of edge.tiles) {
+        if (Array.isArray(coord)) {
+          coords.push([...coord]);
+        } else if (typeof coord === 'object' && coord !== null && 
+                   // Safe check for iterable
+                   'forEach' in coord) {
+          // Convert to array safely
+          const coordArray: number[] = [];
+          (coord as any).forEach((value: any) => {
+            if (typeof value === 'number') {
+              coordArray.push(value);
+            }
+          });
+          if (coordArray.length > 0) {
+            coords.push(coordArray);
+          }
+        } else {
+          console.warn("Coordinates in unexpected format:", coord);
+        }
+      }
+    } else if (edge.tiles instanceof Set) {
+      // Jeśli to jest Set, konwertuj każdy element
+      for (const coord of Array.from(edge.tiles)) {
+        if (Array.isArray(coord)) {
+          coords.push([...coord]);
+        } else if (typeof coord === 'object' && coord !== null && 
+                   // Safe check for iterable
+                   'forEach' in coord) {
+          // Convert to array safely
+          const coordArray: number[] = [];
+          (coord as any).forEach((value: any) => {
+            if (typeof value === 'number') {
+              coordArray.push(value);
+            }
+          });
+          if (coordArray.length > 0) {
+            coords.push(coordArray);
+          }
+        } else {
+          console.warn("Coordinates in unexpected format:", coord);
+        }
+      }
+    } else if (typeof edge.getTiles === 'function') {
+      // Lub jeśli istnieje metoda getTiles()
+      const tiles = edge.getTiles();
+      for (const coord of tiles) {
+        if (Array.isArray(coord)) {
+          coords.push([...coord]);
+        } else if (typeof coord === 'object' && coord !== null && 
+                   // Safe check for iterable
+                   'forEach' in coord) {
+          // Convert to array safely
+          const coordArray: number[] = [];
+          (coord as any).forEach((value: any) => {
+            if (typeof value === 'number') {
+              coordArray.push(value);
+            }
+          });
+          if (coordArray.length > 0) {
+            coords.push(coordArray);
+          }
+        } else {
+          console.warn("Coordinates in unexpected format:", coord);
+        }
+      }
+    } else {
+      // Jeśli nie możemy uzyskać koordynatów w żaden sposób, zgłaszamy błąd
+      console.error("Cannot get edge coordinates:", edge);
+      setError("Problem getting edge coordinates");
+      return;
+    }
+
+    // Upewnij się, że mamy poprawne koordynaty zanim wyślemy wiadomość
+    if (coords.length === 0) {
+      console.error("No coordinates found for edge:", edge);
+      setError("No coordinates found for edge");
+      return;
     }
 
     console.log("Building road at:", coords);
@@ -464,7 +615,11 @@ export default function OnlineGame() {
       action: "build_road",
       coords: coords,
     });
-  };
+  } catch (err) {
+    console.error("Error processing edge click:", err);
+    setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
+  }
+};
 
   const handleLeaveGame = () => {
     GameService.disconnectFromRoom();
@@ -542,14 +697,15 @@ export default function OnlineGame() {
             currentPlayerId={currentPlayerId}
             isMyTurn={isMyTurn()}
           />
-
-          <GameActions
+  <GameActions
             isMyTurn={isMyTurn()}
             myResources={getMyResources()}
             canBuildSettlement={canBuildSettlement()}
             canBuildCity={canBuildCity()}
             canBuildRoad={canBuildRoad()}
             gamePhase={gamePhase}
+            players={players}
+            myPlayerId={myPlayerId}
           />
         </SidePanel>
       </GameLayout>

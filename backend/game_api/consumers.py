@@ -596,8 +596,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             'current_player_index': current_player_index,
             'phase': phase
         }
+
+    # W funkcji process_build_settlement w GameConsumer.py
     @database_sync_to_async
-    def process_build_settlement(self, game_state, player_id, coords):
+    def process_build_settlement(self, game_state, player_id, coords, is_setup=False):
         # Find player by ID
         player = None
         for p in game_state.players:
@@ -612,10 +614,46 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Convert coords to the format expected by the game engine
             vertex_coords = set([tuple(coord) for coord in coords])
 
-            # Assuming your game has a method to handle settlement building
-            if hasattr(game_state, 'turn_manager'):
-                return game_state.turn_manager.build_settlement(player, vertex_coords)
-            return False
+            # Obsługa stawiania osady
+            result = False
+
+            # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
+            if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
+                                                                                            None) == "setup":
+                if hasattr(game_state, 'place_initial_settlement'):
+                    result = game_state.place_initial_settlement(player, vertex_coords)
+                else:
+                    # Fallback, jeśli metoda place_initial_settlement nie istnieje
+                    settlement = Building(BuildingType.SETTLEMENT, player)
+                    result = game_state.game_board.place_building(settlement, vertex_coords, free=True)
+                    if result:
+                        player.settlements_left -= 1
+                        player.victory_points += 1
+
+                        # Aktualizuj licznik w setup_placed
+                        if not hasattr(game_state, 'setup_placed'):
+                            game_state.setup_placed = {}
+                        if player.id not in game_state.setup_placed:
+                            game_state.setup_placed[player.id] = [0, 0]
+                        game_state.setup_placed[player.id][0] += 1
+
+                        # Sprawdź czy druga osada - przyznaj zasoby
+                        if game_state.setup_placed[player.id][0] == 2:
+                            adjacent_tiles = game_state.game_board.get_adjacent_tiles(vertex_coords)
+                            for tile in adjacent_tiles:
+                                resource = tile.get_resource()
+                                if resource != Resource.DESERT:
+                                    player.add_resource(resource, 1)
+            else:
+                # Normalna gra - użyj standardowej metody
+                if hasattr(game_state, 'turn_manager'):
+                    result = game_state.turn_manager.build_settlement(player, vertex_coords)
+
+            # Po każdej akcji w fazie setup sprawdź postęp
+            if hasattr(game_state, 'check_setup_progress'):
+                game_state.check_setup_progress()
+
+            return result
         except Exception as e:
             print(f"Error building settlement: {str(e)}")
             return False
@@ -624,11 +662,18 @@ class GameConsumer(AsyncWebsocketConsumer):
     def process_dice_roll(self, game_state):
         """Roll dice and distribute resources"""
         # Sprawdź czy jesteśmy w fazie setup
-        if not hasattr(game_state, 'phase') or game_state.phase == "setup":
+        if not hasattr(game_state, 'phase') or game_state.phase == "setup" or game_state.phase == GamePhase.SETUP:
             raise Exception("Cannot roll dice in the setup phase")
-        
+
+        # Sprawdź czy gra jest prawidłowo zainicjowana
         if not hasattr(game_state, 'turn_manager'):
-            raise Exception("Game not properly initialized")
+            # Utwórz turn_manager, jeśli nie istnieje
+            if hasattr(game_state, 'players') and hasattr(game_state, 'game_board') and hasattr(game_state,
+                                                                                                'game_config'):
+                from game_engine.game.turn_manager import TurnManager
+                game_state.turn_manager = TurnManager(game_state.game_board, game_state.game_config, game_state.players)
+            else:
+                raise Exception("Game not properly initialized")
 
         try:
             # Roll dice
@@ -636,7 +681,19 @@ class GameConsumer(AsyncWebsocketConsumer):
             dice_total = dice1 + dice2
 
             # Distribute resources based on dice roll
-            game_state.distribute_resources(dice_total)
+            if dice_total != 7:  # Standardowe przydzielanie zasobów
+                if hasattr(game_state, 'distribute_resources'):
+                    game_state.distribute_resources(dice_total)
+                elif hasattr(game_state.turn_manager, '_distribute_resources'):
+                    game_state.turn_manager._distribute_resources(dice_total)
+            else:  # Obsługa rabusia (7)
+                if hasattr(game_state, 'handle_robber_roll'):
+                    game_state.handle_robber_roll()
+                elif hasattr(game_state.turn_manager, '_handle_robber'):
+                    game_state.turn_manager._handle_robber()
+
+            # Zmień fazę na MAIN po rzucie kośćmi
+            game_state.phase = GamePhase.MAIN
 
             return {
                 'dice1': dice1,
@@ -647,12 +704,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             print(f"Error rolling dice: {str(e)}")
             raise e
 
-    @database_sync_to_async
-    def process_end_turn(self, game_state):
+    async def process_end_turn(self, game_state):
         """Zakończ turę aktualnego gracza"""
         try:
             print("Rozpoczynam process_end_turn")
-            
+
             # Sprawdź, czy jesteśmy w fazie setup
             is_setup_phase = False
             if hasattr(game_state, 'phase'):
@@ -660,44 +716,77 @@ class GameConsumer(AsyncWebsocketConsumer):
                     is_setup_phase = game_state.phase.lower() == "setup"
                 else:
                     is_setup_phase = game_state.phase == GamePhase.SETUP
-            
+
             if is_setup_phase:
                 print("Jesteśmy w fazie setup")
                 # W fazie setup, przechowujemy indeks aktualnego gracza w atrybucie pokoju
                 current_room = game_rooms[self.room_id]
-                
+
                 # Upewnij się, że klucz istnieje
                 if 'setup_player_index' not in current_room:
                     current_room['setup_player_index'] = 0
-                
+
                 # Przejdź do następnego gracza
                 current_room['setup_player_index'] = (current_room['setup_player_index'] + 1) % len(game_state.players)
-                
+
                 # Sprawdź czy po zmianie tury powinniśmy zaktualizować fazę
                 if hasattr(game_state, 'check_setup_progress'):
                     game_state.check_setup_progress()
-                
+
+                # Sprawdź czy po zmianie gracza zmieniliśmy też fazę
+                new_phase = getattr(game_state, 'phase', None)
+                if new_phase != GamePhase.SETUP and new_phase != "setup":
+                    print(f"Faza gry zmieniła się z SETUP na {new_phase}")
+                    # Wyślij powiadomienie o zmianie fazy
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'phase_change',
+                            'phase': new_phase.value if hasattr(new_phase, 'value') else str(new_phase),
+                            'game_state': self.serialize_game_state(game_state)
+                        }
+                    )
+
                 return True
-            
+
             # W innych fazach
             print("Jesteśmy poza fazą setup")
+            # Zapisz poprzednią fazę
+            prev_phase = getattr(game_state, 'phase', GamePhase.MAIN)
+
             # Używaj istniejących metod
             if hasattr(game_state, 'next_turn'):
                 game_state.next_turn()
-                return True
-            elif hasattr(game_state, 'turn_manager') and game_state.turn_manager:
+                result = True
+            elif hasattr(game_state, 'turn_manager') and hasattr(game_state.turn_manager, 'next_player'):
                 game_state.turn_manager.next_player()
-                return True
-            
-            return False
+                result = True
+            else:
+                result = False
+
+            # Sprawdź czy faza się zmieniła i powiadom klientów
+            new_phase = getattr(game_state, 'phase', None)
+            if new_phase != prev_phase:
+                print(f"Faza gry zmieniła się z {prev_phase} na {new_phase}")
+                # Wyślij powiadomienie o zmianie fazy
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'phase_change',
+                        'phase': new_phase.value if hasattr(new_phase, 'value') else str(new_phase),
+                        'game_state': self.serialize_game_state(game_state)
+                    }
+                )
+
+            return result
         except Exception as e:
             import traceback
             traceback.print_exc()
             print(f"Błąd podczas kończenia tury: {str(e)}")
             return False
-
+    # W funkcji process_build_road w GameConsumer.py
     @database_sync_to_async
-    def process_build_road(self, game_state, player_id, coords):
+    def process_build_road(self, game_state, player_id, coords, is_setup=False):
         """Process road building"""
         player = None
         for p in game_state.players:
@@ -712,9 +801,36 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Convert coords to the format expected by the game engine
             edge_coords = set([tuple(coord) for coord in coords])
 
-            if hasattr(game_state, 'turn_manager'):
-                return game_state.turn_manager.build_road(player, edge_coords)
-            return False
+            result = False
+
+            # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
+            if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
+                                                                                            None) == "setup":
+                if hasattr(game_state, 'place_initial_road'):
+                    result = game_state.place_initial_road(player, edge_coords)
+                else:
+                    # Fallback, jeśli metoda place_initial_road nie istnieje
+                    road = Road(player)
+                    result = game_state.game_board.place_road(road, edge_coords, free=True)
+                    if result:
+                        player.roads_left -= 1
+
+                        # Aktualizuj licznik w setup_placed
+                        if not hasattr(game_state, 'setup_placed'):
+                            game_state.setup_placed = {}
+                        if player.id not in game_state.setup_placed:
+                            game_state.setup_placed[player.id] = [0, 0]
+                        game_state.setup_placed[player.id][1] += 1
+            else:
+                # Normalna gra - użyj standardowej metody
+                if hasattr(game_state, 'turn_manager'):
+                    result = game_state.turn_manager.build_road(player, edge_coords)
+
+            # Po każdej akcji w fazie setup sprawdź postęp
+            if hasattr(game_state, 'check_setup_progress'):
+                game_state.check_setup_progress()
+
+            return result
         except Exception as e:
             print(f"Error building road: {str(e)}")
             return False

@@ -105,7 +105,8 @@ class GameState:
     def check_victory(self, player: Player) -> bool:
         """Check if a player has won the game"""
         return player.has_won(self.game_config.points_to_win)
-    
+
+    # W backend/game_engine/game/game_state.py
     def check_setup_progress(self):
         """Sprawdź postęp fazy setup i odpowiednio aktualizuj stan gry"""
         # Sprawdź czy wszyscy gracze mają postawione początkowe budynki
@@ -114,13 +115,13 @@ class GameState:
             # Jeśli gracz nie ma jeszcze zapisanego postępu, zainicjuj
             if player.id not in self.setup_placed:
                 self.setup_placed[player.id] = [0, 0]  # [osady, drogi]
-            
+
             # Sprawdź czy gracz ma przynajmniej 1 osadę i 1 drogę
             placements = self.setup_placed[player.id]
             if placements[0] < 1 or placements[1] < 1:
                 all_placed = False
                 break
-        
+
         # Jeśli wszyscy gracze mają postawione początkowe budynki, przejdź do drugiej rundy
         if all_placed and self.phase == GamePhase.SETUP:
             # Jeśli wszyscy mają przynajmniej po 1 osadzie i 1 drodze, sprawdź czy mają po 2
@@ -130,18 +131,11 @@ class GameState:
                 if placements[0] < 2 or placements[1] < 2:
                     second_round_complete = False
                     break
-            
+
             # Jeśli druga runda jest zakończona, przejdź do głównej fazy gry
             if second_round_complete:
                 self.phase = GamePhase.ROLL_DICE  # Zmień na ROLL_DICE zamiast MAIN
                 # Tutaj możesz dodać kod do rozdania początkowych zasobów
-                # based on second settlement location
-                
-                # Inicjalizuj turn_manager jeśli jeszcze nie istnieje
-                if not self.turn_manager:
-                    from game_engine.game.turn_manager import TurnManager
-                    self.turn_manager = TurnManager(self.game_board, self.game_config, self.players)
-    
     def place_initial_settlement(self, player, vertex_coords):
         """Postaw początkową osadę w fazie setup (bez kosztu)"""
         # Sprawdź czy gracz może postawić tę osadę
