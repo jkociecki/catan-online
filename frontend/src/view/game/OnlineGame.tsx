@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import GameService from "../../engine/board/GameService";
 import { BoardService } from "../../engine/board/BoardService";
@@ -8,6 +8,9 @@ import { GameDirector } from "../../game/GameDirector";
 import styled from "styled-components";
 import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
+import { Corner } from "../../engine/corner";
+import { Edge } from "../../engine/edge";
+import { BaseTile } from "../../engine/tile";
 
 const GameContainer = styled.div`
   display: flex;
@@ -26,6 +29,7 @@ const GameHeader = styled.div`
 
 const BoardContainer = styled.div`
   flex: 2;
+  position: relative;
 `;
 
 const SidePanel = styled.div`
@@ -94,6 +98,25 @@ const ErrorMessage = styled.div`
   border: 1px solid #ffcccc;
 `;
 
+// Komponent animowanego wskaźnika sukcesu akcji
+const SuccessIndicator = styled.div<{ show: boolean }>`
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(76, 175, 80, 0.9);
+  color: white;
+  padding: 15px 30px;
+  border-radius: 50px;
+  font-weight: bold;
+  font-size: 18px;
+  opacity: ${props => props.show ? 1 : 0};
+  transition: opacity 0.5s;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+`;
+
 export default function OnlineGame() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -114,9 +137,24 @@ export default function OnlineGame() {
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [gamePhase, setGamePhase] = useState<string>("setup");
+  const [showSuccess, setShowSuccess] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string>("");
+  const [pendingBuilds, setPendingBuilds] = useState<any[]>([]);
+  
+  // Znajdź kolor mojego gracza (użytkownika)
+  const myColor = players.find(p => p.id === myPlayerId)?.color || 'red';
+
+  // Funkcja pomocnicza do wyświetlania wskaźnika sukcesu
+  const showSuccessIndicator = useCallback((message: string) => {
+    setSuccessMessage(message);
+    setShowSuccess(true);
+    setTimeout(() => {
+      setShowSuccess(false);
+    }, 2000);
+  }, []);
 
   // Use useMemo to create gameDirector once
-  const gameDirector = useMemo(() => new GameDirector(), []);
+  const gameDirector = React.useMemo(() => new GameDirector(), []);
 
   // Sprawdź czy roomId istnieje
   useEffect(() => {
@@ -157,6 +195,11 @@ export default function OnlineGame() {
           if (initialGameState.players.length > 0) {
             setCurrentPlayerId(initialGameState.players[currentPlayerIndex].id);
           }
+        }
+
+        // Set game phase
+        if (initialGameState.phase) {
+          setGamePhase(initialGameState.phase);
         }
 
         setLoading(false);
@@ -226,9 +269,35 @@ export default function OnlineGame() {
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
 
+      // Pokaż powiadomienie o sukcesie
+      if (data.action) {
+        const actionMessages: { [key: string]: string } = {
+          'build_settlement': 'Osada zbudowana!',
+          'build_city': 'Miasto zbudowane!',
+          'build_road': 'Droga zbudowana!',
+          'end_turn': 'Tura zakończona'
+        };
+        
+        if (actionMessages[data.action] && data.player_id === myPlayerId) {
+          showSuccessIndicator(actionMessages[data.action]);
+          
+          // Usuń z listy oczekujących budowli tę, którą potwierdzono
+          if (data.action.startsWith('build_') && data.coords) {
+            setPendingBuilds(prev => prev.filter(item => 
+              !(item.action === data.action && JSON.stringify(item.coords) === JSON.stringify(data.coords))
+            ));
+          }
+        }
+      }
+
       // Update game state
       if (data.game_state) {
         setGameState(data.game_state);
+        
+        // Update game phase
+        if (data.game_state.phase) {
+          setGamePhase(data.game_state.phase);
+        }
 
         // Update board
         if (data.game_state.board && board) {
@@ -250,7 +319,9 @@ export default function OnlineGame() {
       }
 
       // Clear build mode when game state updates
-      setBuildMode(null);
+      if (data.action === 'end_turn') {
+        setBuildMode(null);
+      }
     };
 
     const handleGameState = (data: any) => {
@@ -286,6 +357,22 @@ export default function OnlineGame() {
       }
     };
 
+    const handlePhaseChange = (data: any) => {
+      console.log("Phase change received:", data);
+      if (data.phase) {
+        setGamePhase(data.phase);
+        
+        // Pokaż powiadomienie o zmianie fazy
+        if (data.phase === 'setup') {
+          showSuccessIndicator('Faza przygotowania rozpoczęta!');
+        } else if (data.phase === 'main' || data.phase === 'MAIN') {
+          showSuccessIndicator('Faza główna gry rozpoczęta!');
+        } else if (data.phase === 'ROLL_DICE') {
+          showSuccessIndicator('Rzuć kośćmi, aby rozpocząć turę');
+        }
+      }
+    };
+
     const handleClientId = (data: any) => {
       if (data.player_id) {
         console.log("Received client ID:", data.player_id);
@@ -303,8 +390,17 @@ export default function OnlineGame() {
       console.log("Dice roll:", data);
       if (data.dice_result) {
         setDiceResult(data.dice_result.total);
+        
+        // Pokaż powiadomienie o rzucie kośćmi
+        if (data.player_id === myPlayerId) {
+          showSuccessIndicator(`Wyrzucono ${data.dice_result.total}!`);
+        }
       } else if (data.result) {
         setDiceResult(data.result.total);
+        
+        if (data.player_id === myPlayerId) {
+          showSuccessIndicator(`Wyrzucono ${data.result.total}!`);
+        }
       }
 
       // Hide dice result after 3 seconds
@@ -314,6 +410,7 @@ export default function OnlineGame() {
     };
 
     const handleBuildModeEnter = (data: any) => {
+      console.log("Build mode entered:", data);
       if (data.player_id === myPlayerId) {
         setBuildMode(data.build_type);
       }
@@ -333,6 +430,7 @@ export default function OnlineGame() {
     if (isConnected) {
       GameService.addEventHandler("game_update", handleGameUpdate);
       GameService.addEventHandler("game_state", handleGameState);
+      GameService.addEventHandler("phase_change", handlePhaseChange);
       GameService.addEventHandler("client_id", handleClientId);
       GameService.addEventHandler("player_joined", handlePlayerJoined);
       GameService.addEventHandler("dice_roll", handleDiceRoll);
@@ -346,6 +444,7 @@ export default function OnlineGame() {
       if (isConnected) {
         GameService.removeEventHandler("game_update", handleGameUpdate);
         GameService.removeEventHandler("game_state", handleGameState);
+        GameService.removeEventHandler("phase_change", handlePhaseChange);
         GameService.removeEventHandler("client_id", handleClientId);
         GameService.removeEventHandler("player_joined", handlePlayerJoined);
         GameService.removeEventHandler("dice_roll", handleDiceRoll);
@@ -354,46 +453,25 @@ export default function OnlineGame() {
         GameService.removeEventHandler("disconnect", handleDisconnect);
       }
     };
-  }, [isConnected, board, gameDirector, myPlayerId]);
-
-  // Dodatkowy efekt do debugowania stanu
-  useEffect(() => {
-    console.log("OnlineGame state update:");
-    console.log("- myPlayerId:", myPlayerId);
-    console.log("- currentPlayerId:", currentPlayerId);
-    console.log("- isMyTurn:", myPlayerId === currentPlayerId);
-    console.log("- players:", players);
-  }, [myPlayerId, currentPlayerId, players]);
-
-  // Awaryjne ustawienie myPlayerId, jeśli jesteśmy pierwszym graczem
-  useEffect(() => {
-    if (
-      (!myPlayerId || myPlayerId === "") &&
-      currentPlayerId &&
-      players.length > 0
-    ) {
-      // Sprawdź czy jesteśmy pierwszym graczem (hostem)
-      const isFirstPlayer = location.state?.createdRoom === true;
-      if (isFirstPlayer) {
-        console.log("Setting myPlayerId as first player:", currentPlayerId);
-        setMyPlayerId(currentPlayerId);
-      }
-    }
-  }, [myPlayerId, currentPlayerId, players, location.state]);
+  }, [isConnected, board, gameDirector, myPlayerId, showSuccessIndicator]);
 
   // Player-related helper functions
-  const getMyResources = () => {
+  const getMyResources = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
     return myPlayer ? myPlayer.resources : {};
-  };
+  }, [players, myPlayerId]);
 
-  const isMyTurn = () => {
+  const isMyTurn = useCallback(() => {
     return myPlayerId === currentPlayerId;
-  };
+  }, [myPlayerId, currentPlayerId]);
 
-  const canBuildSettlement = () => {
+  const canBuildSettlement = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
+
+    if (gamePhase === "setup") {
+      return true; // W fazie setup można budować za darmo
+    }
 
     const resources = myPlayer.resources || {};
     return (
@@ -403,223 +481,223 @@ export default function OnlineGame() {
       resources.SHEEP >= 1 &&
       resources.WHEAT >= 1
     );
-  };
+  }, [players, myPlayerId, gamePhase]);
 
-  const canBuildCity = () => {
+  const canBuildCity = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
+
+    if (gamePhase === "setup") {
+      return false; // W fazie setup nie można budować miast
+    }
 
     const resources = myPlayer.resources || {};
     return (
       myPlayer.cities_left > 0 && resources.ORE >= 3 && resources.WHEAT >= 2
     );
-  };
+  }, [players, myPlayerId, gamePhase]);
 
-  const canBuildRoad = () => {
+  const canBuildRoad = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
+
+    if (gamePhase === "setup") {
+      return true; // W fazie setup można budować za darmo
+    }
 
     const resources = myPlayer.resources || {};
     return (
       myPlayer.roads_left > 0 && resources.WOOD >= 1 && resources.BRICK >= 1
     );
-  };
+  }, [players, myPlayerId, gamePhase]);
 
-const handleCornerClick = (corner: any, tile: any) => {
-  if (!isMyTurn() || !buildMode || !board) return;
-  
-  console.log("clicked corner!", corner, tile);
+  // Zmodyfikowana funkcja do obsługi kliknięcia w róg planszy
+  const handleCornerClick = (corner: Corner, tile: BaseTile) => {
+    if (!isMyTurn() || !buildMode || !board) return;
+    
+    console.log("clicked corner!", corner, tile);
 
-  if (buildMode === "settlement" || buildMode === "city") {
-    try {
-      // Instead of trying to get coordinates from the corner,
-      // extract them from the tile's ID which is in the format "q,r,s"
-      const coords: number[][] = [];
-      
-      if (tile && tile.tileId) {
-        // Convert the tileId string (like "-1,1,0") to an array of numbers
-        const tileCoords = tile.tileId.split(',').map(Number);
-        if (tileCoords.length === 3) {
-          coords.push(tileCoords);
-          
-          // Find which corner this is in the tile
-          let cornerIndex = -1;
-          if (tile.corners) {
-            for (let i = 0; i < tile.corners.length; i++) {
-              if (tile.corners[i] === corner) {
+    if (buildMode === "settlement" || buildMode === "city") {
+      try {
+        // Przygotuj współrzędne dla serwera
+        const coords: number[][] = [];
+        
+        if (tile && tile.tileId) {
+          // Konwertuj ID kafelka (np. "-1,1,0") na tablicę liczb
+          const tileCoords = tile.tileId.split(',').map(Number);
+          if (tileCoords.length === 3) {
+            coords.push(tileCoords);
+            
+            // Znajdź indeks rogu w kafelku
+            let cornerIndex = -1;
+            const corners = tile.getCorners();
+            for (let i = 0; i < corners.length; i++) {
+              if (corners[i] === corner) {
                 cornerIndex = i;
                 break;
               }
             }
-          }
-          
-          console.log(`Corner index in tile: ${cornerIndex}`);
-          
-          // If we found the corner's index, add it as metadata
-          if (cornerIndex !== -1) {
-            // Add the corner direction as additional data
-            // This is assuming the corners array is ordered according to TileCornerDir enum
-            GameService.sendMessage({
-              type: "game_action",
+            
+            console.log(`Corner index in tile: ${cornerIndex}`);
+            
+            // Sprawdź warunki budowania
+            let canBuild = true;
+            
+            // Dla osady: sprawdź czy róg jest pusty
+            if (buildMode === "settlement" && corner.getOwner()) {
+              setError("Ten róg jest już zajęty!");
+              canBuild = false;
+            }
+            
+            // Dla miasta: sprawdź czy jest tam już nasza osada
+            if (buildMode === "city") {
+              const owner = corner.getOwner();
+              if (!owner ) {
+                setError("Możesz ulepszać tylko własne osady!");
+                canBuild = false;
+              } else if (corner.hasCity()) {
+                setError("Ta osada jest już ulepszona do miasta!");
+                canBuild = false;
+              }
+            }
+            
+            if (!canBuild) {
+              return;
+            }
+            
+            // Dodaj budowlę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
+            const newPendingBuild = {
               action: `build_${buildMode}`,
               coords: coords,
-              corner_index: cornerIndex
+              cornerIndex: cornerIndex
+            };
+            
+            // Zapobieganie duplikatom
+            const existingBuildIndex = pendingBuilds.findIndex(
+              item => item.action === newPendingBuild.action && 
+                    JSON.stringify(item.coords) === JSON.stringify(newPendingBuild.coords)
+            );
+            
+            if (existingBuildIndex === -1) {
+              setPendingBuilds(prev => [...prev, newPendingBuild]);
+            }
+            
+            // Wyślij akcję do serwera
+            if (cornerIndex !== -1) {
+              GameService.sendMessage({
+                type: "game_action",
+                action: `build_${buildMode}`,
+                coords: coords,
+                corner_index: cornerIndex
+              });
+              
+              // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
+              showSuccessIndicator(`Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`);
+              
+              // Jeśli jesteśmy w fazie setup, zmień tryb budowania na drogę po postawieniu osady
+              if (gamePhase === "setup" && buildMode === "settlement") {
+                setTimeout(() => {
+                  setBuildMode("road");
+                }, 500);
+              }
+              
+              return;
+            }
+          }
+        }
+        
+        // Alternatywny sposób - użyj uproszczonych współrzędnych
+        if (coords.length === 0) {
+          setError("Nie można określić pozycji dla budowli. Spróbuj ponownie.");
+        }
+      } catch (err) {
+        console.error("Error processing corner click:", err);
+        setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  };
+
+  // Zmodyfikowana funkcja do obsługi kliknięcia krawędzi planszy
+  const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
+    if (!isMyTurn() || buildMode !== "road" || !board) return;
+
+    try {
+      // Przygotuj współrzędne dla serwera
+      const coords: number[][] = [];
+      
+      if (tile && tile.tileId) {
+        // Konwertuj ID kafelka na tablicę liczb
+        const tileCoords = tile.tileId.split(',').map(Number);
+        if (tileCoords.length === 3) {
+          coords.push(tileCoords);
+          
+          // Znajdź indeks krawędzi w kafelku
+          let edgeIndex = -1;
+          const edges = tile.getEdges();
+          for (let i = 0; i < edges.length; i++) {
+            if (edges[i] === edge) {
+              edgeIndex = i;
+              break;
+            }
+          }
+          
+          console.log(`Edge index in tile: ${edgeIndex}`);
+          
+          // Sprawdź czy krawędź jest już zajęta
+          if (edge.getOwner()) {
+            setError("Ta krawędź jest już zajęta!");
+            return;
+          }
+          
+          // Dodaj drogę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
+          const newPendingBuild = {
+            action: "build_road",
+            coords: coords,
+            edgeIndex: edgeIndex
+          };
+          
+          // Zapobieganie duplikatom
+          const existingBuildIndex = pendingBuilds.findIndex(
+            item => item.action === newPendingBuild.action && 
+                  JSON.stringify(item.coords) === JSON.stringify(newPendingBuild.coords)
+          );
+          
+          if (existingBuildIndex === -1) {
+            setPendingBuilds(prev => [...prev, newPendingBuild]);
+          }
+          
+          // Wyślij akcję do serwera
+          if (edgeIndex !== -1) {
+            GameService.sendMessage({
+              type: "game_action",
+              action: "build_road",
+              coords: coords,
+              edge_index: edgeIndex
             });
+            
+            // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
+            showSuccessIndicator("Budowanie drogi...");
+            
+            // W fazie setup po postawieniu drogi automatycznie zakończ turę
+            if (gamePhase === "setup") {
+              setTimeout(() => {
+                GameService.endTurn();
+                setBuildMode(null);
+              }, 1000);
+            }
+            
             return;
           }
         }
       }
       
-      // Alternative approach: try to use a simplified coordinate
-      if (tile && typeof tile.getCornerCoordinates === 'function') {
-        // If the tile has a method to get corner coordinates
-        const cornerCoords = tile.getCornerCoordinates(corner);
-        if (cornerCoords) {
-          coords.push(cornerCoords);
-        }
-      } 
-      
-      // If we still don't have coordinates, try one more approach with the tile ID
-      if (coords.length === 0 && tile && tile.tileId) {
-        const tileCoords = tile.tileId.split(',').map(Number);
-        if (tileCoords.length === 3) {
-          coords.push(tileCoords);
-        }
-      }
-
-      // Upewnij się, że mamy poprawne koordynaty zanim wyślemy wiadomość
-      if (coords.length === 0) {
-        console.error("No coordinates found for corner. Using fallback method.");
-        
-        // Fallback: If we can't determine coordinates from the corner or tile,
-        // send a special message indicating we need the server to resolve the position
-        GameService.sendMessage({
-          type: "game_action",
-          action: `build_${buildMode}`,
-          fallback: true,
-          // Include any useful identifiers
-          tile_id: tile?.tileId || null
-        });
-        return;
-      }
-
-      console.log(`Building ${buildMode} at:`, coords);
-
-      // Send build action to server
-      GameService.sendMessage({
-        type: "game_action",
-        action: `build_${buildMode}`,
-        coords: coords,
-      });
+      // Jeśli nie udało się określić współrzędnych
+      setError("Nie można określić pozycji dla drogi. Spróbuj ponownie.");
     } catch (err) {
-      console.error("Error processing corner click:", err);
+      console.error("Error processing edge click:", err);
       setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
-};
-
-// Podobnie naprawiamy funkcję handleEdgeClick
-const handleEdgeClick = (edge: any, tile: any) => {
-  if (!isMyTurn() || buildMode !== "road" || !board) return;
-
-  try {
-    // Get coordinates for the edge
-    const coords: number[][] = [];
-    
-    // Sprawdź czy edge.tiles istnieje i jest iterowalny
-    if (edge.tiles && typeof edge.tiles[Symbol.iterator] === 'function') {
-      for (const coord of edge.tiles) {
-        if (Array.isArray(coord)) {
-          coords.push([...coord]);
-        } else if (typeof coord === 'object' && coord !== null && 
-                   // Safe check for iterable
-                   'forEach' in coord) {
-          // Convert to array safely
-          const coordArray: number[] = [];
-          (coord as any).forEach((value: any) => {
-            if (typeof value === 'number') {
-              coordArray.push(value);
-            }
-          });
-          if (coordArray.length > 0) {
-            coords.push(coordArray);
-          }
-        } else {
-          console.warn("Coordinates in unexpected format:", coord);
-        }
-      }
-    } else if (edge.tiles instanceof Set) {
-      // Jeśli to jest Set, konwertuj każdy element
-      for (const coord of Array.from(edge.tiles)) {
-        if (Array.isArray(coord)) {
-          coords.push([...coord]);
-        } else if (typeof coord === 'object' && coord !== null && 
-                   // Safe check for iterable
-                   'forEach' in coord) {
-          // Convert to array safely
-          const coordArray: number[] = [];
-          (coord as any).forEach((value: any) => {
-            if (typeof value === 'number') {
-              coordArray.push(value);
-            }
-          });
-          if (coordArray.length > 0) {
-            coords.push(coordArray);
-          }
-        } else {
-          console.warn("Coordinates in unexpected format:", coord);
-        }
-      }
-    } else if (typeof edge.getTiles === 'function') {
-      // Lub jeśli istnieje metoda getTiles()
-      const tiles = edge.getTiles();
-      for (const coord of tiles) {
-        if (Array.isArray(coord)) {
-          coords.push([...coord]);
-        } else if (typeof coord === 'object' && coord !== null && 
-                   // Safe check for iterable
-                   'forEach' in coord) {
-          // Convert to array safely
-          const coordArray: number[] = [];
-          (coord as any).forEach((value: any) => {
-            if (typeof value === 'number') {
-              coordArray.push(value);
-            }
-          });
-          if (coordArray.length > 0) {
-            coords.push(coordArray);
-          }
-        } else {
-          console.warn("Coordinates in unexpected format:", coord);
-        }
-      }
-    } else {
-      // Jeśli nie możemy uzyskać koordynatów w żaden sposób, zgłaszamy błąd
-      console.error("Cannot get edge coordinates:", edge);
-      setError("Problem getting edge coordinates");
-      return;
-    }
-
-    // Upewnij się, że mamy poprawne koordynaty zanim wyślemy wiadomość
-    if (coords.length === 0) {
-      console.error("No coordinates found for edge:", edge);
-      setError("No coordinates found for edge");
-      return;
-    }
-
-    console.log("Building road at:", coords);
-
-    // Send build action to server
-    GameService.sendMessage({
-      type: "game_action",
-      action: "build_road",
-      coords: coords,
-    });
-  } catch (err) {
-    console.error("Error processing edge click:", err);
-    setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
-  }
-};
+  };
 
   const handleLeaveGame = () => {
     GameService.disconnectFromRoom();
@@ -627,12 +705,12 @@ const handleEdgeClick = (edge: any, tile: any) => {
   };
 
   if (loading) {
-    return <LoadingMessage>Loading game...</LoadingMessage>;
+    return <LoadingMessage>Wczytywanie gry...</LoadingMessage>;
   }
 
   if (!board) {
     return (
-      <ErrorMessage>Failed to load game board. Please try again.</ErrorMessage>
+      <ErrorMessage>Nie udało się wczytać planszy gry. Spróbuj ponownie.</ErrorMessage>
     );
   }
 
@@ -641,6 +719,7 @@ const handleEdgeClick = (edge: any, tile: any) => {
     if (isMyTurn()) {
       console.log("Testowanie funkcji końca tury");
       GameService.endTurn();
+      setBuildMode(null);
     } else {
       console.warn("Nie możesz zakończyć tury innego gracza!");
     }
@@ -654,7 +733,7 @@ const handleEdgeClick = (edge: any, tile: any) => {
           <TestButton onClick={handleTestEndTurn} disabled={!isMyTurn()}>
             {isMyTurn() ? "Zakończ turę" : "Oczekiwanie na twoją turę"}
           </TestButton>
-          <LeaveButton onClick={handleLeaveGame}>Leave Game</LeaveButton>
+          <LeaveButton onClick={handleLeaveGame}>Opuść grę</LeaveButton>
         </div>
       </GameHeader>
 
@@ -676,9 +755,14 @@ const handleEdgeClick = (edge: any, tile: any) => {
           : `Tura innego gracza - poczekaj na swoją kolej`}
       </div>
 
+      {/* Wskaźnik sukcesu akcji */}
+      <SuccessIndicator show={showSuccess}>
+        {successMessage}
+      </SuccessIndicator>
+
       {diceResult && (
         <GameStatus>
-          <h3>Dice Roll: {diceResult}</h3>
+          <h3>Wynik rzutu: {diceResult}</h3>
         </GameStatus>
       )}
 
@@ -688,6 +772,10 @@ const handleEdgeClick = (edge: any, tile: any) => {
             board={board}
             onCornerClick={handleCornerClick}
             onEdgeClick={handleEdgeClick}
+            buildMode={buildMode}
+            myPlayerId={myPlayerId}
+            myColor={myColor}
+            gamePhase={gamePhase}
           />
         </BoardContainer>
 
@@ -697,7 +785,7 @@ const handleEdgeClick = (edge: any, tile: any) => {
             currentPlayerId={currentPlayerId}
             isMyTurn={isMyTurn()}
           />
-  <GameActions
+          <GameActions
             isMyTurn={isMyTurn()}
             myResources={getMyResources()}
             canBuildSettlement={canBuildSettlement()}
