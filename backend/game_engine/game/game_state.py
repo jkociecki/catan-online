@@ -137,11 +137,76 @@ class GameState:
                 self.phase = GamePhase.ROLL_DICE  # Zmień na ROLL_DICE zamiast MAIN
                 # Tutaj możesz dodać kod do rozdania początkowych zasobów
 
-    # Poprawiona metoda place_initial_settlement
-    # Poprawiona metoda place_initial_settlement
-    # Poprawiona metoda place_initial_settlement
+   
     def place_initial_settlement(self, player, vertex_coords):
         """Postaw początkową osadę w fazie setup (bez kosztu)"""
+        print("\n----- DIAGNOSTYKA OSAD -----")
+        print(f"Gracz: {player.id}, Próbuje postawić osadę na: {vertex_coords}")
+        
+        # Sprawdźmy WSZYSTKIE budynki i ich właścicieli na planszy
+        buildings_found = 0
+        for key, vertex in self.game_board.vertices.items():
+            if hasattr(vertex, 'building') and vertex.building is not None:
+                buildings_found += 1
+                building_player_id = "BRAK" if not hasattr(vertex.building.player, 'id') else vertex.building.player.id
+                building_type = getattr(vertex.building, 'building_type', 'nieznany')
+                print(f"Budynek #{buildings_found}: {building_type} należący do gracza {building_player_id} na wierzchołku {key}")
+        
+        if buildings_found == 0:
+            print("Na planszy nie ma żadnych budynków!")
+        
+        # Sprawdźmy zawartość setup_placed
+        if hasattr(self, 'setup_placed'):
+            print(f"Zawartość setup_placed: {self.setup_placed}")
+        else:
+            print("Brak setup_placed w obiekcie!")
+        
+        # Znajdźmy istotny wierzchołek
+        problem_vertex = None
+        for key in self.game_board.vertices:
+            if frozenset({(1, -1, 0), (0, 0, 0), (1, 0, -1)}) == key:
+                problem_vertex = key
+                break
+        
+        if problem_vertex:
+            vertex = self.game_board.vertices[problem_vertex]
+            has_building = hasattr(vertex, 'building') and vertex.building is not None
+            print(f"Problematyczny wierzchołek znaleziony: {problem_vertex}")
+            print(f"Czy ma budynek? {has_building}")
+            if has_building:
+                building_player_id = getattr(vertex.building.player, 'id', 'BRAK_ID')
+                print(f"Należy do gracza: {building_player_id}")
+        else:
+            print("Problematyczny wierzchołek NIE ISTNIEJE w słowniku wierzchołków!")
+        
+        print("----- KONIEC DIAGNOSTYKI -----\n")
+        
+        # Reszta funkcji...
+        print(f"DEBUG: Initial state check for player {player.id}")
+        print(f"DEBUG: Player state: {vars(player)}")  # Wypisz wszystkie atrybuty gracza
+        print(f"DEBUG: Game state setup info: {getattr(self, 'setup_placed', 'Not found')}")
+        
+        # Znajdź istniejące osady gracza
+        existing_settlements = []
+        for vertex_key, vertex in self.game_board.vertices.items():
+            if hasattr(vertex, 'building') and vertex.building:
+                if vertex.building.player.id == player.id:
+                    existing_settlements.append(vertex_key)
+        
+        print(f"DEBUG: Actually found settlements for player: {existing_settlements}")
+        
+        # Sprawdź, czy mamy duplikat ID gracza
+        player_ids = [p.id for p in self.players]
+        print(f"DEBUG: All player IDs in game: {player_ids}")
+
+        # Inicjalizacja śledzenia fazy setup
+        if not hasattr(self, 'setup_placed'):
+            self.setup_placed = {}
+        
+        # Zainicjuj śledzenie dla gracza, jeśli jeszcze nie istnieje
+        if player.id not in self.setup_placed:
+            self.setup_placed[player.id] = [0, 0]  # [osady, drogi]
+
         try:
             print(f"Placing initial settlement for player {player.id} at {vertex_coords}")
 
@@ -220,31 +285,30 @@ class GameState:
                     print(f"Could not find valid vertex for coordinates {vertex_coords}")
                     return False
 
-            # Sprawdź czy gracz może postawić tę osadę
+            # ZMIANA KOLEJNOŚCI: Najpierw sprawdź, czy można postawić osadę
             is_setup_phase = True
             is_first_settlement = player.id not in self.setup_placed or self.setup_placed[player.id][0] == 0
 
-            if not self.game_board.can_place_settlement(player, vertex_key, is_setup_phase=is_setup_phase):
-                print(f"Cannot place settlement at {vertex_key} - not a valid location (distance rule violated)")
-                return False
-
-            # Postaw osadę
-            from game_engine.board.buildings import Building, BuildingType
-
-            # Sprawdź czy wierzchołek nie jest już zajęty
+            # Sprawdź, czy wierzchołek nie jest już zajęty
             vertex = self.game_board.vertices[vertex_key]
             if hasattr(vertex, 'building') and vertex.building is not None:
                 print(f"Vertex {vertex_key} already has a building")
                 return False
 
-            # Utwórz budynek i postaw go
+            # Sprawdź czy można tam budować (odległość od innych budynków)
+            if not self.game_board.can_place_settlement(player, vertex_key, is_setup_phase=is_setup_phase):
+                print(f"Cannot place settlement at {vertex_key} - not a valid location (distance rule violated)")
+                return False
+
+            # DOPIERO TERAZ tworzymy budynek i stawiamy go (po sprawdzeniu warunków)
+            from game_engine.board.buildings import Building, BuildingType
             settlement = Building(BuildingType.SETTLEMENT, player)
             result = False
 
             try:
                 # Próba postawienia budynku z użyciem metody place_building
                 if hasattr(self.game_board, 'place_building'):
-                    result = self.game_board.place_building(settlement, vertex_key)
+                    result = self.game_board.place_building(settlement, vertex_key, free=True)
                 else:
                     # Alternatywne podejście, jeśli metoda place_building nie istnieje
                     vertex.building = settlement
@@ -291,8 +355,8 @@ class GameState:
             traceback.print_exc()
             print(f"Error in place_initial_settlement: {str(e)}")
             return False
-    # Poprawiona metoda place_initial_road
-    # Poprawiona metoda place_initial_road
+    
+    
     # Poprawiona metoda place_initial_road
     def place_initial_road(self, player, edge_coords):
         """Postaw początkową drogę w fazie setup (bez kosztu)"""
@@ -482,3 +546,40 @@ class GameState:
             resource = tile.resource
             if resource is not None:  # Nie dodawaj zasobów z pustyni
                 player.add_resource(resource, 1)
+
+    # W game_state.py lub innej odpowiedniej lokalizacji
+    def reset_game(self):
+        """Reset całego stanu gry do początkowego"""
+        # Wyczyść stan planszy
+        for vertex_key in self.game_board.vertices:
+            vertex = self.game_board.vertices[vertex_key]
+            vertex.building = None
+
+        for edge_key in self.game_board.edges:
+            edge = self.game_board.edges[edge_key]
+            edge.road = None
+
+        # Zresetuj stan graczy
+        for player in self.players:
+            player.settlements_left = self.game_config.max_settlements
+            player.cities_left = self.game_config.max_cities
+            player.roads_left = self.game_config.max_roads
+            player.victory_points = 0
+            player.hidden_victory_points = 0
+            player.longest_road = False
+            player.largest_army = False
+            player.development_cards = []
+            player.knights_played = 0
+            player.harbor_bonuses = {None: 4}
+            
+            # Zresetuj zasoby
+            for resource in player.player_resources.resources:
+                player.player_resources.resources[resource] = 0
+
+        # Zresetuj fazę gry
+        self.phase = "setup"
+        
+        # Wyczyść słownik postępu
+        self.setup_placed = {}
+        
+        print("Game state has been reset to initial conditions")

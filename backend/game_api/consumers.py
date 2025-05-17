@@ -7,6 +7,10 @@ from game_engine.player.player import Player
 from game_engine.common.player_color import PlayerColor
 import uuid
 from game_engine.game.game_phase import GamePhase
+from game_engine.board.buildings import Building, BuildingType  # Dodaj ten import
+import time
+
+
 
 
 # Store active game rooms
@@ -130,6 +134,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 if not room['players']:
                     del game_rooms[self.room_id]
 
+
+
     # Receive message from WebSocket
     # Receive message from WebSocket
     async def receive(self, text_data):
@@ -186,6 +192,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 )
 
             elif message_type == 'game_action':
+                check_all_settlements(game_state, "PRZED AKCJĄ")
+
                 # Process game actions (build, trade, etc.)
                 action = data.get('action')
                 print(f"Received game action: {action} with data: {data}")
@@ -561,9 +569,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'current_player_index': 0,
                 'phase': 'setup'
             }
+
+    # W backend/game_api/consumers.py
     @database_sync_to_async
     def process_build_settlement(self, game_state, player_id, coords, is_setup=False):
-        # Find player by ID
+        check_all_settlements(game_state, "POCZĄTEK process_build_settlement")
+
+        # Znajdź gracza
         player = None
         for p in game_state.players:
             if p.id == player_id:
@@ -576,33 +588,43 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         try:
             print(f"Processing build settlement with coords: {coords}")
-            # Convert coords to the format expected by the game engine
-            vertex_coords = set()
+            print("Available vertex keys:")
+            for key in list(game_state.game_board.vertices.keys())[:100]:  # Pokaż kilka przykładowych
+                print(f"  {key}")
 
-            # Sprawdź format przekazanych koordynatów
+            # Poprawna konwersja koordynatów
+            vertex_coords = set()
             if isinstance(coords, list):
                 for coord in coords:
-                    # Koordynaty mogą być listą list lub listą krotek
                     if isinstance(coord, list) and len(coord) == 3:
                         vertex_coords.add(tuple(coord))
-                    elif isinstance(coord, tuple) and len(coord) == 3:
-                        vertex_coords.add(coord)
-            elif isinstance(coords, tuple) and len(coords) == 3:
-                # Pojedyncza krotka
-                vertex_coords.add(coords)
-            elif isinstance(coords, dict) and 'type' in coords:
-                # Obsługa specjalnego formatu z frontendu
-                print(f"Received special format from frontend: {coords}")
-                # Tu dodaj odpowiednią obsługę
-
-            print(f"Vertex coordinates after processing: {vertex_coords}")
-
-            if not vertex_coords:
-                print("No valid vertex coordinates found")
+            
+            # Znajdź prawidłowy klucz wierzchołka
+            vertex_key = None
+            for key in game_state.game_board.vertices.keys():
+                print(f"Checking vertex key: {key}")
+                # Sprawdź, czy klucz ma część wspólną z vertex_coords
+                common = vertex_coords.intersection(key)
+                if common:
+                    print(f"Found common coordinates: {common}")
+                    vertex_key = key
+                    break
+                    
+            if not vertex_key:
+                print(f"Could not find a valid vertex for coordinates {vertex_coords}")
+                # Dodaj więcej informacji o dostępnych wierzchołkach
+                print("Available vertex keys:")
+                for key in list(game_state.game_board.vertices.keys())[:5]:  # Pokaż tylko 5 pierwszych dla czytelności
+                    print(f"  {key}")
                 return False
-
-            # Obsługa stawiania osady
-            result = False
+            check_all_settlements(game_state, "PO SPRAWDZENIU ISTNIEJĄCYCH OSAD")
+   
+            from game_engine.board.buildings import Building, BuildingType
+            # Użyj vertex_key do postawienia osady
+            settlement = Building(BuildingType.SETTLEMENT, player)
+            result = game_state.game_board.place_building(settlement, vertex_key, free=is_setup)
+            
+           
 
             # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
             if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
@@ -977,14 +999,35 @@ class GameConsumer(AsyncWebsocketConsumer):
             'game_state': event['game_state']
         }))
 
+    # async def game_update(self, event):
+    #     await self.send(text_data=json.dumps({
+    #         'type': 'game_update',
+    #         'action': event['action'],
+    #         'player_id': event['player_id'],
+    #         'coords': event.get('coords'),
+    #         'game_state': event['game_state']
+    #     }))
+
     async def game_update(self, event):
+    # Niestandardowy enkoder JSON dla typów, które nie są domyślnie serializowalne
+        class CustomJSONEncoder(json.JSONEncoder):
+            def default(self, obj):
+                # Obsługa enumów (jak PlayerColor)
+                if hasattr(obj, 'value'):
+                    return obj.value
+                # Obsługa innych niestandardowych typów
+                try:
+                    return super().default(obj)
+                except:
+                    return str(obj)  # Ostatecznie konwertuj wszystko na string
+        
         await self.send(text_data=json.dumps({
             'type': 'game_update',
             'action': event['action'],
             'player_id': event['player_id'],
             'coords': event.get('coords'),
             'game_state': event['game_state']
-        }))
+        }, cls=CustomJSONEncoder))
 
     async def dice_roll(self, event):
         """Send dice roll result to WebSocket"""
@@ -1008,3 +1051,53 @@ class GameConsumer(AsyncWebsocketConsumer):
             'phase': event['phase'],
             'game_state': event.get('game_state')
         }))
+
+    #####
+# Dodaj to do pliku consumers.py, tuż po importach
+
+def check_all_settlements(game_state, point_name):
+    try:
+
+        """Sprawdza i loguje stan osad wszystkich graczy w określonym momencie"""
+        print(f"\n===== SPRAWDZANIE OSAD W MOMENCIE: {point_name} =====")
+        print(f"Czas: {time.time()}")
+        
+        if not hasattr(game_state, 'game_board') or not hasattr(game_state.game_board, 'vertices'):
+            print("Brak planszy lub wierzchołków")
+            return
+        
+        # Sprawdź osady dla każdego gracza
+        for player in game_state.players:
+            player_id = getattr(player, 'id', 'unknown')
+            print(f"\nGracz: {player_id}")
+            
+            # Znajdź wszystkie osady gracza
+            player_settlements = []
+            for vertex_key, vertex in game_state.game_board.vertices.items():
+                if hasattr(vertex, 'building') and vertex.building:
+                    if hasattr(vertex.building, 'player') and vertex.building.player == player:
+                        building_type = getattr(vertex.building, 'building_type', 'nieznany')
+                        building_type_name = getattr(building_type, 'name', str(building_type))
+                        player_settlements.append((vertex_key, building_type_name))
+            
+            print(f"Liczba osad gracza {player_id}: {len(player_settlements)}")
+            for i, (vertex_key, building_type) in enumerate(player_settlements):
+                print(f"  {i+1}. Budynek typu {building_type} na wierzchołku {vertex_key}")
+        
+        # Znajdź wszystkie budynki bez określonego właściciela
+        orphan_buildings = []
+        for vertex_key, vertex in game_state.game_board.vertices.items():
+            if hasattr(vertex, 'building') and vertex.building:
+                if not hasattr(vertex.building, 'player') or not vertex.building.player:
+                    building_type = getattr(vertex.building, 'building_type', 'nieznany')
+                    building_type_name = getattr(building_type, 'name', str(building_type))
+                    orphan_buildings.append((vertex_key, building_type_name))
+        
+        if orphan_buildings:
+            print("\nBudynki bez właściciela:")
+            for i, (vertex_key, building_type) in enumerate(orphan_buildings):
+                print(f"  {i+1}. Budynek typu {building_type} na wierzchołku {vertex_key}")
+        
+        print("===== KONIEC SPRAWDZANIA =====\n")
+    except Exception as e:
+        print(f"Błąd podczas sprawdzania osad: {str(e)}")

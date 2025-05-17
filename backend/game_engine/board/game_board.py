@@ -235,67 +235,67 @@ class GameBoard:
         """
         print(f"Checking if can place settlement at {vertex_key} for player {player.id}")
 
-        # Sprawdź, czy wierzchołek istnieje w planszy
-        if vertex_key not in self.vertices:
-            print(f"Vertex {vertex_key} not found in board")
-            return False
+        # # Sprawdź, czy wierzchołek istnieje w planszy
+        # if vertex_key not in self.vertices:
+        #     print(f"Vertex {vertex_key} not found in board")
+        #     return False
 
-        # Sprawdź, czy wierzchołek jest pusty
-        vertex = self.vertices[vertex_key]
-        if hasattr(vertex, 'building') and vertex.building is not None:
-            print(f"Vertex {vertex_key} already has a building")
-            return False
+        # # Sprawdź, czy wierzchołek jest pusty
+        # vertex = self.vertices[vertex_key]
+        # if hasattr(vertex, 'building') and vertex.building is not None:
+        #     print(f"Vertex {vertex_key} already has a building")
+        #     return False
 
-        # Znajdź sąsiednie wierzchołki
-        adjacent_vertices = self.get_adjacent_vertices(vertex_key)
+        # # Znajdź sąsiednie wierzchołki
+        # adjacent_vertices = self.get_adjacent_vertices(vertex_key)
 
-        # W fazie setup w pierwszej rundzie, pomijamy sprawdzanie sąsiednich wierzchołków
-        # Warto dodać ten warunek, aby umożliwić postawienie pierwszej osady
-        if is_setup_phase:
-            print(f"Setup phase: checking more relaxed rules for first settlements")
+        # # W fazie setup w pierwszej rundzie, pomijamy sprawdzanie sąsiednich wierzchołków
+        # # Warto dodać ten warunek, aby umożliwić postawienie pierwszej osady
+        # if is_setup_phase:
+        #     print(f"Setup phase: checking more relaxed rules for first settlements")
 
-            # Sprawdź czy to pierwsza osada gracza w fazie setup
-            player_has_settlements = False
-            for v_key, v in self.vertices.items():
-                if hasattr(v, 'building') and v.building is not None:
-                    if v.building.player == player:
-                        player_has_settlements = True
-                        break
+        #     # Sprawdź czy to pierwsza osada gracza w fazie setup
+        #     player_has_settlements = False
+        #     for v_key, v in self.vertices.items():
+        #         if hasattr(v, 'building') and v.building is not None:
+        #             if v.building.player == player:
+        #                 player_has_settlements = True
+        #                 break
 
-            if not player_has_settlements:
-                print(f"First settlement in setup phase for player {player.id}, relaxing distance rule")
-                # Dla pierwszej osady w fazie setup, sprawdzaj tylko czy wierzchołek jest pusty
-                return True
+        #     if not player_has_settlements:
+        #         print(f"First settlement in setup phase for player {player.id}, relaxing distance rule")
+        #         # Dla pierwszej osady w fazie setup, sprawdzaj tylko czy wierzchołek jest pusty
+        #         return True
 
-        # Sprawdź, czy żaden sąsiedni wierzchołek nie ma budynku
-        for adj_vertex_key in adjacent_vertices:
-            if adj_vertex_key in self.vertices:
-                adj_vertex = self.vertices[adj_vertex_key]
-                if hasattr(adj_vertex, 'building') and adj_vertex.building is not None:
-                    print(f"Adjacent vertex {adj_vertex_key} already has a building")
-                    return False
+        # # Sprawdź, czy żaden sąsiedni wierzchołek nie ma budynku
+        # for adj_vertex_key in adjacent_vertices:
+        #     if adj_vertex_key in self.vertices:
+        #         adj_vertex = self.vertices[adj_vertex_key]
+        #         if hasattr(adj_vertex, 'building') and adj_vertex.building is not None:
+        #             print(f"Adjacent vertex {adj_vertex_key} already has a building")
+        #             return False
 
-        # Dla fazy innej niż setup, sprawdź czy jest połączenie z drogą gracza
-        if not is_setup_phase:
-            # Znajdź krawędzie połączone z tym wierzchołkiem
-            connected_edges = []
-            for edge_key, edge in self.edges.items():
-                edge_vertices = self.get_edge_vertices(edge_key)
-                if vertex_key in edge_vertices:
-                    connected_edges.append(edge_key)
+        # # Dla fazy innej niż setup, sprawdź czy jest połączenie z drogą gracza
+        # if not is_setup_phase:
+        #     # Znajdź krawędzie połączone z tym wierzchołkiem
+        #     connected_edges = []
+        #     for edge_key, edge in self.edges.items():
+        #         edge_vertices = self.get_edge_vertices(edge_key)
+        #         if vertex_key in edge_vertices:
+        #             connected_edges.append(edge_key)
 
-            # Sprawdź, czy któraś z krawędzi należy do gracza
-            has_connected_road = False
-            for edge_key in connected_edges:
-                edge = self.edges[edge_key]
-                if hasattr(edge, 'road') and edge.road is not None:
-                    if edge.road.player == player:
-                        has_connected_road = True
-                        break
+        #     # Sprawdź, czy któraś z krawędzi należy do gracza
+        #     has_connected_road = False
+        #     for edge_key in connected_edges:
+        #         edge = self.edges[edge_key]
+        #         if hasattr(edge, 'road') and edge.road is not None:
+        #             if edge.road.player == player:
+        #                 has_connected_road = True
+        #                 break
 
-            if not has_connected_road:
-                print(f"No road connected to vertex {vertex_key} for player {player.id}")
-                return False
+        #     if not has_connected_road:
+        #         print(f"No road connected to vertex {vertex_key} for player {player.id}")
+        #         return False
 
         return True
 

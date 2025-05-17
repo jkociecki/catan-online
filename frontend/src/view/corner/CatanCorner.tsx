@@ -1,7 +1,7 @@
-import { Corner as CornerData } from '../../engine/corner';
-import styled from 'styled-components';
-import { BaseTile } from '../../engine/tile';
-import { useState, useEffect } from 'react';
+import { Corner as CornerData } from "../../engine/corner";
+import styled from "styled-components";
+import { BaseTile } from "../../engine/tile";
+import { useState, useEffect } from "react";
 
 interface Props {
   onClick?: (corner: CornerData, tile: BaseTile) => void;
@@ -15,26 +15,32 @@ interface Props {
 }
 
 // Stylizowany komponent dla domku (osady)
-const StyledSettlement = styled.polygon<{ 
-  $color: string; 
+const StyledSettlement = styled.polygon<{
+  $color: string;
   $isPreview?: boolean;
   $animate?: boolean;
 }>`
   fill: ${({ $color }) => $color};
   stroke: #333;
   stroke-width: 0.2;
-  opacity: ${({ $isPreview }) => $isPreview ? 0.6 : 1};
+  opacity: ${({ $isPreview }) => ($isPreview ? 0.6 : 1)};
   cursor: pointer;
-  animation: ${({ $animate }) => $animate ? 'pulse 2s infinite' : 'none'};
+  animation: ${({ $animate }) => ($animate ? "pulse 2s infinite" : "none")};
   transform-origin: center;
   transform: scale(1.2);
-  
+
   @keyframes pulse {
-    0% { opacity: 0.7; }
-    50% { opacity: 1; }
-    100% { opacity: 0.7; }
+    0% {
+      opacity: 0.7;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.7;
+    }
   }
-  
+
   &:hover {
     opacity: 0.8;
     stroke-width: 0.3;
@@ -42,26 +48,32 @@ const StyledSettlement = styled.polygon<{
 `;
 
 // Stylizowany komponent dla domku (miasta)
-const StyledCity = styled.path<{ 
-  $color: string; 
+const StyledCity = styled.path<{
+  $color: string;
   $isPreview?: boolean;
   $animate?: boolean;
 }>`
   fill: ${({ $color }) => $color};
   stroke: #333;
   stroke-width: 0.2;
-  opacity: ${({ $isPreview }) => $isPreview ? 0.6 : 1};
+  opacity: ${({ $isPreview }) => ($isPreview ? 0.6 : 1)};
   cursor: pointer;
-  animation: ${({ $animate }) => $animate ? 'pulse 2s infinite' : 'none'};
+  animation: ${({ $animate }) => ($animate ? "pulse 2s infinite" : "none")};
   transform-origin: center;
   transform: scale(1.2);
-  
+
   @keyframes pulse {
-    0% { opacity: 0.7; }
-    50% { opacity: 1; }
-    100% { opacity: 0.7; }
+    0% {
+      opacity: 0.7;
+    }
+    50% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0.7;
+    }
   }
-  
+
   &:hover {
     opacity: 0.8;
     stroke-width: 0.3;
@@ -69,39 +81,57 @@ const StyledCity = styled.path<{
 `;
 
 // Stylizowany punkt "pusty", reagujący na kliknięcia
-const StyledCircle = styled.circle<{ 
-  $buildMode: string | null | undefined; 
+const StyledCircle = styled.circle<{
+  $buildMode: string | null | undefined;
   $isPreviewMode: boolean;
   $hasBuilding: boolean;
   $isActive: boolean;
 }>`
-  fill: ${props => 
-    props.$hasBuilding ? 'transparent' :
-    props.$isActive ? 'rgba(255, 255, 255, 0.3)' :
-    props.$buildMode ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0)'
-  };
-  stroke: ${props => 
-    props.$hasBuilding ? 'transparent' :
-    props.$isActive ? 'white' :
-    props.$buildMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0)'
-  };
+  fill: ${(props) =>
+    props.$hasBuilding
+      ? "transparent"
+      : props.$isActive
+      ? "rgba(255, 255, 255, 0.3)"
+      : props.$buildMode
+      ? "rgba(255, 255, 255, 0.2)"
+      : "rgba(0, 0, 0, 0)"};
+  stroke: ${(props) =>
+    props.$hasBuilding
+      ? "transparent"
+      : props.$isActive
+      ? "white"
+      : props.$buildMode
+      ? "rgba(255, 255, 255, 0.5)"
+      : "rgba(0, 0, 0, 0)"};
   stroke-width: 0.2;
-  stroke-dasharray: ${props => props.$buildMode && !props.$hasBuilding ? '0.3 0.3' : '0'};
-  r: ${props => props.$isActive || props.$buildMode ? 0.8 : 0.7};
+  stroke-dasharray: ${(props) =>
+    props.$buildMode && !props.$hasBuilding ? "0.3 0.3" : "0"};
+  r: ${(props) => (props.$isActive || props.$buildMode ? 0.8 : 0.7)};
   cursor: pointer;
   transition: all 0.2s ease-in-out;
-  
+
   &:hover {
-    fill: ${props => 
-      props.$hasBuilding ? 'transparent' :
-      props.$buildMode ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.2)'
-    };
+    fill: ${(props) =>
+      props.$hasBuilding
+        ? "transparent"
+        : props.$buildMode
+        ? "rgba(255, 255, 255, 0.4)"
+        : "rgba(255, 255, 255, 0.2)"};
     stroke: white;
     r: 0.8;
   }
 `;
 
-export function Corner({ corner, tile, coords, onClick, buildMode, isPreviewMode, myPlayerId, myColor = 'red' }: Props) {
+export function Corner({
+  corner,
+  tile,
+  coords,
+  onClick,
+  buildMode,
+  isPreviewMode,
+  myPlayerId,
+  myColor = "red",
+}: Props) {
   const [showPreview, setShowPreview] = useState(false);
   const [isCity, setIsCity] = useState(false);
   const [isActive, setIsActive] = useState(false);
@@ -112,17 +142,39 @@ export function Corner({ corner, tile, coords, onClick, buildMode, isPreviewMode
   // Określ, czy ta budowla jest miastem
   const isBuildingCity = corner.hasCity();
   // Pobierz kolor gracza, który posiada budowlę
-  const ownerColor = corner.getOwner()?.getColor() || 'gray';
-  
+  const ownerColor = corner.getOwner()?.getColor() || "gray";
+
+  // Log diagnostic info on hover
+  useEffect(() => {
+    if (isPreviewMode) {
+      console.log(
+        `Preview at corner on tile ${
+          tile.tileId
+        } at coords x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(2)}`
+      );
+      if (typeof corner.getVertices === "function") {
+        console.log("Corner vertices:", corner.getVertices());
+      }
+    }
+  }, [isPreviewMode, coords, corner, tile]);
+
   // Efekt dla podglądu budowli przy najechaniu
   useEffect(() => {
     if (isPreviewMode) {
       setIsActive(true);
-      
+
       // Pokaż podgląd budowli zgodnie z trybem
-      if (buildMode === 'settlement' && !hasBuilding) {
+      if (buildMode === "settlement" && !hasBuilding) {
         setShowPreview(true);
         setIsCity(false);
+      } else if (
+        buildMode === "city" &&
+        hasBuilding &&
+        !isBuildingCity &&
+        corner.getOwner()?.getName() === myPlayerId
+      ) {
+        setShowPreview(true);
+        setIsCity(true);
       } else {
         setShowPreview(false);
       }
@@ -130,7 +182,14 @@ export function Corner({ corner, tile, coords, onClick, buildMode, isPreviewMode
       setIsActive(false);
       setShowPreview(false);
     }
-  }, [buildMode, hasBuilding, isBuildingCity, isPreviewMode, corner, myPlayerId]);
+  }, [
+    buildMode,
+    hasBuilding,
+    isBuildingCity,
+    isPreviewMode,
+    corner,
+    myPlayerId,
+  ]);
 
   // Efekt animacji po postawieniu budowli
   useEffect(() => {
@@ -140,12 +199,12 @@ export function Corner({ corner, tile, coords, onClick, buildMode, isPreviewMode
       const timer = setTimeout(() => {
         setAnimate(false);
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [hasBuilding]);
 
-  // Osada to prosty pięciokąt
+  // Osada to prosty pięciokąt - wycentrowany dokładnie na koordynatach
   const settlementPoints = `
     ${coords.x},${coords.y - 0.4}
     ${coords.x + 0.35},${coords.y - 0.1}
@@ -165,56 +224,68 @@ export function Corner({ corner, tile, coords, onClick, buildMode, isPreviewMode
     Z
   `;
 
+  const handleClick = () => {
+    console.log(
+      `Clicked corner at coords x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(
+        2
+      )}`
+    );
+    console.log(
+      `On tile: ${tile.tileId}, corner index in tile: ${tile
+        .getCorners()
+        .indexOf(corner)}`
+    );
+    onClick?.(corner, tile);
+  };
+
   return (
     <>
       {/* Zawsze renderuj "niewidzialny" punkt, który obsługuje kliknięcia */}
       <StyledCircle
         cx={coords.x}
         cy={coords.y}
-        onClick={() => onClick?.(corner, tile)}
+        onClick={handleClick}
         $buildMode={buildMode}
         $isPreviewMode={!!isPreviewMode}
         $hasBuilding={hasBuilding}
         $isActive={isActive}
       />
-      
+
       {/* Jeśli jest budowla, wyświetl odpowiedni kształt */}
-      {hasBuilding && (
-        isBuildingCity ? (
-          <StyledCity 
-            d={cityPath} 
+      {hasBuilding &&
+        (isBuildingCity ? (
+          <StyledCity
+            d={cityPath}
             $color={ownerColor}
             $animate={animate}
-            onClick={() => onClick?.(corner, tile)}
+            onClick={handleClick}
           />
         ) : (
-          <StyledSettlement 
-            points={settlementPoints} 
+          <StyledSettlement
+            points={settlementPoints}
             $color={ownerColor}
             $animate={animate}
-            onClick={() => onClick?.(corner, tile)}
+            onClick={handleClick}
           />
-        )
-      )}
-      
+        ))}
+
       {/* Jeśli pokazujemy podgląd budowli */}
-      {showPreview && (
-        isCity ? (
-          <StyledCity 
-            d={cityPath} 
+      {showPreview &&
+        (isCity ? (
+          <StyledCity
+            d={cityPath}
             $color={myColor}
             $isPreview={true}
-            onClick={() => onClick?.(corner, tile)}
+            onClick={handleClick}
           />
         ) : (
-          <StyledSettlement 
-            points={settlementPoints} 
+          <StyledSettlement
+            points={settlementPoints}
             $color={myColor}
             $isPreview={true}
-            onClick={() => onClick?.(corner, tile)}
+            onClick={handleClick}
           />
-        )
-      )}
+        ))}
     </>
   );
 }
