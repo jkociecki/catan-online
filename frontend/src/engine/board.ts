@@ -78,8 +78,8 @@ export class Board {
     });
 
     // Update vertices (buildings)
-    Object.entries(data.vertices).forEach(([_, vertexData]) => {
-      if (vertexData.building) {
+    Object.entries(data.vertices).forEach(([key, vertexData]) => {
+      if (vertexData?.building) {
         const coords = vertexData.coordinates[0];
         const hexId = `${coords[0]},${coords[1]},${coords[2]}`;
         const tile = this.tiles[hexId];
@@ -95,8 +95,8 @@ export class Board {
     });
 
     // Update edges (roads)
-    Object.entries(data.edges).forEach(([_, edgeData]) => {
-      if (edgeData.road) {
+    Object.entries(data.edges).forEach(([key, edgeData]) => {
+      if (edgeData?.road) {
         const coords = edgeData.coordinates[0];
         const hexId = `${coords[0]},${coords[1]},${coords[2]}`;
         const tile = this.tiles[hexId];

@@ -1,5 +1,4 @@
-import { Component } from 'react';
-import PropTypes from 'prop-types';
+import React from 'react';
 import { Board } from '../../engine/board';
 import { Hex } from '../../engine/types';
 import { Corner } from './CatanCorner';
@@ -7,6 +6,7 @@ import { TileCorner } from '../../engine/tileHelpers';
 import { HexUtils } from 'react-hexgrid';
 import { BaseTile, TileType } from '../../engine/tile';
 import { Corner as CornerData } from '../../engine/corner';
+import { useLayout } from '../context/LayoutContext';
 
 function shouldRenderCorner(
   tile: BaseTile,
@@ -23,21 +23,15 @@ function shouldRenderCorner(
 interface Props {
   hexagons: Hex[];
   board: Board;
-  layout: any;
   onClick: (corner: CornerData, tile: BaseTile) => void;
 }
 
-export class Corners extends Component<Props> {
-  static contextTypes = {
-    layout: PropTypes.object
-  };
-  
+export function Corners({ board, hexagons, onClick }: Props) {
+  const layout = useLayout();
 
-  render() {
-    const { board, hexagons, onClick, layout } = this.props;
-
-    return (
-      hexagons
+  return (
+    <>
+      {hexagons
         // Get every hex coords and tile data
         .map((hex) => ({
           hexCoords: HexUtils.hexToPixel(hex, layout),
@@ -47,7 +41,7 @@ export class Corners extends Component<Props> {
         }))
         // Render
         .map(({ hexCoords, tile, renderN, renderS }, i: number) => (
-          <>
+          <React.Fragment key={`hex-${i}`}>
             {renderN && (
               <Corner
                 key={`corner-${i}-N`}
@@ -72,8 +66,8 @@ export class Corners extends Component<Props> {
                 onClick={onClick}
               />
             )}
-          </>
-        ))
-    );
-  }
+          </React.Fragment>
+        ))}
+    </>
+  );
 }

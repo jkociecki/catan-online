@@ -277,6 +277,21 @@ class GameBoard:
 
         return board_data
 
+    def get_tile_by_coords(self, coords: tuple[int, int, int]) -> Tile | None:
+        """
+        Get a tile by its coordinates.
+        
+        Args:
+            coords: A tuple of (q, r, s) coordinates
+            
+        Returns:
+            The tile at the given coordinates, or None if no tile exists at those coordinates
+        """
+        for tile in self.tiles:
+            if tile.get_coordinates() == coords:
+                return tile
+        return None
+
 
 if __name__ == '__main__':
 
