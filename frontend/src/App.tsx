@@ -8,6 +8,8 @@ import { PlayerResourcesDisplay } from './view/PlayerResources';
 import RoomJoin from './view/room/RoomJoin';
 import RoomLobby from './view/room/LobbyRoom';
 import OnlineGame from './view/game/OnlineGame';
+import { Board } from './engine/board';
+import { BasicGameConfig } from './game/config';
 
 /**
  * What's next?
@@ -18,21 +20,22 @@ import OnlineGame from './view/game/OnlineGame';
  */
 
 export default function App() {
+  const [board] = useState(() => new Board(2, new BasicGameConfig()));
+
   return (
     <BrowserRouter>
       <div className="App">
         <Routes>
           <Route path="/" element={<RoomJoin />} />
           <Route path="/room/:roomId" element={<RoomLobby roomId={window.location.pathname.split('/').pop() || ''} />} />
-          <Route path="/game" element={<OnlineGame />} />
+          <Route path="/game/:roomId" element={<OnlineGame />} />
           <Route path="/local-game" element={
             <div>
               <h1>Catan - Local Game</h1>
               <div style={{ display: 'flex', gap: '20px', padding: '20px' }}>
                 <div style={{ flex: 1 }}>
-                  {/* Uwaga: Prawdopodobnie potrzebujesz zainicjalizować gameDirector i board */}
                   <Game director={new GameDirector()}>
-                    <CatanBoard board={{}} />
+                    <CatanBoard board={board} />
                   </Game>
                 </div>
                 <div style={{ width: '300px' }}>

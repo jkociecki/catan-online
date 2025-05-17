@@ -24,7 +24,7 @@ class TurnManager:
     def __init__(self, game_board: GameBoard, config: GameConfig, players: List[Player]):
         self.game_board = game_board
         self.config = config
-        self.players = players
+        self._players = players
 
         self.current_player_index: int = 0
         self.current_game_phase: GamePhase = GamePhase.SETUP
@@ -47,11 +47,20 @@ class TurnManager:
         self.largest_army_size = 2  # Need at least 3 knights to get the bonus
         self.longest_road_length = 4  # Need at least 5 connected roads to get the bonus
 
+    @property
+    def players(self) -> List[Player]:
+        return self._players
 
+    @players.setter
+    def players(self, new_players: List[Player]):
+        self._players = new_players
+        # Ensure current_player_index is valid
+        if self.current_player_index >= len(new_players):
+            self.current_player_index = 0
 
     @property
     def current_player(self) -> Player:
-        return self.players[self.current_player_index]
+        return self._players[self.current_player_index]
 
     @property
     def current_phase(self) -> GamePhase:
@@ -60,20 +69,20 @@ class TurnManager:
     def next_player(self):
         """Move to the next player according to game phase."""
         if self.current_game_phase == GamePhase.SETUP:
-            if self.setup_settlements_placed < len(self.players):
+            if self.setup_settlements_placed < len(self._players):
                 # First round of setup: clockwise
-                self.current_player_index = (self.current_player_index + 1) % len(self.players)
+                self.current_player_index = (self.current_player_index + 1) % len(self._players)
             else:
                 # Second round of setup: counter-clockwise
-                self.current_player_index = (self.current_player_index - 1) % len(self.players)
+                self.current_player_index = (self.current_player_index - 1) % len(self._players)
 
                 # If we've completed a full counter-clockwise round
-                if self.setup_roads_placed == 2 * len(self.players):
+                if self.setup_roads_placed == 2 * len(self._players):
                     self.current_game_phase = GamePhase.ROLL_DICE
                     self.current_player_index = 0  # Start with first player
         else:
             # Regular game turns: clockwise
-            self.current_player_index = (self.current_player_index + 1) % len(self.players)
+            self.current_player_index = (self.current_player_index + 1) % len(self._players)
             if self.current_player_index == 0:
                 self.round += 1
 
@@ -104,7 +113,7 @@ class TurnManager:
         """Handle players discarding cards when 7 is rolled."""
         players_to_discard = []
 
-        for player in self.players:
+        for player in self._players:
             total_resources = player.get_resource_count()
             if total_resources > 7:
                 resources_to_discard = total_resources // 2
@@ -202,7 +211,7 @@ class TurnManager:
             player.victory_points += 1
             self.setup_settlements_placed += 1
 
-            if self.setup_settlements_placed > len(self.players):
+            if self.setup_settlements_placed > len(self._players):
                 self._give_initial_resources(vertex_coords)
 
         return result
@@ -234,7 +243,7 @@ class TurnManager:
             self.setup_roads_placed += 1
 
             if self.setup_roads_placed == self.setup_settlements_placed:
-                if self.setup_settlements_placed == 2 * len(self.players):
+                if self.setup_settlements_placed == 2 * len(self._players):
                     self.current_game_phase = GamePhase.ROLL_DICE
                     self.current_player_index = 0
                 else:
@@ -407,7 +416,7 @@ class TurnManager:
                 return False
 
             total_stolen = 0
-            for other_player in self.players:
+            for other_player in self._players:
                 if other_player != player:
                     amount = other_player.player_resources.resources[resource]
                     if amount > 0:
@@ -523,6 +532,6 @@ class TurnManager:
                     "has_longest_road": player.longest_road,
                     "has_largest_army": player.largest_army
                 }
-                for player in self.players
+                for player in self._players
             ]
         }

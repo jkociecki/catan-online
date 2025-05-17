@@ -33,9 +33,9 @@ const StyledSvg = styled.svg`
   left: 0;
 `;
 
-export const CatanBoard: React.FC<Props> = ({ 
-  board, 
-  onCornerClick, 
+export const CatanBoard: React.FC<Props> = ({
+  board,
+  onCornerClick,
   onEdgeClick,
   useLocalBuildApi = false
 }) => {
@@ -60,17 +60,19 @@ export const CatanBoard: React.FC<Props> = ({
     orientation: layoutConfig.flat ?
       {
         f0: 3 / 2, f1: 0, f2: Math.sqrt(3) / 2, f3: Math.sqrt(3),
-        b0: 2 / 3, b1: 0, b2: -1 / 3, b3: Math.sqrt(3) / 3
+        b0: 2 / 3, b1: 0, b2: -1 / 3, b3: Math.sqrt(3) / 3,
+        startAngle: 0
       } :
       {
         f0: Math.sqrt(3), f1: Math.sqrt(3) / 2, f2: 0, f3: 3 / 2,
-        b0: Math.sqrt(3) / 3, b1: -1 / 3, b2: 0, b3: 2 / 3
+        b0: Math.sqrt(3) / 3, b1: -1 / 3, b2: 0, b3: 2 / 3,
+        startAngle: 0.5
       }
   };
 
   const handleCornerClick = async (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
-    
+
     // Jeśli używamy lokalnego API do budowania
     if (useLocalBuildApi) {
       try {
@@ -99,7 +101,7 @@ export const CatanBoard: React.FC<Props> = ({
         console.error('Error building settlement:', error);
       }
     }
-    
+
     // Wywołaj callback jeśli został przekazany
     if (onCornerClick) {
       onCornerClick(corner, tile);
@@ -108,7 +110,7 @@ export const CatanBoard: React.FC<Props> = ({
 
   const handleEdgeClick = async (edge: EdgeData, tile: BaseTile) => {
     console.log('clicked edge!', edge, tile);
-    
+
     // Jeśli używamy lokalnego API do budowania
     if (useLocalBuildApi) {
       try {
@@ -137,7 +139,7 @@ export const CatanBoard: React.FC<Props> = ({
         console.error('Error building road:', error);
       }
     }
-    
+
     // Wywołaj callback jeśli został przekazany
     if (onEdgeClick) {
       onEdgeClick(edge, tile);

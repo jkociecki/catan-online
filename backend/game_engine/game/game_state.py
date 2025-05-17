@@ -15,8 +15,10 @@ class GameState:
 
     def add_player(self, player: Player):
         self.players.append(player)
-        if len(self.players) == 4:  # Assuming 4 players
+        if len(self.players) == 1:  # Initialize turn_manager after first player
             self.turn_manager = TurnManager(self.game_board, self.game_config, self.players)
+        elif len(self.players) > 1:  # Update turn_manager with new player
+            self.turn_manager.players = self.players
 
     @property
     def current_player_index(self):

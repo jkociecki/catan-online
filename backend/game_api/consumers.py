@@ -199,21 +199,24 @@ class GameConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                # Handle different game actions
                 if action == 'roll_dice':
-                    result = await self.process_dice_roll(room['game_state'])
-
-                    if result:
-                        # Game state is updated after rolling dice
+                    try:
+                        dice_result = await self.process_dice_roll(room['game_state'])
                         await self.channel_layer.group_send(
                             self.room_group_name,
                             {
-                                'type': 'game_update',
-                                'action': 'roll_dice',
+                                'type': 'dice_roll',
                                 'player_id': self.player_id,
+                                'dice_result': dice_result,
                                 'game_state': self.serialize_game_state(room['game_state'])
                             }
                         )
+                    except Exception as e:
+                        print(f"Error rolling dice: {str(e)}")
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': f'Error rolling dice: {str(e)}'
+                        }))
 
                 elif action == 'build_settlement':
                     # Process settlement building
@@ -339,29 +342,24 @@ class GameConsumer(AsyncWebsocketConsumer):
     def process_dice_roll(self, game_state):
         """Roll dice and distribute resources"""
         if not hasattr(game_state, 'turn_manager'):
-            # Initialize turn manager if not already done
-            if len(game_state.players) > 1:
-                game_state.turn_manager = game_state.players[0]
-                return True
-            return False
+            raise Exception("Game not properly initialized")
 
         try:
+            # Roll dice
             dice1, dice2 = game_state.turn_manager.roll_dice()
             dice_total = dice1 + dice2
 
-            # Notify all players about the dice roll
-            self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'dice_roll',
-                    'result': dice_total
-                }
-            )
+            # Distribute resources based on dice roll
+            game_state.distribute_resources(dice_total)
 
-            return True
+            return {
+                'dice1': dice1,
+                'dice2': dice2,
+                'total': dice_total
+            }
         except Exception as e:
             print(f"Error rolling dice: {str(e)}")
-            return False
+            raise e
 
     @database_sync_to_async
     def process_end_turn(self, game_state):
