@@ -1,19 +1,15 @@
-import { Routes, Route, BrowserRouter } from 'react-router-dom';
-import './styles.css';
-import { CatanBoard } from './view/CatanBoard';
-import { Game } from './game/Game';
-import { GameDirector } from './game/GameDirector';
-import { useEffect, useState } from 'react';
-import { PlayerResourcesDisplay } from './view/PlayerResources';
-import RoomJoin from './view/room/RoomJoin';
-import RoomLobby from './view/room/LobbyRoom';
-import OnlineGame from './view/game/OnlineGame';
-import { Board } from './engine/board';
-import { BasicGameConfig } from './game/config';
-import Navbar from './view/auth/NavBar';
-import Login from './view/auth/Login';
-import Profile from './view/auth/Profile';
-import AuthCallback from './view/auth/AuthCallback';
+import { Routes, Route, BrowserRouter } from "react-router-dom";
+import "./styles.css";
+import { CatanBoard } from "./view/CatanBoard";
+import { Game } from "./game/Game";
+import { GameDirector } from "./game/GameDirector";
+import { useEffect, useState } from "react";
+import { PlayerResourcesDisplay } from "./view/PlayerResources";
+import RoomJoin from "./view/room/RoomJoin";
+import RoomLobby from "./view/room/LobbyRoom";
+import OnlineGame from "./view/game/OnlineGame";
+import { Board } from "./engine/board";
+import { BasicGameConfig } from "./game/config";
 
 /**
  * What's next?
@@ -29,11 +25,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="App">
-        <Navbar />
         <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/auth-callback" element={<AuthCallback />} />
           <Route path="/" element={<RoomJoin />} />
           <Route
             path="/room/:roomId"
