@@ -12,6 +12,7 @@ interface EdgeOccupation {
 
 export class Edge {
   private occupation: EdgeOccupation | undefined;
+  private vertices: string[] = []; // Dodane pole przechowujące współrzędne wierzchołków
 
   constructor(owner?: Player, type: EdgeType = EdgeType.Road) {
     if (owner) {
@@ -39,5 +40,17 @@ export class Edge {
 
   getOwner(): Player | null {
     return this.occupation?.owner || null;
+  }
+
+  // Dodana metoda do zarządzania wierzchołkami
+  addVertex(vertex: string): void {
+    if (!this.vertices.includes(vertex)) {
+      this.vertices.push(vertex);
+    }
+  }
+
+  // Dodana metoda do pobierania wierzchołków
+  getVertices(): string[] {
+    return this.vertices;
   }
 }

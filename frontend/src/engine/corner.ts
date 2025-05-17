@@ -14,6 +14,8 @@ export interface Occupation {
 type Harbor = Resource | Generic;
 
 export class Corner {
+  private vertices: string[] = []; // Dodane pole przechowujące współrzędne wierzchołków
+
   constructor(private harbor?: Harbor, private occupation?: Occupation) {}
 
   // TODO: getters/setters/checkers?
@@ -46,5 +48,15 @@ export class Corner {
     return this.occupation?.reward === Reward.City;
   }
 
-  
+  // Dodana metoda do zarządzania wierzchołkami
+  addVertex(vertex: string): void {
+    if (!this.vertices.includes(vertex)) {
+      this.vertices.push(vertex);
+    }
+  }
+
+  // Dodana metoda do pobierania wierzchołków
+  getVertices(): string[] {
+    return this.vertices;
+  }
 }

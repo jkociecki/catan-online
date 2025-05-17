@@ -46,6 +46,10 @@ export class Board {
   constructor(public size: number, config?: BasicGameConfig) {
     this.hexagons = GridGenerator.hexagon(size + 1); // +1 for the overflow ring
     this.tiles = initTiles(this.hexagons, size, config);
+    
+    // Inicjalizacja wierzchołków dla narożników i krawędzi
+    this.initCornerVertices();
+    this.initEdgeVertices();
   }
 
   getHexes() {
@@ -147,4 +151,36 @@ export class Board {
     const edge = getEdge(this.tiles[tileId], dir, this.tiles);
     edge.placeRoad(player);
   }
+
+  // Dodane metody w klasie Board w pliku board.ts
+// Te metody powinny zostać dodane do klasy Board
+
+// Metoda do inicjalizacji wierzchołków dla narożników (Corners)
+private initCornerVertices(): void {
+  Object.entries(this.tiles).forEach(([tileId, tile]) => {
+    // Dla każdego kafelka, pobieramy jego narożniki
+    const corners = tile.getCorners();
+    
+    // Dodajemy ID kafelka do wierzchołków każdego narożnika
+    corners.forEach((corner, index) => {
+      corner.addVertex(tileId);
+    });
+  });
+}
+
+// Metoda do inicjalizacji wierzchołków dla krawędzi (Edges)
+private initEdgeVertices(): void {
+  Object.entries(this.tiles).forEach(([tileId, tile]) => {
+    // Dla każdego kafelka, pobieramy jego krawędzie
+    const edges = tile.getEdges();
+    
+    // Dodajemy ID kafelka do wierzchołków każdej krawędzi
+    edges.forEach((edge, index) => {
+      edge.addVertex(tileId);
+    });
+  });
+}
+
+// Zaktualizowany konstruktor klasy Board
+
 }

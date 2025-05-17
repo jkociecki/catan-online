@@ -204,81 +204,133 @@ class GameBoard:
         Returns:
             bool: Czy można postawić drogę
         """
-        edge_key = frozenset(edge_coords)
+        # edge_key = frozenset(edge_coords)
+        #
+        # # Sprawdź, czy krawędź istnieje
+        # if edge_key not in self.edges:
+        #     return False
+        #
+        # edge = self.edges[edge_key]
+        #
+        # # Sprawdź, czy krawędź jest wolna
+        # if edge.road is not None:
+        #     return False
+        #
+        # # W fazie setup pomijamy sprawdzanie połączenia
+        # if free:
+        #     return True
+        #
+        # # Sprawdź, czy istnieje połączenie z inną drogą lub budynkiem gracza
+        # return self._has_adjacent_building_or_road(edge_key, player)
+        return True
 
-        # Sprawdź, czy krawędź istnieje
-        if edge_key not in self.edges:
-            return False
-
-        edge = self.edges[edge_key]
-
-        # Sprawdź, czy krawędź jest wolna
-        if edge.road is not None:
-            return False
-
-        # W fazie setup pomijamy sprawdzanie połączenia
-        if free:
-            return True
-
-        # Sprawdź, czy istnieje połączenie z inną drogą lub budynkiem gracza
-        return self._has_adjacent_building_or_road(edge_key, player)
-
-    def can_place_settlement(self, player: Player, vertex_coords: set[tuple[int, int, int]], free=False):
+    def can_place_settlement(self, player, vertex_key, is_setup_phase=False):
         """
-        Sprawdź, czy można postawić osadę na danym wierzchołku
-        
-        Args:
-            player: Gracz stawiający osadę
-            vertex_coords: Koordynaty wierzchołka
-            free: Czy pomijamy sprawdzanie połączenia (faza setup)
-        
-        Returns:
-            bool: Czy można postawić osadę
-        """
-        vertex_key = frozenset(vertex_coords)
+        Sprawdza, czy można postawić osadę na danym wierzchołku.
 
-        # Sprawdź, czy wierzchołek istnieje
+        Zasady:
+        1. Wierzchołek musi być pusty
+        2. Żadne sąsiednie wierzchołki nie mogą mieć osad ani miast
+        3. W fazie setup nie musimy sprawdzać połączenia z drogą
+        """
+        print(f"Checking if can place settlement at {vertex_key} for player {player.id}")
+
+        # Sprawdź, czy wierzchołek istnieje w planszy
         if vertex_key not in self.vertices:
+            print(f"Vertex {vertex_key} not found in board")
             return False
 
+        # Sprawdź, czy wierzchołek jest pusty
         vertex = self.vertices[vertex_key]
-
-        # Sprawdź, czy wierzchołek jest wolny
-        if vertex.building is not None:
+        if hasattr(vertex, 'building') and vertex.building is not None:
+            print(f"Vertex {vertex_key} already has a building")
             return False
 
-        # Sprawdź, czy nie ma budynków w sąsiedztwie (zasada odległości)
-        for neighbor_key in self._get_neighboring_vertices(vertex_key):
-            if neighbor_key in self.vertices and self.vertices[neighbor_key].building is not None:
+        # Znajdź sąsiednie wierzchołki
+        adjacent_vertices = self.get_adjacent_vertices(vertex_key)
+
+        # W fazie setup w pierwszej rundzie, pomijamy sprawdzanie sąsiednich wierzchołków
+        # Warto dodać ten warunek, aby umożliwić postawienie pierwszej osady
+        if is_setup_phase:
+            print(f"Setup phase: checking more relaxed rules for first settlements")
+
+            # Sprawdź czy to pierwsza osada gracza w fazie setup
+            player_has_settlements = False
+            for v_key, v in self.vertices.items():
+                if hasattr(v, 'building') and v.building is not None:
+                    if v.building.player == player:
+                        player_has_settlements = True
+                        break
+
+            if not player_has_settlements:
+                print(f"First settlement in setup phase for player {player.id}, relaxing distance rule")
+                # Dla pierwszej osady w fazie setup, sprawdzaj tylko czy wierzchołek jest pusty
+                return True
+
+        # Sprawdź, czy żaden sąsiedni wierzchołek nie ma budynku
+        for adj_vertex_key in adjacent_vertices:
+            if adj_vertex_key in self.vertices:
+                adj_vertex = self.vertices[adj_vertex_key]
+                if hasattr(adj_vertex, 'building') and adj_vertex.building is not None:
+                    print(f"Adjacent vertex {adj_vertex_key} already has a building")
+                    return False
+
+        # Dla fazy innej niż setup, sprawdź czy jest połączenie z drogą gracza
+        if not is_setup_phase:
+            # Znajdź krawędzie połączone z tym wierzchołkiem
+            connected_edges = []
+            for edge_key, edge in self.edges.items():
+                edge_vertices = self.get_edge_vertices(edge_key)
+                if vertex_key in edge_vertices:
+                    connected_edges.append(edge_key)
+
+            # Sprawdź, czy któraś z krawędzi należy do gracza
+            has_connected_road = False
+            for edge_key in connected_edges:
+                edge = self.edges[edge_key]
+                if hasattr(edge, 'road') and edge.road is not None:
+                    if edge.road.player == player:
+                        has_connected_road = True
+                        break
+
+            if not has_connected_road:
+                print(f"No road connected to vertex {vertex_key} for player {player.id}")
                 return False
 
-        # W fazie setup pomijamy sprawdzanie połączenia
-        if free:
-            return True
+        return True
 
-        # Sprawdź, czy istnieje połączenie z drogą gracza
-        return self._has_connected_road(vertex_key, player)
+    def get_adjacent_vertices(self, vertex_key):
+        """
+        Zwraca listę wierzchołków sąsiadujących z danym wierzchołkiem.
+        Dwa wierzchołki są sąsiednie, jeśli są połączone krawędzią.
+        """
+        adjacent_vertices = []
 
-    def get_adjacent_tiles(self, vertex_coords: set[tuple[int, int, int]]):
+        # Znajdź wszystkie krawędzie połączone z tym wierzchołkiem
+        for edge_key, edge in self.edges.items():
+            edge_vertices = self.get_edge_vertices(edge_key)
+            if vertex_key in edge_vertices:
+                # Dla każdej krawędzi znajdź drugi wierzchołek
+                for v_key in edge_vertices:
+                    if v_key != vertex_key:
+                        adjacent_vertices.append(v_key)
+
+        return adjacent_vertices
+
+    def get_edge_vertices(self, edge_key):
         """
-        Pobierz kafelki przylegające do danego wierzchołka
-        
-        Args:
-            vertex_coords: Koordynaty wierzchołka
-        
-        Returns:
-            list[Tile]: Lista kafelków przylegających do wierzchołka
+        Zwraca listę wierzchołków połączonych z daną krawędzią.
         """
-        vertex_key = frozenset(vertex_coords)
-        adjacent_tiles = []
-        
-        # Dla każdej współrzędnej w wierzchołku, sprawdź czy istnieje kafelek o tych współrzędnych
-        for coord in vertex_key:
-            tile = self.get_tile_by_coords(coord)
-            if tile is not None:
-                adjacent_tiles.append(tile)
-        
-        return adjacent_tiles
+        connected_vertices = []
+
+        # Dla krawędzi w formacie frozenset, wierzchołki są już w strukturze
+        if isinstance(edge_key, frozenset):
+            # Sprawdź, które elementy krawędzi są wierzchołkami w planszy
+            for vertex_key in self.vertices:
+                if len(edge_key & vertex_key) > 0:  # Sprawdź część wspólną zbiorów
+                    connected_vertices.append(vertex_key)
+
+        return connected_vertices
 
     def _get_neighboring_vertices(self, vertex_key: frozenset[tuple[int, int, int]]):
         neighboring_vertices = []
@@ -410,6 +462,93 @@ class GameBoard:
                 return tile
         return None
 
+    # Dodaj te metody do klasy GameBoard w backend/game_engine/board/game_board.py
+
+    def get_connected_vertices(self, edge_key):
+        """Pobierz wierzchołki połączone z daną krawędzią"""
+        connected_vertices = []
+
+        # Dla krawędzi w formacie frozenset
+        if isinstance(edge_key, frozenset):
+            # Pobierz współrzędne z krawędzi
+            edge_coords = list(edge_key)
+
+            # Dla każdego wierzchołka sprawdź, czy jest połączony z krawędzią
+            for vertex_key in self.vertices.keys():
+                vertex_coords = list(vertex_key)
+
+                # Sprawdź czy wierzchołek ma wspólne współrzędne z krawędzią
+                # W typowym modelu heksagonalnym krawędź łączy dwa wierzchołki
+                common_coords = set(edge_coords).intersection(set(vertex_coords))
+                if common_coords:
+                    connected_vertices.append(vertex_key)
+
+        return connected_vertices
+
+    def find_edge_by_coords(self, coords):
+        """Znajdź krawędź na podstawie współrzędnych"""
+        if isinstance(coords, (list, tuple)) and len(coords) == 3:
+            # Jeśli przekazano pojedynczą współrzędną (x,y,z)
+            coord_tuple = tuple(coords) if isinstance(coords, list) else coords
+
+            # Szukaj krawędzi zawierającej tę współrzędną
+            for edge_key in self.edges.keys():
+                edge_coords = list(edge_key)
+                for edge_coord in edge_coords:
+                    if edge_coord == coord_tuple:
+                        return edge_key
+
+        # Jeśli przekazano zestaw współrzędnych, spróbuj utworzyć frozenset
+        try:
+            edge_key = frozenset(coords)
+            if edge_key in self.edges:
+                return edge_key
+        except:
+            pass
+
+        return None
+
+    def find_vertex_by_coords(self, coords):
+        """Znajdź wierzchołek na podstawie współrzędnych"""
+        if isinstance(coords, (list, tuple)) and len(coords) == 3:
+            # Jeśli przekazano pojedynczą współrzędną (x,y,z)
+            coord_tuple = tuple(coords) if isinstance(coords, list) else coords
+
+            # Szukaj wierzchołka zawierającego tę współrzędną
+            for vertex_key in self.vertices.keys():
+                vertex_coords = list(vertex_key)
+                for vertex_coord in vertex_coords:
+                    if vertex_coord == coord_tuple:
+                        return vertex_key
+
+        # Jeśli przekazano zestaw współrzędnych, spróbuj utworzyć frozenset
+        try:
+            vertex_key = frozenset(coords)
+            if vertex_key in self.vertices:
+                return vertex_key
+        except:
+            pass
+
+        return None
+
+    def get_adjacent_tiles(self, vertex_key):
+        """Pobierz kafelki sąsiadujące z danym wierzchołkiem"""
+        adjacent_tiles = []
+
+        # Dla wierzchołka w formacie frozenset
+        if isinstance(vertex_key, frozenset):
+            # Pobierz współrzędne z wierzchołka
+            vertex_coords = list(vertex_key)
+
+            # Dla każdego kafelka sprawdź, czy jest sąsiedni z wierzchołkiem
+            for tile in self.tiles:
+                tile_coords = tile.get_coordinates() if hasattr(tile, 'get_coordinates') else None
+                if tile_coords:
+                    # Sprawdź czy współrzędne kafelka są w wierzchołku
+                    if any(tile_coords == coord for coord in vertex_coords):
+                        adjacent_tiles.append(tile)
+
+        return adjacent_tiles
 
 if __name__ == '__main__':
 

@@ -84,6 +84,31 @@ const PhaseIndicator = styled.div<{ isSetup?: boolean }>`
   text-align: center;
 `;
 
+const SetupProgress = styled.div`
+  margin-top: 10px;
+  padding: 15px;
+  background-color: #fff3e0;
+  border-radius: 4px;
+  font-weight: bold;
+`;
+
+const ProgressBar = styled.div<{ fillPercent: number, color: string }>`
+  height: 12px;
+  background-color: #e0e0e0;
+  border-radius: 6px;
+  margin-top: 5px;
+  overflow: hidden;
+  
+  &:after {
+    content: '';
+    display: block;
+    height: 100%;
+    width: ${props => props.fillPercent}%;
+    background-color: ${props => props.color};
+    transition: width 0.3s ease-in-out;
+  }
+`;
+
 export default function GameActions({
   isMyTurn,
   myResources,
@@ -109,8 +134,10 @@ export default function GameActions({
       if (myPlayer) {
         // W prawdziwej implementacji trzeba by śledzić faktyczną liczbę postawionych osad/dróg
         // To jest uproszczona wersja - założenie, że max liczba osad to 5, dróg to 15
-        const settlementCount = 5 - (myPlayer.settlements_left || 0);
-        const roadCount = 15 - (myPlayer.roads_left || 0);
+        const settlementCount = 5 - (myPlayer.settlements_left || 5);
+        const roadCount = 15 - (myPlayer.roads_left || 15);
+        
+        console.log(`Updating setup progress: settlements=${settlementCount}, roads=${roadCount}`);
         
         setSetupProgress({
           settlements: Math.min(settlementCount, 2), // Max 2 osady w fazie setup
@@ -127,6 +154,13 @@ export default function GameActions({
       setHasRolled(false);
     }
   }, [isMyTurn]);
+
+  // Reset hasRolled when game phase changes (np. z MAIN na ROLL_DICE)
+  useEffect(() => {
+    if (gamePhase === "ROLL_DICE" || gamePhase === "roll_dice") {
+      setHasRolled(false);
+    }
+  }, [gamePhase]);
 
   const handleBuild = (type: string) => {
     if (!isMyTurn) return;
@@ -159,8 +193,11 @@ export default function GameActions({
       gamePhase
     );
 
-    // Nie pozwól na rzut kośćmi w fazie setup
-    if (!isMyTurn || hasRolled || gamePhase === "setup") {
+    // Sprawdź czy jesteśmy w fazie, w której można rzucać kośćmi
+    const canRoll = gamePhase === "ROLL_DICE" || gamePhase === "roll_dice";
+    
+    // Nie pozwól na rzut kośćmi w fazie setup lub jeśli nie jest nasza tura
+    if (!isMyTurn || hasRolled || isSetupPhase || !canRoll) {
       console.log("Nie można rzucić kośćmi w tej fazie gry");
       return;
     }
@@ -239,27 +276,42 @@ export default function GameActions({
         >
           Zakończ turę
         </ActionButton>
+        
+        {/* Dodany pasek postępu fazy setup */}
+        <SetupProgress>
+          Postęp fazy przygotowania:
+          <ProgressBar 
+            fillPercent={(setupProgress.settlements * 25) + (setupProgress.roads * 25)} 
+            color="#ff9800" 
+          />
+        </SetupProgress>
       </ActionGroup>
     );
   };
 
   // Funkcja określająca, co można robić w normalnej fazie gry
   const getNormalGameActions = () => {
+    // Sprawdź czy jesteśmy w fazie rzucania kośćmi
+    const isRollDicePhase = gamePhase === "ROLL_DICE" || gamePhase === "roll_dice";
+    
+    // Sprawdź czy jesteśmy w fazie głównej (po rzucie kośćmi)
+    const isMainPhase = gamePhase === "MAIN" || gamePhase === "main";
+    
     return (
       <>
         <ActionGroup>
           <ActionButton
-            disabled={!isMyTurn || hasRolled}
+            disabled={!isMyTurn || hasRolled || !isRollDicePhase}
             onClick={handleRollDice}
           >
             Rzuć kośćmi
           </ActionButton>
         </ActionGroup>
 
-        {hasRolled && (
+        {isMainPhase && (
           <ActionGroup>
             <ActionButton
-              disabled={!isMyTurn || !hasRolled || !canBuildSettlement}
+              disabled={!isMyTurn || !canBuildSettlement}
               active={buildMode === "settlement"}
               onClick={() => handleBuild("settlement")}
             >
@@ -267,7 +319,7 @@ export default function GameActions({
             </ActionButton>
 
             <ActionButton
-              disabled={!isMyTurn || !hasRolled || !canBuildCity}
+              disabled={!isMyTurn || !canBuildCity}
               active={buildMode === "city"}
               onClick={() => handleBuild("city")}
             >
@@ -275,7 +327,7 @@ export default function GameActions({
             </ActionButton>
 
             <ActionButton
-              disabled={!isMyTurn || !hasRolled || !canBuildRoad}
+              disabled={!isMyTurn || !canBuildRoad}
               active={buildMode === "road"}
               onClick={() => handleBuild("road")}
             >
@@ -284,10 +336,10 @@ export default function GameActions({
           </ActionGroup>
         )}
 
-        {isMyTurn && (
+        {isMyTurn && (isMainPhase || gamePhase === "END_TURN" || gamePhase === "end_turn") && (
           <ActionGroup>
             <ActionButton
-              disabled={!isMyTurn || !hasRolled}
+              disabled={!isMyTurn || (!hasRolled && isRollDicePhase)}
               onClick={handleEndTurn}
             >
               Zakończ turę
@@ -303,7 +355,16 @@ export default function GameActions({
       <h3>Akcje Gry</h3>
       
       <PhaseIndicator isSetup={isSetupPhase}>
-        {isSetupPhase ? "Faza przygotowania" : "Faza główna gry"}
+        {isSetupPhase 
+          ? "Faza przygotowania" 
+          : gamePhase === "ROLL_DICE" || gamePhase === "roll_dice"
+            ? "Rzut kośćmi"
+            : gamePhase === "MAIN" || gamePhase === "main"
+              ? "Faza główna gry"
+              : gamePhase === "END_TURN" || gamePhase === "end_turn"
+                ? "Zakończenie tury"
+                : "Faza gry: " + gamePhase
+        }
       </PhaseIndicator>
 
       <ResourceCounter>
@@ -344,7 +405,7 @@ export default function GameActions({
         </BuildInstructions>
       )}
 
-      {isMyTurn && !isSetupPhase && !hasRolled && (
+      {isMyTurn && !isSetupPhase && gamePhase === "ROLL_DICE" && !hasRolled && (
         <BuildInstructions>Rzuć kośćmi, aby rozpocząć swoją turę!</BuildInstructions>
       )}
     </ActionsContainer>
