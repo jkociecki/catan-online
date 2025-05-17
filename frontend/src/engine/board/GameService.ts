@@ -3,19 +3,43 @@ class GameService {
     private socket: WebSocket | null = null;
     private callbacks: {[key: string]: ((data: any) => void)[]} = {};
     private clientId: string | null = null;
+    private roomId: string | null = null;
+    private reconnectionAttempts: number = 0;
+    private readonly MAX_RECONNECTION_ATTEMPTS = 5;
     
     // Change these URLs to match your exact backend configuration
-private static readonly API_URL = 'http://localhost:8000/api';
-// Zmodyfikowany WebSocket URL - uwzględniając poprawną ścieżkę
-private static readonly WS_URL = 'ws://localhost:8000/ws';
+    private static readonly API_URL = 'http://localhost:8000/api';
+    // Zmodyfikowany WebSocket URL - uwzględniając poprawną ścieżkę
+    private static readonly WS_URL = 'ws://localhost:8000/ws';
 
-    private constructor() {}
+    private constructor() {
+        // Setup event listener for online/offline status
+        window.addEventListener('online', this.handleOnlineStatus.bind(this));
+        window.addEventListener('offline', this.handleOfflineStatus.bind(this));
+        
+        // Setup unload handler to notify the server when the user leaves
+        window.addEventListener('beforeunload', () => {
+            this.disconnectFromRoom();
+        });
+    }
 
     public static getInstance(): GameService {
         if (!GameService.instance) {
             GameService.instance = new GameService();
         }
         return GameService.instance;
+    }
+
+    private handleOnlineStatus() {
+        console.log("Browser went online, checking connection...");
+        if (this.roomId && !this.isConnected()) {
+            console.log("Reconnecting after coming back online");
+            this.reconnectIfNeeded(this.roomId);
+        }
+    }
+
+    private handleOfflineStatus() {
+        console.log("Browser went offline");
     }
 
     public async createRoom(): Promise<string> {
@@ -41,21 +65,40 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
         }
     }
 
-    public connectToRoom(roomId: string): Promise<void> {
+    public async connectToRoom(roomId: string): Promise<void> {
         return new Promise((resolve, reject) => {
             this.disconnectFromRoom();
+            this.roomId = roomId;
 
             try {
-                const wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
+                // Check if we have a stored client ID for this room
+                const storedClientId = localStorage.getItem(`catan_player_id_${roomId}`);
+                let wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
+                
+                // If we have a stored client ID, add it to the URL for reconnection
+                if (storedClientId) {
+                    wsUrl += `?existing_id=${storedClientId}`;
+                    console.log(`Reconnecting with existing ID: ${storedClientId}`);
+                    this.clientId = storedClientId;
+                }
+                
                 console.log(`Connecting to WebSocket: ${wsUrl}`);
                 this.socket = new WebSocket(wsUrl);
 
                 this.socket.onopen = () => {
                     console.log('WebSocket connected successfully!');
+                    this.reconnectionAttempts = 0;
+                    
                     // Request client ID immediately after connection
                     this.sendMessage({
                         type: 'get_client_id'
                     });
+                    
+                    // Request game state
+                    setTimeout(() => {
+                        this.getGameState();
+                    }, 300);
+                    
                     resolve();
                 };
 
@@ -63,7 +106,19 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     console.log('WebSocket disconnected:', event);
                     if (event.code !== 1000) {
                         console.error(`WebSocket closed abnormally. Code: ${event.code}, Reason: ${event.reason}`);
+                        
+                        // Attempt automatic reconnection if it wasn't a normal closure
+                        if (this.roomId && this.reconnectionAttempts < this.MAX_RECONNECTION_ATTEMPTS) {
+                            this.reconnectionAttempts++;
+                            const backoffDelay = Math.min(1000 * Math.pow(2, this.reconnectionAttempts), 10000);
+                            console.log(`Attempting to reconnect in ${backoffDelay/1000} seconds... (attempt ${this.reconnectionAttempts})`);
+                            
+                            setTimeout(() => {
+                                this.reconnectIfNeeded(this.roomId!);
+                            }, backoffDelay);
+                        }
                     }
+                    
                     this.socket = null;
                     this.dispatchEvent('disconnect', { code: event.code, reason: event.reason });
                 };
@@ -82,6 +137,9 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                         if (data.type === 'client_id' && data.player_id) {
                             this.clientId = data.player_id;
                             console.log('Set client ID:', this.clientId);
+                            
+                            // Store client ID for this room in localStorage for reconnection
+                            localStorage.setItem(`catan_player_id_${roomId}`, this.clientId);
                         }
                         
                         // Dispatch event based on message type
@@ -99,12 +157,30 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
         });
     }
 
+    public async reconnectIfNeeded(roomId: string): Promise<boolean> {
+        if (this.isConnected()) {
+            console.log("Already connected to WebSocket");
+            return true;
+        }
+        
+        try {
+            await this.connectToRoom(roomId);
+            // Request latest game state after connecting
+            this.getGameState();
+            return true;
+        } catch (error) {
+            console.error("Failed to reconnect:", error);
+            return false;
+        }
+    }
+
     public disconnectFromRoom(): void {
         if (this.socket) {
             console.log("Disconnecting from WebSocket");
             this.socket.close();
             this.socket = null;
         }
+        // Don't clear clientId to allow reconnection
     }
 
     public sendMessage(message: any): void {
@@ -114,6 +190,18 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
             this.socket.send(messageStr);
         } else {
             console.error('WebSocket not connected, message not sent:', message);
+            
+            // Try to reconnect if possible
+            if (this.roomId) {
+                console.log('Attempting to reconnect before sending message');
+                this.reconnectIfNeeded(this.roomId).then(success => {
+                    if (success && this.socket && this.socket.readyState === WebSocket.OPEN) {
+                        console.log('Reconnected, now sending delayed message');
+                        const messageStr = JSON.stringify(message);
+                        this.socket.send(messageStr);
+                    }
+                });
+            }
         }
     }
 
@@ -156,6 +244,12 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     this.clientId = data.player_id;
                     this.removeEventHandler('client_id', handler);
                     clearTimeout(timeout);
+                    
+                    // Store client ID for this room in localStorage
+                    if (this.roomId) {
+                        localStorage.setItem(`catan_player_id_${this.roomId}`, this.clientId);
+                    }
+                    
                     resolve(data.player_id);
                 }
             };
@@ -168,6 +262,12 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
                     this.clientId = data.player_id;
                     this.removeEventHandler('player_joined', joinHandler);
                     clearTimeout(timeout);
+                    
+                    // Store client ID for this room in localStorage
+                    if (this.roomId) {
+                        localStorage.setItem(`catan_player_id_${this.roomId}`, this.clientId);
+                    }
+                    
                     resolve(data.player_id);
                 }
             };
@@ -227,6 +327,13 @@ private static readonly WS_URL = 'ws://localhost:8000/ws';
         this.sendMessage({
             type: 'game_action',
             action: 'end_turn'
+        });
+    }
+
+    public enterBuildMode(buildType: string | null): void {
+        this.sendMessage({
+            type: 'enter_build_mode', 
+            build_type: buildType
         });
     }
 }

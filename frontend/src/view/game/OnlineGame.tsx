@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import GameService from '../../engine/board/GameService';
 import { BoardService } from '../../engine/board/BoardService';
@@ -79,6 +79,20 @@ const ErrorMessage = styled.div`
   border: 1px solid #ffcccc;
 `;
 
+const ReconnectButton = styled.button`
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 15px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+  
+  &:hover {
+    background-color: #45a049;
+  }
+`;
+
 export default function OnlineGame() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -94,10 +108,29 @@ export default function OnlineGame() {
   const [players, setPlayers] = useState<any[]>([]);
   const [myPlayerId, setMyPlayerId] = useState<string>('');
   const [buildMode, setBuildMode] = useState<string | null>(null);
-  const [diceResult, setDiceResult] = useState<number | null>(null);
+  const [diceResult, setDiceResult] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [gameStarted, setGameStarted] = useState<boolean>(false);
+  
+  // Keep a ref to the latest state to use in event handlers
+  const currentPlayerIdRef = useRef<string>(currentPlayerId);
+  const myPlayerIdRef = useRef<string>(myPlayerId);
+  const buildModeRef = useRef<string | null>(buildMode);
+  
+  // Update refs when state changes
+  useEffect(() => {
+    currentPlayerIdRef.current = currentPlayerId;
+  }, [currentPlayerId]);
+  
+  useEffect(() => {
+    myPlayerIdRef.current = myPlayerId;
+  }, [myPlayerId]);
+  
+  useEffect(() => {
+    buildModeRef.current = buildMode;
+  }, [buildMode]);
   
   // Use useMemo to create gameDirector once
   const gameDirector = useMemo(() => new GameDirector(), []);
@@ -135,6 +168,18 @@ export default function OnlineGame() {
     }
   }, [initialGameState, gameDirector]);
 
+  // Restore player ID from localStorage if available
+  useEffect(() => {
+    if (roomId) {
+      const storedPlayerId = localStorage.getItem(`catan_player_id_${roomId}`);
+      if (storedPlayerId) {
+        console.log("Restored player ID from localStorage:", storedPlayerId);
+        setMyPlayerId(storedPlayerId);
+        myPlayerIdRef.current = storedPlayerId;
+      }
+    }
+  }, [roomId]);
+
   // Setup WebSocket connection
   useEffect(() => {
     if (!roomId) {
@@ -158,6 +203,7 @@ export default function OnlineGame() {
           try {
             const id = await GameService.getClientId();
             setMyPlayerId(id);
+            myPlayerIdRef.current = id;
             console.log("Got player ID:", id);
           } catch (idErr) {
             console.warn("Couldn't get client ID immediately, will try again later", idErr);
@@ -189,6 +235,28 @@ export default function OnlineGame() {
     };
   }, [roomId, fetchRandomBoardIfNeeded, navigate]);
   
+  // Handle reconnection
+  const handleReconnect = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const success = await GameService.reconnectIfNeeded(roomId);
+      if (success) {
+        setIsConnected(true);
+        setError(null);
+        // Request latest game state
+        GameService.getGameState();
+      } else {
+        setError("Failed to reconnect. Please try again or rejoin the room.");
+      }
+    } catch (err) {
+      setError(`Reconnection error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   // Setup WebSocket event handlers
   useEffect(() => {
     // Handle game state updates
@@ -212,10 +280,15 @@ export default function OnlineGame() {
           
           // Update current player
           const currentPlayerIndex = data.game_state.current_player_index || 0;
-          if (data.game_state.players.length > 0) {
+          if (data.game_state.players.length > 0 && currentPlayerIndex < data.game_state.players.length) {
             setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
           }
         }
+      }
+      
+      // Check if action is end_turn, explicitly update current player
+      if (data.action === 'end_turn' && data.new_player_id) {
+        setCurrentPlayerId(data.new_player_id);
       }
       
       // Clear build mode when game state updates
@@ -229,7 +302,7 @@ export default function OnlineGame() {
         setGameState(data.game_state);
         
         // Update board
-        if (data.game_state.board && board) {
+        if (data.game_state.board) {
           const updatedBoard = new Board(2, gameDirector.getConfig());
           updatedBoard.loadFromData(data.game_state.board);
           setBoard(updatedBoard);
@@ -241,7 +314,7 @@ export default function OnlineGame() {
           
           // Update current player
           const currentPlayerIndex = data.game_state.current_player_index || 0;
-          if (data.game_state.players.length > 0) {
+          if (data.game_state.players.length > 0 && currentPlayerIndex < data.game_state.players.length) {
             setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
           }
         }
@@ -252,6 +325,12 @@ export default function OnlineGame() {
       if (data.player_id) {
         console.log("Received client ID:", data.player_id);
         setMyPlayerId(data.player_id);
+        myPlayerIdRef.current = data.player_id;
+        
+        // Store in localStorage for reconnection
+        if (roomId) {
+          localStorage.setItem(`catan_player_id_${roomId}`, data.player_id);
+        }
       }
     };
     
@@ -261,8 +340,50 @@ export default function OnlineGame() {
       GameService.getGameState();
     };
     
+    const handleGameStart = (data: any) => {
+      console.log("Game start event received:", data);
+      setGameStarted(true);
+      
+      if (data.game_state) {
+        setGameState(data.game_state);
+        
+        // Update board
+        if (data.game_state.board) {
+          const updatedBoard = new Board(2, gameDirector.getConfig());
+          updatedBoard.loadFromData(data.game_state.board);
+          setBoard(updatedBoard);
+        }
+        
+        // Update players
+        if (data.game_state.players) {
+          setPlayers(data.game_state.players);
+          
+          // Set current player to the first player
+          if (data.game_state.players.length > 0) {
+            setCurrentPlayerId(data.game_state.players[0].id);
+          }
+        }
+      }
+    };
+    
     const handleDiceRoll = (data: any) => {
-      setDiceResult(data.result);
+      console.log("Dice roll result:", data);
+      setDiceResult(data.dice_result);
+      
+      // Update game state if provided
+      if (data.game_state) {
+        setGameState(data.game_state);
+        
+        if (data.game_state.players) {
+          setPlayers(data.game_state.players);
+          
+          // Update current player
+          const currentPlayerIndex = data.game_state.current_player_index || 0;
+          if (data.game_state.players.length > 0 && currentPlayerIndex < data.game_state.players.length) {
+            setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
+          }
+        }
+      }
       
       // Hide dice result after 3 seconds
       setTimeout(() => {
@@ -270,8 +391,11 @@ export default function OnlineGame() {
       }, 3000);
     };
     
-    const handleBuildModeEnter = (data: any) => {
-      if (data.player_id === myPlayerId) {
+    const handleBuildMode = (data: any) => {
+      console.log("Build mode update:", data);
+      
+      // Only update build mode for the current player
+      if (data.player_id === myPlayerIdRef.current) {
         setBuildMode(data.build_type);
       }
     };
@@ -279,52 +403,54 @@ export default function OnlineGame() {
     const handleError = (data: any) => {
       console.error("Game error:", data.message);
       setError(data.message || "An unknown error occurred");
+      
+      // Clear loading state if there's an error
+      setLoading(false);
     };
     
-    const handleDisconnect = () => {
+    const handleDisconnect = (data: any) => {
+      console.log("Disconnected from game server:", data);
       setIsConnected(false);
-      setError("Disconnected from game server. Try refreshing the page.");
+      setError("Disconnected from game server. Try reconnecting.");
     };
     
     // Register event handlers
-    if (isConnected) {
-      GameService.addEventHandler('game_update', handleGameUpdate);
-      GameService.addEventHandler('game_state', handleGameState);
-      GameService.addEventHandler('client_id', handleClientId);
-      GameService.addEventHandler('player_joined', handlePlayerJoined);
-      GameService.addEventHandler('dice_roll', handleDiceRoll);
-      GameService.addEventHandler('build_mode', handleBuildModeEnter);
-      GameService.addEventHandler('error', handleError);
-      GameService.addEventHandler('disconnect', handleDisconnect);
-    }
+    GameService.addEventHandler('game_update', handleGameUpdate);
+    GameService.addEventHandler('game_state', handleGameState);
+    GameService.addEventHandler('client_id', handleClientId);
+    GameService.addEventHandler('player_joined', handlePlayerJoined);
+    GameService.addEventHandler('game_start', handleGameStart);
+    GameService.addEventHandler('dice_roll', handleDiceRoll);
+    GameService.addEventHandler('build_mode', handleBuildMode);
+    GameService.addEventHandler('error', handleError);
+    GameService.addEventHandler('disconnect', handleDisconnect);
     
     // Cleanup event handlers
     return () => {
-      if (isConnected) {
-        GameService.removeEventHandler('game_update', handleGameUpdate);
-        GameService.removeEventHandler('game_state', handleGameState);
-        GameService.removeEventHandler('client_id', handleClientId);
-        GameService.removeEventHandler('player_joined', handlePlayerJoined);
-        GameService.removeEventHandler('dice_roll', handleDiceRoll);
-        GameService.removeEventHandler('build_mode', handleBuildModeEnter);
-        GameService.removeEventHandler('error', handleError);
-        GameService.removeEventHandler('disconnect', handleDisconnect);
-      }
+      GameService.removeEventHandler('game_update', handleGameUpdate);
+      GameService.removeEventHandler('game_state', handleGameState);
+      GameService.removeEventHandler('client_id', handleClientId);
+      GameService.removeEventHandler('player_joined', handlePlayerJoined);
+      GameService.removeEventHandler('game_start', handleGameStart);
+      GameService.removeEventHandler('dice_roll', handleDiceRoll);
+      GameService.removeEventHandler('build_mode', handleBuildMode);
+      GameService.removeEventHandler('error', handleError);
+      GameService.removeEventHandler('disconnect', handleDisconnect);
     };
-  }, [isConnected, board, gameDirector, myPlayerId]);
+  }, [board, gameDirector, roomId]);
   
   // Player-related helper functions
-  const getMyResources = () => {
-    const myPlayer = players.find(p => p.id === myPlayerId);
+  const getMyResources = useCallback(() => {
+    const myPlayer = players.find(p => p.id === myPlayerIdRef.current);
     return myPlayer ? myPlayer.resources : {};
-  };
+  }, [players]);
   
-  const isMyTurn = () => {
-    return myPlayerId === currentPlayerId;
-  };
+  const isMyTurn = useCallback(() => {
+    return myPlayerIdRef.current === currentPlayerIdRef.current;
+  }, []);
   
-  const canBuildSettlement = () => {
-    const myPlayer = players.find(p => p.id === myPlayerId);
+  const canBuildSettlement = useCallback(() => {
+    const myPlayer = players.find(p => p.id === myPlayerIdRef.current);
     if (!myPlayer) return false;
     
     const resources = myPlayer.resources || {};
@@ -335,63 +461,93 @@ export default function OnlineGame() {
       resources.SHEEP >= 1 && 
       resources.WHEAT >= 1)
     );
-  };
+  }, [players]);
   
-  const canBuildCity = () => {
-    const myPlayer = players.find(p => p.id === myPlayerId);
+  const canBuildCity = useCallback(() => {
+    const myPlayer = players.find(p => p.id === myPlayerIdRef.current);
     if (!myPlayer) return false;
     
     const resources = myPlayer.resources || {};
     return (myPlayer.cities_left > 0) && (resources.ORE >= 3 && resources.WHEAT >= 2);
-  };
+  }, [players]);
   
-  const canBuildRoad = () => {
-    const myPlayer = players.find(p => p.id === myPlayerId);
+  const canBuildRoad = useCallback(() => {
+    const myPlayer = players.find(p => p.id === myPlayerIdRef.current);
     if (!myPlayer) return false;
     
     const resources = myPlayer.resources || {};
     return (myPlayer.roads_left > 0) && (resources.WOOD >= 1 && resources.BRICK >= 1);
-  };
+  }, [players]);
   
   // Handle building actions
   const handleCornerClick = (corner: any, tile: any) => {
-    if (!isMyTurn() || !buildMode || !board) return;
-    
-    if (buildMode === 'settlement' || buildMode === 'city') {
-      // Get coordinates for the corner
-      const coords = [];
-      for (const coord of corner.tiles) {
-        coords.push(Array.from(coord));
+    if (!isMyTurn() || !buildModeRef.current || !board) {
+      console.log("Cannot build: not your turn or not in build mode");
+      if (!isMyTurn()) {
+        setError("It's not your turn");
+        setTimeout(() => setError(null), 3000);
       }
-      
-      console.log(`Building ${buildMode} at:`, coords);
-      
-      // Send build action to server
-      GameService.sendMessage({
-        type: 'game_action',
-        action: `build_${buildMode}`,
-        coords: coords
-      });
+      return;
+    }
+    
+    try {
+      if (buildModeRef.current === 'settlement' || buildModeRef.current === 'city') {
+        // Get coordinates for the corner
+        const coords = [];
+        for (const coord of corner.tiles) {
+          coords.push(Array.from(coord));
+        }
+        
+        console.log(`Building ${buildModeRef.current} at:`, coords);
+        
+        // Send build action to server
+        if (buildModeRef.current === 'settlement') {
+          GameService.buildSettlement(coords);
+        } else {
+          GameService.buildCity(coords);
+        }
+        
+        // Clear build mode locally
+        setBuildMode(null);
+        GameService.enterBuildMode(null);
+      }
+    } catch (error) {
+      console.error(`Error handling ${buildModeRef.current} build:`, error);
+      setError(`Failed to build ${buildModeRef.current}. Please try again.`);
+      setTimeout(() => setError(null), 3000);
     }
   };
   
   const handleEdgeClick = (edge: any, tile: any) => {
-    if (!isMyTurn() || buildMode !== 'road' || !board) return;
-    
-    // Get coordinates for the edge
-    const coords = [];
-    for (const coord of edge.tiles) {
-      coords.push(Array.from(coord));
+    if (!isMyTurn() || buildModeRef.current !== 'road' || !board) {
+      console.log("Cannot build road: not your turn or not in road build mode");
+      if (!isMyTurn()) {
+        setError("It's not your turn");
+        setTimeout(() => setError(null), 3000);
+      }
+      return;
     }
     
-    console.log("Building road at:", coords);
-    
-    // Send build action to server
-    GameService.sendMessage({
-      type: 'game_action',
-      action: 'build_road',
-      coords: coords
-    });
+    try {
+      // Get coordinates for the edge
+      const coords = [];
+      for (const coord of edge.tiles) {
+        coords.push(Array.from(coord));
+      }
+      
+      console.log("Building road at:", coords);
+      
+      // Send build action to server
+      GameService.buildRoad(coords);
+      
+      // Clear build mode locally
+      setBuildMode(null);
+      GameService.enterBuildMode(null);
+    } catch (error) {
+      console.error("Error handling road build:", error);
+      setError("Failed to build road. Please try again.");
+      setTimeout(() => setError(null), 3000);
+    }
   };
   
   const handleLeaveGame = () => {
@@ -403,8 +559,45 @@ export default function OnlineGame() {
     return <LoadingMessage>Loading game...</LoadingMessage>;
   }
   
+  if (!isConnected && error) {
+    return (
+      <GameContainer>
+        <GameHeader>
+          <h2>Connection Error</h2>
+        </GameHeader>
+        <ErrorMessage>
+          {error}
+          <div style={{ marginTop: '15px' }}>
+            <ReconnectButton onClick={handleReconnect}>
+              Reconnect
+            </ReconnectButton>
+            {' '}
+            <LeaveButton onClick={handleLeaveGame}>
+              Return to Menu
+            </LeaveButton>
+          </div>
+        </ErrorMessage>
+      </GameContainer>
+    );
+  }
+  
   if (!board) {
-    return <ErrorMessage>Failed to load game board. Please try again.</ErrorMessage>;
+    return (
+      <GameContainer>
+        <ErrorMessage>
+          Failed to load game board. Please try again.
+          <div style={{ marginTop: '15px' }}>
+            <ReconnectButton onClick={handleReconnect}>
+              Try Again
+            </ReconnectButton>
+            {' '}
+            <LeaveButton onClick={handleLeaveGame}>
+              Return to Menu
+            </LeaveButton>
+          </div>
+        </ErrorMessage>
+      </GameContainer>
+    );
   }
 
   return (
@@ -418,7 +611,7 @@ export default function OnlineGame() {
       
       {diceResult && (
         <GameStatus>
-          <h3>Dice Roll: {diceResult}</h3>
+          <h3>Dice Roll: {diceResult.total} ({diceResult.dice1} + {diceResult.dice2})</h3>
         </GameStatus>
       )}
       
@@ -435,7 +628,7 @@ export default function OnlineGame() {
           <PlayersList 
             players={players} 
             currentPlayerId={currentPlayerId}
-            isMyTurn={isMyTurn()}
+            myPlayerId={myPlayerId}
           />
           
           <GameActions 
@@ -444,6 +637,13 @@ export default function OnlineGame() {
             canBuildSettlement={canBuildSettlement()}
             canBuildCity={canBuildCity()}
             canBuildRoad={canBuildRoad()}
+            buildMode={buildMode}
+            setBuildMode={(type) => {
+              setBuildMode(type);
+              GameService.enterBuildMode(type);
+            }}
+            onRollDice={() => GameService.rollDice()}
+            onEndTurn={() => GameService.endTurn()}
           />
         </SidePanel>
       </GameLayout>

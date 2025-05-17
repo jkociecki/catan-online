@@ -17,12 +17,16 @@ const PlayerList = styled.div`
   border-radius: 5px;
 `;
 
-const PlayerItem = styled.div<{ color: string }>`
+const PlayerItem = styled.div<{ color: string; isMe: boolean }>`
   padding: 10px;
   margin: 5px 0;
   background-color: ${props => props.color || '#333333'};
   color: white;
   border-radius: 3px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  ${props => props.isMe && 'border: 2px solid #333; font-weight: bold;'}
 `;
 
 const RoomCode = styled.div`
@@ -85,6 +89,21 @@ const StartButton = styled.button`
   }
 `;
 
+const CopyButton = styled.button`
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 10px;
+  font-size: 14px;
+  
+  &:hover {
+    background-color: #0b7dda;
+  }
+`;
+
 interface RoomLobbyProps {
   roomId: string;
 }
@@ -100,7 +119,19 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState<string>('');
   const navigate = useNavigate();
+
+  // Helper function to copy room ID to clipboard
+  const copyRoomIdToClipboard = () => {
+    navigator.clipboard.writeText(roomId).then(() => {
+      setCopySuccess('Copied!');
+      setTimeout(() => setCopySuccess(''), 2000);
+    }).catch(err => {
+      console.error('Failed to copy: ', err);
+      setCopySuccess('Failed to copy');
+    });
+  };
 
   useEffect(() => {
     const connectToRoom = async () => {
@@ -120,6 +151,12 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
           console.log("My player ID:", id);
         } catch (idErr) {
           console.warn("Failed to get client ID immediately:", idErr);
+          
+          // Try to get from localStorage
+          const storedId = localStorage.getItem(`catan_player_id_${roomId}`);
+          if (storedId) {
+            setMyPlayerId(storedId);
+          }
         }
         
         // Request game state to ensure we have the latest info
@@ -163,7 +200,7 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
     };
 
     const handleGameStart = (data: any) => {
-      console.log("Game start event:", data);
+      console.log("Game start event received:", data);
       setStatus("Game is starting! Redirecting to game board...");
       
       // Navigate to game board when the game starts
@@ -183,6 +220,16 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
           color: p.color || '#333333'
         }));
         setPlayers(playersList);
+        
+        // If the game has already started, redirect to game
+        if (data.game_state.current_player_index !== undefined) {
+          navigate(`/game/${roomId}`, { 
+            state: { 
+              gameState: data.game_state, 
+              roomId 
+            }
+          });
+        }
       }
     };
 
@@ -195,6 +242,9 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
       if (data.player_id) {
         setMyPlayerId(data.player_id);
         console.log("Received client ID:", data.player_id);
+        
+        // Store in localStorage
+        localStorage.setItem(`catan_player_id_${roomId}`, data.player_id);
       }
     };
 
@@ -242,7 +292,12 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
     <LobbyContainer>
       <h2>Game Lobby</h2>
       <RoomCode>
-        <p>Room Code: <strong>{roomId}</strong></p>
+        <p>Room Code: 
+          <strong> {roomId} </strong>
+          <CopyButton onClick={copyRoomIdToClipboard}>
+            {copySuccess ? copySuccess : 'Copy'}
+          </CopyButton>
+        </p>
         <p>Share this code with others to join</p>
       </RoomCode>
       
@@ -255,9 +310,18 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
           <p>Waiting for players to join...</p>
         ) : (
           players.map(player => (
-            <PlayerItem key={player.id} color={player.color}>
-              Player {player.id.substring(0, 6)}...
-              {player.id === myPlayerId && " (You)"}
+            <PlayerItem 
+              key={player.id} 
+              color={player.color}
+              isMe={player.id === myPlayerId}
+            >
+              <span>
+                Player {player.id.substring(0, 6)}...
+                {player.id === myPlayerId && " (You)"}
+              </span>
+              {player.id === myPlayerId && (
+                <span>👤</span>
+              )}
             </PlayerItem>
           ))
         )}

@@ -9,7 +9,7 @@ interface PlayerListProps {
     victory_points: number;
   }>;
   currentPlayerId: string;
-  isMyTurn: boolean;
+  myPlayerId: string;
 }
 
 const PlayerContainer = styled.div`
@@ -20,7 +20,7 @@ const PlayerContainer = styled.div`
   overflow: hidden;
 `;
 
-const PlayerCard = styled.div<{ isActive: boolean; playerColor: string }>`
+const PlayerCard = styled.div<{ isActive: boolean; isMe: boolean; playerColor: string }>`
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -30,10 +30,16 @@ const PlayerCard = styled.div<{ isActive: boolean; playerColor: string }>`
   color: ${(props) => props.isActive ? 'white' : 'black'};
   border-left: 5px solid ${(props) => props.playerColor};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  ${(props) => props.isMe && `
+    border: 2px solid #333;
+    font-weight: ${props.isActive ? 'bold' : 'normal'};
+  `}
 `;
 
 const PlayerName = styled.div`
   font-weight: bold;
+  display: flex;
+  align-items: center;
 `;
 
 const PlayerStats = styled.div`
@@ -64,12 +70,23 @@ const CurrentTurnIndicator = styled.div`
   margin-right: 10px;
 `;
 
-export default function PlayersList({ players, currentPlayerId, isMyTurn }: PlayerListProps) {
+const YourPlayerIndicator = styled.span`
+  background-color: #ffeb3b;
+  color: #333;
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 0.8rem;
+  margin-left: 8px;
+`;
+
+export default function PlayersList({ players, currentPlayerId, myPlayerId }: PlayerListProps) {
   return (
     <PlayerContainer>
       <h3>Players</h3>
       {players.map((player) => {
         const isCurrentPlayer = player.id === currentPlayerId;
+        const isMe = player.id === myPlayerId;
+        
         // Display only first 8 characters of ID for readability
         const displayName = `Player ${player.id.substring(0, 8)}`;
         
@@ -77,12 +94,13 @@ export default function PlayersList({ players, currentPlayerId, isMyTurn }: Play
           <PlayerCard 
             key={player.id}
             isActive={isCurrentPlayer}
+            isMe={isMe}
             playerColor={player.color}
           >
             <PlayerName>
               {isCurrentPlayer && <CurrentTurnIndicator>→</CurrentTurnIndicator>}
               {displayName}
-              {isMyTurn && isCurrentPlayer && " (Your Turn)"}
+              {isMe && <YourPlayerIndicator>YOU</YourPlayerIndicator>}
             </PlayerName>
             <PlayerStats>
               <ResourceCount>

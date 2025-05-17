@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
-import GameService from '../../engine/board/GameService';
 
 interface GameActionsProps {
   isMyTurn: boolean;
@@ -8,6 +7,10 @@ interface GameActionsProps {
   canBuildSettlement: boolean;
   canBuildCity: boolean;
   canBuildRoad: boolean;
+  buildMode: string | null;
+  setBuildMode: (type: string | null) => void;
+  onRollDice: () => void;
+  onEndTurn: () => void;
 }
 
 const ActionsContainer = styled.div`
@@ -48,7 +51,6 @@ const ResourceCounter = styled.div`
   gap: 10px;
 `;
 
-// Zmieniam definicję komponentu Resource, żeby przyjmował tylko jedno dziecko
 const Resource = styled.div`
   display: flex;
   align-items: center;
@@ -74,56 +76,70 @@ const BuildInstructions = styled.div`
   font-style: italic;
 `;
 
+const StatusBadge = styled.div<{type: 'active' | 'waiting' | 'ready'}>`
+  background-color: ${props => 
+    props.type === 'active' ? '#4caf50' : 
+    props.type === 'ready' ? '#2196F3' : '#f57c00'};
+  color: white;
+  border-radius: 15px;
+  padding: 3px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  display: inline-block;
+  margin-bottom: 15px;
+`;
+
 export default function GameActions({
   isMyTurn,
   myResources,
   canBuildSettlement,
   canBuildCity,
-  canBuildRoad
+  canBuildRoad,
+  buildMode,
+  setBuildMode,
+  onRollDice,
+  onEndTurn
 }: GameActionsProps) {
-  const [buildMode, setBuildMode] = useState<string | null>(null);
   const [hasRolled, setHasRolled] = useState<boolean>(false);
 
-  // Reset build mode and hasRolled when turn changes
+  // Reset hasRolled state when turn changes
   useEffect(() => {
     if (!isMyTurn) {
-      setBuildMode(null);
       setHasRolled(false);
     }
   }, [isMyTurn]);
 
   const handleBuild = (type: string) => {
-    if (!isMyTurn) return;
+    if (!isMyTurn || !hasRolled) {
+      console.log("Cannot build: not your turn or haven't rolled dice");
+      return;
+    }
     
     // Toggle build mode
     if (buildMode === type) {
       setBuildMode(null);
-      // Notify game service about exiting build mode
-      GameService.sendMessage({
-        type: 'enter_build_mode',
-        build_type: null
-      });
     } else {
       setBuildMode(type);
-      // Notify the game service about entering build mode
-      GameService.sendMessage({
-        type: 'enter_build_mode',
-        build_type: type
-      });
     }
   };
 
   const handleRollDice = () => {
-    if (!isMyTurn || hasRolled) return;
+    if (!isMyTurn || hasRolled) {
+      console.log("Cannot roll dice: not your turn or already rolled");
+      return;
+    }
     
-    GameService.rollDice();
+    onRollDice();
     setHasRolled(true);
   };
 
   const handleEndTurn = () => {
-    if (!isMyTurn) return;
+    if (!isMyTurn || !hasRolled) {
+      console.log("Cannot end turn: not your turn or haven't rolled dice");
+      return;
+    }
     
-    GameService.endTurn();
+    onEndTurn();
     setBuildMode(null);
     setHasRolled(false);
   };
@@ -141,9 +157,21 @@ export default function GameActions({
   const sortedResources = Object.entries(myResources || {})
     .sort(([a], [b]) => a.localeCompare(b));
 
+  const getStatusBadge = () => {
+    if (!isMyTurn) {
+      return <StatusBadge type="waiting">Waiting for Opponent</StatusBadge>;
+    }
+    if (isMyTurn && !hasRolled) {
+      return <StatusBadge type="ready">Your Turn - Roll Dice</StatusBadge>;
+    }
+    return <StatusBadge type="active">Your Turn - Building Phase</StatusBadge>;
+  };
+
   return (
     <ActionsContainer>
       <h3>Game Actions</h3>
+      
+      {getStatusBadge()}
       
       <ResourceCounter>
         {sortedResources.length > 0 ? (
