@@ -37,8 +37,17 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "game_api.apps.GameApiConfig",
+   # "game_api.apps.GameApiConfig",
     "corsheaders",
+    'channels',
+    'game_api',
+]
+
+CORS_ALLOW_ALL_ORIGINS = True  # For development only, restrict in production
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React app
+    "http://127.0.0.1:3000",
 ]
 
 MIDDLEWARE = [
@@ -71,7 +80,12 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "backend.wsgi.application"
-
+ASGI_APPLICATION = 'backend.asgi.application'  # Poprawiona ścieżka
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases

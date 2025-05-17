@@ -1,3 +1,5 @@
+import uuid
+
 from django.http import JsonResponse
 from game_engine.board.game_board import GameBoard
 from game_engine.common.game_config import GameConfig
@@ -239,4 +241,8 @@ def build_settlement(request):
         except Exception as e:
             print(f"Error building settlement: {str(e)}")
             return JsonResponse({"status": "error", "message": str(e)}, status=400)
-    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405) 
+    return JsonResponse({"status": "error", "message": "Method not allowed"}, status=405)
+
+def create_game_room(request):
+    room_id = str(uuid.uuid4())[:8]  # Generate a short unique ID
+    return JsonResponse({'room_id': room_id})

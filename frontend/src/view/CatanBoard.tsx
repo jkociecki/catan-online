@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, HexUtils } from 'react-hexgrid';
+import { Layout } from 'react-hexgrid';
 import { Board } from '../engine/board';
 import styled from 'styled-components';
 import { Corners } from './corner/CatanCorners';
@@ -12,6 +12,9 @@ import { LayoutContext } from './context/LayoutContext';
 
 interface Props {
   board: Board;
+  onCornerClick?: (corner: CornerData, tile: BaseTile) => void;
+  onEdgeClick?: (edge: EdgeData, tile: BaseTile) => void;
+  useLocalBuildApi?: boolean;
 }
 
 const StyledWrapper = styled.div`
@@ -30,7 +33,12 @@ const StyledSvg = styled.svg`
   left: 0;
 `;
 
-export const CatanBoard: React.FC<Props> = ({ board }) => {
+export const CatanBoard: React.FC<Props> = ({ 
+  board, 
+  onCornerClick, 
+  onEdgeClick,
+  useLocalBuildApi = false
+}) => {
   const hexagons = board.getHexes();
 
   // Tworzenie poprawnego obiektu layoutu zgodnego z biblioteką react-hexgrid
@@ -40,7 +48,6 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
     flat: false,
     origin: { x: 0, y: 0 }
   };
-
   // Stwórz właściwy obiekt layout używając HexUtils z biblioteki
   const hexLayout = {
     size: layoutConfig.size,
@@ -63,59 +70,77 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
 
   const handleCornerClick = async (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
-    try {
-      // Get the corner index in the tile's corners array
-      const cornerIndex = tile.getCorners().indexOf(corner);
+    
+    // Jeśli używamy lokalnego API do budowania
+    if (useLocalBuildApi) {
+      try {
+        // Get the corner index in the tile's corners array
+        const cornerIndex = tile.getCorners().indexOf(corner);
 
-      const response = await fetch('http://localhost:8000/api/build/settlement/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tileCoords: tile.tileId,
-          cornerIndex: cornerIndex
-        })
-      });
-      const data = await response.json();
-      console.log('Settlement build response:', data);
+        const response = await fetch('http://localhost:8000/api/build/settlement/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tileCoords: tile.tileId,
+            cornerIndex: cornerIndex
+          })
+        });
+        const data = await response.json();
+        console.log('Settlement build response:', data);
 
-      if (data.status === 'success') {
-        console.log('Dispatching resourcesUpdated event after settlement build');
-        console.log('Player data from response:', data.player);
-        window.dispatchEvent(new Event('resourcesUpdated'));
+        if (data.status === 'success') {
+          console.log('Dispatching resourcesUpdated event after settlement build');
+          console.log('Player data from response:', data.player);
+          window.dispatchEvent(new Event('resourcesUpdated'));
+        }
+      } catch (error) {
+        console.error('Error building settlement:', error);
       }
-    } catch (error) {
-      console.error('Error building settlement:', error);
+    }
+    
+    // Wywołaj callback jeśli został przekazany
+    if (onCornerClick) {
+      onCornerClick(corner, tile);
     }
   };
 
   const handleEdgeClick = async (edge: EdgeData, tile: BaseTile) => {
     console.log('clicked edge!', edge, tile);
-    try {
-      // Get the edge index in the tile's edges array
-      const edgeIndex = tile.getEdges().indexOf(edge);
+    
+    // Jeśli używamy lokalnego API do budowania
+    if (useLocalBuildApi) {
+      try {
+        // Get the edge index in the tile's edges array
+        const edgeIndex = tile.getEdges().indexOf(edge);
 
-      const response = await fetch('http://localhost:8000/api/build/road/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          tileCoords: tile.tileId,
-          edgeIndex: edgeIndex
-        })
-      });
-      const data = await response.json();
-      console.log('Road build response:', data);
+        const response = await fetch('http://localhost:8000/api/build/road/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            tileCoords: tile.tileId,
+            edgeIndex: edgeIndex
+          })
+        });
+        const data = await response.json();
+        console.log('Road build response:', data);
 
-      if (data.status === 'success') {
-        console.log('Dispatching resourcesUpdated event after road build');
-        console.log('Player data from response:', data.player);
-        window.dispatchEvent(new Event('resourcesUpdated'));
+        if (data.status === 'success') {
+          console.log('Dispatching resourcesUpdated event after road build');
+          console.log('Player data from response:', data.player);
+          window.dispatchEvent(new Event('resourcesUpdated'));
+        }
+      } catch (error) {
+        console.error('Error building road:', error);
       }
-    } catch (error) {
-      console.error('Error building road:', error);
+    }
+    
+    // Wywołaj callback jeśli został przekazany
+    if (onEdgeClick) {
+      onEdgeClick(edge, tile);
     }
   };
 
