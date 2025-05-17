@@ -1,6 +1,6 @@
 // WIP
 export class Player {
-  constructor(private name: string, private color: string) {}
+  constructor(private name: string, private color: string) { }
 
   getName(): string {
     return this.name;

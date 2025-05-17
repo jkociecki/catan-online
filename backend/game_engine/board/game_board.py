@@ -234,9 +234,9 @@ class GameBoard:
             tiles_data.append(tile_data)
 
         vertices_data = {}
-        for vertex_key, vertex in self.vertices.items():
+        for i, (vertex_key, vertex) in enumerate(self.vertices.items()):
             vertex_coords = list(vertex_key)
-            key = str([(x, y, z) for x, y, z in vertex_coords])
+            key = f"vertex_{i}"
 
             building_data = None
             if vertex.building is not None:
@@ -253,9 +253,9 @@ class GameBoard:
             }
 
         edges_data = {}
-        for edge_key, edge in self.edges.items():
+        for i, (edge_key, edge) in enumerate(self.edges.items()):
             edge_coords = list(edge_key)
-            key = str([(x, y, z) for x, y, z in edge_coords])
+            key = f"edge_{i}"
 
             road_data = None
             if edge.road is not None:

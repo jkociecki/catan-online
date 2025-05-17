@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, HexUtils } from 'react-hexgrid';
+import { Layout } from 'react-hexgrid';
 import { Board } from '../engine/board';
 import styled from 'styled-components';
 import { Corners } from './corner/CatanCorners';
@@ -11,6 +11,8 @@ import { Edges } from './edge/CatanEdges';
 
 interface Props {
   board: Board;
+  onCornerClick?: (corner: CornerData, tile: BaseTile) => void;
+  onEdgeClick?: (edge: EdgeData, tile: BaseTile) => void;
 }
 
 const StyledWrapper = styled.div`
@@ -29,9 +31,13 @@ const StyledSvg = styled.svg`
   left: 0;
 `;
 
-export const CatanBoard: React.FC<Props> = ({ board }) => {
+export const CatanBoard: React.FC<Props> = ({ 
+  board, 
+  onCornerClick, 
+  onEdgeClick 
+}) => {
   const hexagons = board.getHexes();
-  
+
   // Tworzenie poprawnego obiektu layoutu zgodnego z biblioteką react-hexgrid
   const layoutConfig = {
     size: { x: 3, y: 3 },
@@ -39,7 +45,6 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
     flat: false,
     origin: { x: 0, y: 0 }
   };
-  
   // Stwórz właściwy obiekt layout używając HexUtils z biblioteki
   const hexLayout = {
     size: layoutConfig.size,
@@ -49,19 +54,29 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
     // Te obliczenia są zwykle wykonywane wewnątrz komponentu Layout,
     // ale musimy je dodać tutaj, aby przekazać do naszych komponentów
     // Orientacja (flat: false oznacza pointy-top)
-    orientation: layoutConfig.flat ? 
-      { f0: 3/2, f1: 0, f2: Math.sqrt(3)/2, f3: Math.sqrt(3), 
-        b0: 2/3, b1: 0, b2: -1/3, b3: Math.sqrt(3)/3 } : 
-      { f0: Math.sqrt(3), f1: Math.sqrt(3)/2, f2: 0, f3: 3/2, 
-        b0: Math.sqrt(3)/3, b1: -1/3, b2: 0, b3: 2/3 }
+    orientation: layoutConfig.flat ?
+      {
+        f0: 3 / 2, f1: 0, f2: Math.sqrt(3) / 2, f3: Math.sqrt(3),
+        b0: 2 / 3, b1: 0, b2: -1 / 3, b3: Math.sqrt(3) / 3
+      } :
+      {
+        f0: Math.sqrt(3), f1: Math.sqrt(3) / 2, f2: 0, f3: 3 / 2,
+        b0: Math.sqrt(3) / 3, b1: -1 / 3, b2: 0, b3: 2 / 3
+      }
   };
 
   const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
+    if (onCornerClick) {
+      onCornerClick(corner, tile);
+    }
   };
-  
+
   const handleEdgeClick = (edge: EdgeData, tile: BaseTile) => {
     console.log('clicked edge!', edge, tile);
+    if (onEdgeClick) {
+      onEdgeClick(edge, tile);
+    }
   };
 
   return (
@@ -73,9 +88,9 @@ export const CatanBoard: React.FC<Props> = ({ board }) => {
       >
         <Layout size={layoutConfig.size} spacing={layoutConfig.spacing} flat={layoutConfig.flat} origin={layoutConfig.origin}>
           <Tiles hexagons={hexagons} board={board} />
-          <Edges 
-            hexagons={hexagons} 
-            board={board} 
+          <Edges
+            hexagons={hexagons}
+            board={board}
             onClick={handleEdgeClick}
             layout={hexLayout}
           />
