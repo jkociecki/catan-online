@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from "react";
 import { Layout } from 'react-hexgrid';
 import { Board } from '../engine/board';
 import styled from 'styled-components';
@@ -15,6 +15,10 @@ interface Props {
   onCornerClick?: (corner: CornerData, tile: BaseTile) => void;
   onEdgeClick?: (edge: EdgeData, tile: BaseTile) => void;
   useLocalBuildApi?: boolean;
+  buildMode?: string | null;
+  myPlayerId?: string;
+  myColor?: string;
+  gamePhase?: string;
 }
 
 const StyledWrapper = styled.div`
@@ -33,13 +37,74 @@ const StyledSvg = styled.svg`
   left: 0;
 `;
 
+// Komponent do wyświetlania informacji o fazie gry na planszy
+const PhaseOverlay = styled.div<{ phase?: string }>`
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: ${props => props.phase === 'setup' ? '#ff9800' : '#4CAF50'};
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-weight: bold;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+`;
+
+// Komponent z instrukcją
+const InstructionOverlay = styled.div<{ isVisible: boolean }>`
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 8px;
+  text-align: center;
+  max-width: 80%;
+  z-index: 10;
+  opacity: ${props => props.isVisible ? 1 : 0};
+  visibility: ${props => props.isVisible ? 'visible' : 'hidden'};
+  transition: opacity 0.3s, visibility 0.3s;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+`;
+
 export const CatanBoard: React.FC<Props> = ({
   board,
   onCornerClick,
   onEdgeClick,
-  useLocalBuildApi = false
+  useLocalBuildApi = false,
+  buildMode,
+  myPlayerId,
+  myColor,
+  gamePhase = "main"
 }) => {
   const hexagons = board.getHexes();
+  const [instruction, setInstruction] = useState<string>("");
+  
+  // Dodawanie instrukcji w zależności od trybu budowania i fazy gry
+  useEffect(() => {
+    if (gamePhase === "setup") {
+      if (buildMode === "settlement") {
+        setInstruction("Kliknij na wolny róg planszy, aby umieścić osadę");
+      } else if (buildMode === "road") {
+        setInstruction("Kliknij na wolną krawędź planszy, aby umieścić drogę");
+      } else {
+        setInstruction("Wybierz akcję budowania z menu po prawej stronie");
+      }
+    } else {
+      if (buildMode === "settlement") {
+        setInstruction("Kliknij na wolny róg planszy, aby zbudować osadę");
+      } else if (buildMode === "city") {
+        setInstruction("Kliknij na swoją osadę, aby ulepszyć ją do miasta");
+      } else if (buildMode === "road") {
+        setInstruction("Kliknij na wolną krawędź planszy, aby zbudować drogę");
+      } else {
+        setInstruction("");
+      }
+    }
+  }, [buildMode, gamePhase]);
 
   // Tworzenie poprawnego obiektu layoutu zgodnego z biblioteką react-hexgrid
   const layoutConfig = {
@@ -48,6 +113,7 @@ export const CatanBoard: React.FC<Props> = ({
     flat: false,
     origin: { x: 0, y: 0 }
   };
+  
   // Stwórz właściwy obiekt layout używając HexUtils z biblioteki
   const hexLayout = {
     size: layoutConfig.size,
@@ -70,10 +136,19 @@ export const CatanBoard: React.FC<Props> = ({
       }
   };
 
+  // Funkcja obsługująca kliknięcie rogu - wywoływana przez komponent Corner
   const handleCornerClick = async (corner: CornerData, tile: BaseTile) => {
     console.log('clicked corner!', corner, tile);
 
-    // Jeśli używamy lokalnego API do budowania
+    if (!buildMode || (buildMode !== 'settlement' && buildMode !== 'city')) {
+      // Jeśli nie jesteśmy w trybie budowania, po prostu wywołaj callback
+      if (onCornerClick) {
+        onCornerClick(corner, tile);
+      }
+      return;
+    }
+
+    // W przypadku korzystania z lokalnego API do budowania
     if (useLocalBuildApi) {
       try {
         // Get the corner index in the tile's corners array
@@ -108,10 +183,19 @@ export const CatanBoard: React.FC<Props> = ({
     }
   };
 
+  // Funkcja obsługująca kliknięcie krawędzi - wywoływana przez komponent Edge
   const handleEdgeClick = async (edge: EdgeData, tile: BaseTile) => {
     console.log('clicked edge!', edge, tile);
 
-    // Jeśli używamy lokalnego API do budowania
+    if (!buildMode || buildMode !== 'road') {
+      // Jeśli nie jesteśmy w trybie budowania dróg, po prostu wywołaj callback
+      if (onEdgeClick) {
+        onEdgeClick(edge, tile);
+      }
+      return;
+    }
+
+    // W przypadku korzystania z lokalnego API do budowania
     if (useLocalBuildApi) {
       try {
         // Get the edge index in the tile's edges array
@@ -148,6 +232,16 @@ export const CatanBoard: React.FC<Props> = ({
 
   return (
     <StyledWrapper>
+      {/* Indykator fazy gry */}
+      <PhaseOverlay phase={gamePhase}>
+        {gamePhase === 'setup' ? 'Faza przygotowania' : 'Faza główna gry'}
+      </PhaseOverlay>
+      
+      {/* Instrukcja dla gracza */}
+      <InstructionOverlay isVisible={!!instruction}>
+        {instruction}
+      </InstructionOverlay>
+      
       <StyledSvg
         viewBox="-35 -30 70 60"
         version="1.1"
@@ -160,11 +254,17 @@ export const CatanBoard: React.FC<Props> = ({
               hexagons={hexagons}
               board={board}
               onClick={handleEdgeClick}
+              buildMode={buildMode}
+              myPlayerId={myPlayerId}
+              myColor={myColor}
             />
             <Corners
               hexagons={hexagons}
               board={board}
               onClick={handleCornerClick}
+              buildMode={buildMode}
+              myPlayerId={myPlayerId}
+              myColor={myColor}
             />
           </Layout>
         </LayoutContext.Provider>

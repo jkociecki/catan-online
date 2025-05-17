@@ -35,23 +35,33 @@ export default function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/auth-callback" element={<AuthCallback />} />
           <Route path="/" element={<RoomJoin />} />
-          <Route path="/room/:roomId" element={<RoomLobby roomId={window.location.pathname.split('/').pop() || ''} />} />
+          <Route
+            path="/room/:roomId"
+            element={
+              <RoomLobby
+                roomId={window.location.pathname.split("/").pop() || ""}
+              />
+            }
+          />
           <Route path="/game/:roomId" element={<OnlineGame />} />
-          <Route path="/local-game" element={
-            <div>
-              <h1>Catan - Local Game</h1>
-              <div style={{ display: 'flex', gap: '20px', padding: '20px' }}>
-                <div style={{ flex: 1 }}>
-                  <Game director={new GameDirector()}>
-                    <CatanBoard board={board} />
-                  </Game>
-                </div>
-                <div style={{ width: '300px' }}>
-                  <PlayerResourcesDisplay />
+          <Route
+            path="/local-game"
+            element={
+              <div>
+                <h1>Catan - Local Game</h1>
+                <div style={{ display: "flex", gap: "20px", padding: "20px" }}>
+                  <div style={{ flex: 1 }}>
+                    <Game director={new GameDirector()}>
+                      <CatanBoard board={board} />
+                    </Game>
+                  </div>
+                  <div style={{ width: "300px" }}>
+                    <PlayerResourcesDisplay />
+                  </div>
                 </div>
               </div>
-            </div>
-          } />
+            }
+          />
         </Routes>
       </div>
     </BrowserRouter>

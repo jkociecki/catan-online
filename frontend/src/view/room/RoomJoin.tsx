@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import GameService from '../../engine/board/GameService';
-import { useNavigate } from 'react-router-dom';
-import styled from 'styled-components';
+import React, { useState } from "react";
+import GameService from "../../engine/board/GameService";
+import { useNavigate } from "react-router-dom";
+import styled from "styled-components";
 
 const Container = styled.div`
   max-width: 500px;
@@ -21,12 +21,12 @@ const Button = styled.button`
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
-  
+
   &:disabled {
     background-color: #cccccc;
     cursor: not-allowed;
   }
-  
+
   &:hover:not(:disabled) {
     background-color: #45a049;
   }
@@ -66,7 +66,7 @@ const StatusMessage = styled.div`
 `;
 
 export default function RoomJoin() {
-  const [roomId, setRoomId] = useState('');
+  const [roomId, setRoomId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -76,48 +76,52 @@ export default function RoomJoin() {
     setIsLoading(true);
     setError(null);
     setStatus("Creating a new game room...");
-    
+
     try {
       // First create a room
       const newRoomId = await GameService.createRoom();
       setStatus(`Room created! Room ID: ${newRoomId}. Connecting...`);
-      
+
       // Then connect to it via WebSocket
       try {
         await GameService.connectToRoom(newRoomId);
         setStatus(`Connected to room ${newRoomId}! Redirecting...`);
-        
-        // Finally navigate to the room
+
+        // Poprawione przekierowanie - upewnij się, że URL ma ID pokoju
         navigate(`/room/${newRoomId}`);
       } catch (connectError) {
         console.error("Error connecting to room:", connectError);
-        setError(`Created room but couldn't connect. Please try joining with room ID: ${newRoomId}`);
+        setError(
+          `Created room but couldn't connect. Please try joining with room ID: ${newRoomId}`
+        );
         setIsLoading(false);
       }
     } catch (err) {
       console.error("Room creation error:", err);
-      setError(err instanceof Error ? err.message : 'Failed to create room');
+      setError(err instanceof Error ? err.message : "Failed to create room");
       setIsLoading(false);
     }
   };
 
   const handleJoin = async () => {
     if (!roomId.trim()) {
-      setError('Please enter a room code');
+      setError("Please enter a room code");
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
     setStatus(`Connecting to room ${roomId}...`);
-    
+
     try {
       await GameService.connectToRoom(roomId);
       setStatus(`Connected to room ${roomId}! Redirecting...`);
       navigate(`/room/${roomId}`);
     } catch (err) {
       console.error("Room join error:", err);
-      setError('Failed to join room - make sure the server is running and the room ID is correct');
+      setError(
+        "Failed to join room - make sure the server is running and the room ID is correct"
+      );
       setIsLoading(false);
     }
   };
@@ -125,14 +129,14 @@ export default function RoomJoin() {
   return (
     <Container>
       <h2>Catan Online</h2>
-      
+
       <div>
         <h3>Create a New Game</h3>
         <Button onClick={handleCreate} disabled={isLoading}>
           Create Game Room
         </Button>
       </div>
-      
+
       <div>
         <h3>Join Existing Game</h3>
         <Input
@@ -146,10 +150,12 @@ export default function RoomJoin() {
           Join Game
         </Button>
       </div>
-      
+
       {status && <StatusMessage>{status}</StatusMessage>}
       {error && <ErrorMessage>{error}</ErrorMessage>}
-      {isLoading && <LoadingIndicator>Loading... Please wait.</LoadingIndicator>}
+      {isLoading && (
+        <LoadingIndicator>Loading... Please wait.</LoadingIndicator>
+      )}
     </Container>
   );
 }
