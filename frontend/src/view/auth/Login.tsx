@@ -1,0 +1,317 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import styled from 'styled-components';
+
+// Mock function for Google Sign-In
+// In a real implementation, you'd use a library like react-google-login
+const mockGoogleSignIn = () => {
+    return new Promise((resolve) => {
+        // Simulate Google auth response
+        setTimeout(() => {
+            resolve({
+                provider: 'google',
+                external_id: 'google_123456789',
+                email: 'user@example.com',
+                name: 'Google User',
+                avatar_url: 'https://via.placeholder.com/150'
+            });
+        }, 1000);
+    });
+};
+
+const AUTH_API_URL = 'http://localhost:8000/api/auth';
+
+const AuthContainer = styled.div`
+  max-width: 400px;
+  margin: 50px auto;
+  padding: 20px;
+  background-color: #f8f8f8;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+`;
+
+const Title = styled.h2`
+  text-align: center;
+  color: #333;
+  margin-bottom: 20px;
+`;
+
+const Form = styled.form`
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+`;
+
+const Input = styled.input`
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 16px;
+`;
+
+const Button = styled.button`
+  padding: 10px 15px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  
+  &:hover {
+    background-color: #45a049;
+  }
+  
+  &:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+`;
+
+const GoogleButton = styled(Button)`
+  background-color: #4285f4;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  
+  &:hover {
+    background-color: #357ae8;
+  }
+`;
+
+const Divider = styled.div`
+  margin: 20px 0;
+  text-align: center;
+  position: relative;
+  
+  &::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: #ccc;
+    z-index: 0;
+  }
+  
+  span {
+    background-color: #f8f8f8;
+    padding: 0 10px;
+    position: relative;
+    z-index: 1;
+    color: #666;
+  }
+`;
+
+const ErrorMessage = styled.div`
+  color: #f44336;
+  margin: 10px 0;
+  padding: 10px;
+  background-color: #ffeeee;
+  border-radius: 4px;
+  border: 1px solid #ffcccc;
+`;
+
+const GuestOptions = styled.div`
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+`;
+
+const ColorOptions = styled.div`
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0;
+`;
+
+const ColorOption = styled.div<{ color: string; selected: boolean }>`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: ${props => props.color};
+  cursor: pointer;
+  border: 3px solid ${props => props.selected ? '#333' : 'transparent'};
+  
+  &:hover {
+    transform: scale(1.1);
+  }
+`;
+
+export default function Login() {
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [guestName, setGuestName] = useState('');
+    const [error, setError] = useState<string | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [selectedColor, setSelectedColor] = useState('red');
+    const navigate = useNavigate();
+
+    const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
+
+    useEffect(() => {
+        // Check if user is already logged in
+        const token = localStorage.getItem('auth_token');
+        if (token) {
+            navigate('/');
+        }
+    }, [navigate]);
+
+    const handleRegularLogin = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        if (!username || !password) {
+            setError('Please enter both username and password');
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(`${AUTH_API_URL}/users/login/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username, password }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Login failed');
+            }
+
+            // Store authentication token and user data
+            localStorage.setItem('auth_token', data.token);
+            localStorage.setItem('user_data', JSON.stringify(data.user));
+
+            // Redirect to home
+            navigate('/');
+
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Login failed');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleGoogleSignIn = () => {
+        // Redirect to Google login URL
+        window.location.href = 'http://localhost:8000/accounts/google/login/';
+    };
+
+    const handleGuestLogin = async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const guestData = {
+                guest_name: guestName || undefined,  // Let backend generate a name if empty
+                preferred_color: selectedColor
+            };
+
+            const response = await fetch(`${AUTH_API_URL}/users/guest_login/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(guestData),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Guest login failed');
+            }
+
+            // Store authentication token and user data
+            localStorage.setItem('auth_token', data.token);
+            localStorage.setItem('user_data', JSON.stringify(data.user));
+
+            // Redirect to home
+            navigate('/');
+
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Guest login failed');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <AuthContainer>
+            <Title>Login to Catan</Title>
+
+            {error && <ErrorMessage>{error}</ErrorMessage>}
+
+            <GoogleButton
+                onClick={handleGoogleSignIn}
+                disabled={loading}
+                type="button"
+            >
+                <span>Sign in with Google</span>
+            </GoogleButton>
+
+            <Divider><span>OR</span></Divider>
+
+            <Form onSubmit={handleRegularLogin}>
+                <Input
+                    type="text"
+                    placeholder="Username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    disabled={loading}
+                />
+                <Input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                />
+                <Button type="submit" disabled={loading}>
+                    Login
+                </Button>
+            </Form>
+
+            <Divider><span>OR</span></Divider>
+
+            <GuestOptions>
+                <Input
+                    type="text"
+                    placeholder="Guest Name (optional)"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    disabled={loading}
+                />
+
+                <div>
+                    <p>Choose your color:</p>
+                    <ColorOptions>
+                        {colors.map(color => (
+                            <ColorOption
+                                key={color}
+                                color={color}
+                                selected={selectedColor === color}
+                                onClick={() => setSelectedColor(color)}
+                            />
+                        ))}
+                    </ColorOptions>
+                </div>
+
+                <Button
+                    onClick={handleGuestLogin}
+                    disabled={loading}
+                    type="button"
+                >
+                    Play as Guest
+                </Button>
+            </GuestOptions>
+        </AuthContainer>
+    );
+}

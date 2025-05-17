@@ -223,6 +223,14 @@ export default function OnlineGame() {
       setError(null);
 
       try {
+        // Check if user is authenticated
+        const token = localStorage.getItem('auth_token');
+        if (!token) {
+          // Redirect to login if not authenticated
+          navigate('/login', { state: { returnTo: `/game/${roomId}` } });
+          return;
+        }
+
         // Connect to WebSocket if not already connected
         if (!GameService.isConnected()) {
           console.log(`Connecting to room: ${roomId}`);

@@ -48,7 +48,15 @@ class GameService {
       this.disconnectFromRoom();
 
       try {
-        const wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
+        // Get auth token if available
+        const authToken = localStorage.getItem('auth_token');
+        let wsUrl = `${GameService.WS_URL}/game/${roomId}/`;
+
+        // Add token to URL if available
+        if (authToken) {
+          wsUrl += `?token=${authToken}`;
+        }
+
         console.log(`Connecting to WebSocket: ${wsUrl}`);
         this.socket = new WebSocket(wsUrl);
 
@@ -85,7 +93,7 @@ class GameService {
             const data = JSON.parse(event.data);
             console.log("WebSocket message received:", data);
 
-            // Save client ID if present - to tutaj zapisujemy ID klienta
+            // Save client ID if present
             if (data.type === "client_id" && data.player_id) {
               this.clientId = data.player_id;
               console.log("Set client ID from message:", this.clientId);

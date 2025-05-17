@@ -6,6 +6,8 @@ from game_engine.common.game_config import GameConfig
 from game_engine.player.player import Player
 from game_engine.common.player_color import PlayerColor
 import uuid
+from django.contrib.auth import get_user_model
+User = get_user_model()
 from game_engine.game.game_phase import GamePhase
 
 
@@ -17,7 +19,26 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'game_{self.room_id}'
+        
+        # Extract authentication token from query params if present
+        query_string = self.scope.get('query_string', b'').decode('utf-8')
+        query_params = dict(param.split('=') for param in query_string.split('&') if '=' in param)
+        token = query_params.get('token', None)
+        
+        # Default player information
         self.player_id = str(uuid.uuid4())
+        self.user = None
+        self.display_name = f"Player_{self.player_id[:6]}"
+        self.is_authenticated = False
+        
+        # If token is present, authenticate user
+        if token:
+            self.user = await self.get_user_by_token(token)
+            if self.user:
+                self.is_authenticated = True
+                self.display_name = self.user.display_name or self.user.username
+                # Use user's ID as player ID for consistency
+                self.player_id = str(self.user.id)
 
         # Join room group
         await self.channel_layer.group_add(
@@ -52,13 +73,16 @@ class GameConsumer(AsyncWebsocketConsumer):
                 player_color = available_colors[0]
                 player = Player(player_color, room['game_state'].game_config)
                 player.id = self.player_id
+                player.display_name = self.display_name  # Add display name to player
                 room['game_state'].add_player(player)
                 room['players'].append(self.player_id)
 
                 # Send client_id to the new player
                 await self.send(text_data=json.dumps({
                     'type': 'client_id',
-                    'player_id': self.player_id
+                    'player_id': self.player_id,
+                    'display_name': self.display_name,
+                    'is_authenticated': self.is_authenticated
                 }))
 
                 # Notify about new player
@@ -68,7 +92,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                         'type': 'player_joined',
                         'player_id': self.player_id,
                         'player_color': player_color.value,
-                        'player_count': len(room['players'])
+                        'player_count': len(room['players']),
+                        'display_name': self.display_name,
+                        'is_authenticated': self.is_authenticated
                     }
                 )
 
@@ -858,13 +884,26 @@ class GameConsumer(AsyncWebsocketConsumer):
             print(f"Error building city: {str(e)}")
             return False
 
+    @database_sync_to_async
+    def get_user_by_token(self, token):
+        from rest_framework.authtoken.models import Token
+        try:
+            token_obj = Token.objects.get(key=token)
+            user = token_obj.user
+            # Update user's stats if needed
+            return user
+        except Token.DoesNotExist:
+            return None
+
     # Event handlers
     async def player_joined(self, event):
         await self.send(text_data=json.dumps({
             'type': 'player_joined',
             'player_id': event['player_id'],
             'player_color': event['player_color'],
-            'player_count': event['player_count']
+            'player_count': event['player_count'],
+            'display_name': event['display_name'],
+            'is_authenticated': event['is_authenticated']
         }))
 
     async def player_left(self, event):
