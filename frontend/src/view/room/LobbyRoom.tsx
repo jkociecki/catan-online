@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import GameService from '../../engine/board/GameService';
-import { useNavigate } from 'react-router-dom';
-import styled from 'styled-components';
+import React, { useState, useEffect } from "react";
+import GameService from "../../engine/board/GameService";
+import { useNavigate } from "react-router-dom";
+import styled from "styled-components";
 
 const LobbyContainer = styled.div`
   max-width: 600px;
@@ -20,7 +20,7 @@ const PlayerList = styled.div`
 const PlayerItem = styled.div<{ color: string }>`
   padding: 10px;
   margin: 5px 0;
-  background-color: ${props => props.color || '#333333'};
+  background-color: ${(props) => props.color || "#333333"};
   color: white;
   border-radius: 3px;
 `;
@@ -59,14 +59,14 @@ const LeaveButton = styled.button`
   border-radius: 4px;
   cursor: pointer;
   margin-top: 20px;
-  
+
   &:hover {
     background-color: #d32f2f;
   }
 `;
 
 const StartButton = styled.button`
-  background-color: #4CAF50;
+  background-color: #4caf50;
   color: white;
   border: none;
   padding: 8px 15px;
@@ -74,11 +74,11 @@ const StartButton = styled.button`
   cursor: pointer;
   margin-top: 20px;
   margin-right: 10px;
-  
+
   &:hover {
     background-color: #45a049;
   }
-  
+
   &:disabled {
     background-color: #cccccc;
     cursor: not-allowed;
@@ -112,7 +112,7 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
         }
         setStatus(`Connected to room ${roomId}. Waiting for players...`);
         setIsLoading(false);
-        
+
         // Request client ID
         try {
           const id = await GameService.getClientId();
@@ -121,12 +121,14 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
         } catch (idErr) {
           console.warn("Failed to get client ID immediately:", idErr);
         }
-        
+
         // Request game state to ensure we have the latest info
         GameService.getGameState();
       } catch (err) {
         console.error("Room connection error:", err);
-        setError('Failed to connect to room. Please make sure the server is running.');
+        setError(
+          "Failed to connect to room. Please make sure the server is running."
+        );
         setIsLoading(false);
       }
     };
@@ -137,14 +139,21 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
     const handlePlayerJoined = (data: any) => {
       console.log("Player joined event:", data);
       if (data.player_id && data.player_color) {
-        setPlayers(prevPlayers => {
-          const playerExists = prevPlayers.some(p => p.id === data.player_id);
+        setPlayers((prevPlayers) => {
+          const playerExists = prevPlayers.some((p) => p.id === data.player_id);
           if (!playerExists) {
-            setStatus(`Player ${data.player_id.substring(0, 6)}... joined. (${data.player_count}/4 players)`);
-            return [...prevPlayers, { 
-              id: data.player_id, 
-              color: data.player_color || '#333333'
-            }];
+            setStatus(
+              `Player ${data.player_id.substring(0, 6)}... joined. (${
+                data.player_count
+              }/4 players)`
+            );
+            return [
+              ...prevPlayers,
+              {
+                id: data.player_id,
+                color: data.player_color || "#333333",
+              },
+            ];
           }
           return prevPlayers;
         });
@@ -154,9 +163,13 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
     const handlePlayerLeft = (data: any) => {
       console.log("Player left event:", data);
       if (data.player_id) {
-        setPlayers(prevPlayers => {
-          const filtered = prevPlayers.filter(p => p.id !== data.player_id);
-          setStatus(`Player ${data.player_id.substring(0, 6)}... left. (${data.player_count}/4 players)`);
+        setPlayers((prevPlayers) => {
+          const filtered = prevPlayers.filter((p) => p.id !== data.player_id);
+          setStatus(
+            `Player ${data.player_id.substring(0, 6)}... left. (${
+              data.player_count
+            }/4 players)`
+          );
           return filtered;
         });
       }
@@ -165,22 +178,36 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
     const handleGameStart = (data: any) => {
       console.log("Game start event:", data);
       setStatus("Game is starting! Redirecting to game board...");
-      
-      // Navigate to game board when the game starts
-      navigate(`/game/${roomId}`, { 
-        state: { 
-          gameState: data.game_state, 
-          roomId 
-        }
-      });
-    };
 
+      // Poprawione przekierowanie - dodajemy ID pokoju jawnie do URL
+      // To jest kluczowa zmiana
+      let gameRoomId = roomId;
+
+      // Jeśli roomId jest puste, spróbuj pobrać z URL
+      if (!gameRoomId) {
+        gameRoomId = window.location.pathname.split("/").pop() || "";
+        console.log("Extracted roomId from URL:", gameRoomId);
+      }
+
+      // Teraz używaj gameRoomId zamiast roomId
+      if (gameRoomId) {
+        navigate(`/game/${gameRoomId}`, {
+          state: {
+            gameState: data.game_state,
+            roomId: gameRoomId,
+          },
+        });
+      } else {
+        console.error("Missing roomId, cannot navigate to game");
+        setError("Missing room ID, cannot start game");
+      }
+    };
     const handleGameState = (data: any) => {
       console.log("Game state update:", data);
       if (data.game_state && data.game_state.players) {
         const playersList = data.game_state.players.map((p: any) => ({
           id: p.id,
-          color: p.color || '#333333'
+          color: p.color || "#333333",
         }));
         setPlayers(playersList);
       }
@@ -198,42 +225,44 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
       }
     };
 
-    GameService.addEventHandler('player_joined', handlePlayerJoined);
-    GameService.addEventHandler('player_left', handlePlayerLeft);
-    GameService.addEventHandler('game_start', handleGameStart);
-    GameService.addEventHandler('game_state', handleGameState);
-    GameService.addEventHandler('error', handleError);
-    GameService.addEventHandler('client_id', handleClientId);
+    GameService.addEventHandler("player_joined", handlePlayerJoined);
+    GameService.addEventHandler("player_left", handlePlayerLeft);
+    GameService.addEventHandler("game_start", handleGameStart);
+    GameService.addEventHandler("game_state", handleGameState);
+    GameService.addEventHandler("error", handleError);
+    GameService.addEventHandler("client_id", handleClientId);
 
     // Cleanup
     return () => {
-      GameService.removeEventHandler('player_joined', handlePlayerJoined);
-      GameService.removeEventHandler('player_left', handlePlayerLeft);
-      GameService.removeEventHandler('game_start', handleGameStart);
-      GameService.removeEventHandler('game_state', handleGameState);
-      GameService.removeEventHandler('error', handleError);
-      GameService.removeEventHandler('client_id', handleClientId);
+      GameService.removeEventHandler("player_joined", handlePlayerJoined);
+      GameService.removeEventHandler("player_left", handlePlayerLeft);
+      GameService.removeEventHandler("game_start", handleGameStart);
+      GameService.removeEventHandler("game_state", handleGameState);
+      GameService.removeEventHandler("error", handleError);
+      GameService.removeEventHandler("client_id", handleClientId);
     };
   }, [roomId, navigate]);
 
   const handleLeaveRoom = () => {
     GameService.disconnectFromRoom();
-    navigate('/');
+    navigate("/");
   };
 
   const handleStartGame = () => {
     // Send message to start the game with fewer than 4 players
     GameService.sendMessage({
-      type: 'game_action',
-      action: 'roll_dice'  // This triggers the game to start in the backend
+      type: "game_action",
+      action: "roll_dice", // This triggers the game to start in the backend
     });
   };
 
   if (isLoading) {
-    return <LobbyContainer>
-      <h2>Game Lobby</h2>
-      <div>Connecting to room {roomId}...</div>
-    </LobbyContainer>;
+    return (
+      <LobbyContainer>
+        <h2>Game Lobby</h2>
+        <div>Connecting to room {roomId}...</div>
+      </LobbyContainer>
+    );
   }
 
   const canStartGame = players.length >= 2 && players.length < 4;
@@ -242,19 +271,21 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
     <LobbyContainer>
       <h2>Game Lobby</h2>
       <RoomCode>
-        <p>Room Code: <strong>{roomId}</strong></p>
+        <p>
+          Room Code: <strong>{roomId}</strong>
+        </p>
         <p>Share this code with others to join</p>
       </RoomCode>
-      
+
       {status && <StatusMessage>{status}</StatusMessage>}
       {error && <ErrorMessage>{error}</ErrorMessage>}
-      
+
       <h3>Players ({players.length}/4)</h3>
       <PlayerList>
         {players.length === 0 ? (
           <p>Waiting for players to join...</p>
         ) : (
-          players.map(player => (
+          players.map((player) => (
             <PlayerItem key={player.id} color={player.color}>
               Player {player.id.substring(0, 6)}...
               {player.id === myPlayerId && " (You)"}
@@ -262,18 +293,19 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
           ))
         )}
       </PlayerList>
-      
-      <p>Game will start automatically when 4 players join, or you can start manually with 2-3 players</p>
-      
+
+      <p>
+        Game will start automatically when 4 players join, or you can start
+        manually with 2-3 players
+      </p>
+
       {canStartGame && (
         <StartButton onClick={handleStartGame}>
           Start Game with {players.length} Players
         </StartButton>
       )}
-      
-      <LeaveButton onClick={handleLeaveRoom}>
-        Leave Room
-      </LeaveButton>
+
+      <LeaveButton onClick={handleLeaveRoom}>Leave Room</LeaveButton>
     </LobbyContainer>
   );
 }

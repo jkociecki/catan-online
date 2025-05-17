@@ -6,6 +6,8 @@ from game_engine.common.game_config import GameConfig
 from game_engine.player.player import Player
 from game_engine.common.player_color import PlayerColor
 import uuid
+from game_engine.game.game_phase import GamePhase
+
 
 # Store active game rooms
 game_rooms = {}
@@ -28,8 +30,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Initialize game room if it doesn't exist
         if self.room_id not in game_rooms:
             config = GameConfig()
+            game_state = GameState(config)
+            game_state.phase = "setup"  # Jawnie ustawiamy fazę gry
+            game_state.setup_placed = {}  # Słownik do śledzenia postępu fazy setup
+            
             game_rooms[self.room_id] = {
-                'game_state': GameState(config),
+                'game_state': game_state,
                 'players': [],
                 'max_players': 4,
                 'started': False
@@ -125,6 +131,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                     del game_rooms[self.room_id]
 
     # Receive message from WebSocket
+    # Receive message from WebSocket
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
@@ -139,6 +146,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return
 
             room = game_rooms[self.room_id]
+            game_state = room['game_state']
 
             if message_type == 'create_room':
                 # Room already created on connect
@@ -155,7 +163,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             elif message_type == 'get_game_state':
                 await self.send(text_data=json.dumps({
                     'type': 'game_state',
-                    'game_state': self.serialize_game_state(room['game_state'])
+                    'game_state': self.serialize_game_state(game_state)
                 }))
 
             elif message_type == 'get_client_id':
@@ -189,7 +197,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                         self.room_group_name,
                         {
                             'type': 'game_start',
-                            'game_state': self.serialize_game_state(room['game_state'])
+                            'game_state': self.serialize_game_state(game_state)
                         }
                     )
                 elif not room['started']:
@@ -199,89 +207,338 @@ class GameConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                if action == 'roll_dice':
-                    try:
-                        dice_result = await self.process_dice_roll(room['game_state'])
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'dice_roll',
-                                'player_id': self.player_id,
-                                'dice_result': dice_result,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
-                    except Exception as e:
-                        print(f"Error rolling dice: {str(e)}")
+                # Get current game phase
+                current_phase = getattr(game_state, 'phase', GamePhase.SETUP)
+
+                # Handle actions based on game phase
+                #if current_phase == GamePhase.SETUP:
+                if current_phase == "setup":
+
+                    # Setup phase - limited actions available
+                    
+                    if action == 'roll_dice':
+                        # Cannot roll dice in setup phase
                         await self.send(text_data=json.dumps({
                             'type': 'error',
-                            'message': f'Error rolling dice: {str(e)}'
+                            'message': 'Cannot roll dice in the setup phase'
                         }))
+                        return
+                    
+                    elif action == 'build_settlement':
+                        # Process settlement building in setup phase (free)
+                        coords = data.get('coords')
+                        result = await self.process_build_settlement(game_state, self.player_id, coords, is_setup=True)
 
-                elif action == 'build_settlement':
-                    # Process settlement building
-                    coords = data.get('coords')
-                    result = await self.process_build_settlement(room['game_state'], self.player_id, coords)
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_settlement',
+                                    'player_id': self.player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                    
+                    elif action == 'build_road':
+                        # Process road building in setup phase (free)
+                        coords = data.get('coords')
+                        result = await self.process_build_road(game_state, self.player_id, coords, is_setup=True)
 
-                    if result:
-                        # Notify all players about the build
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'build_settlement',
-                                'player_id': self.player_id,
-                                'coords': coords,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_road',
+                                    'player_id': self.player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                    
+                    elif action == 'end_turn':
+                        # End turn in setup phase
+                        # Check if setup phase is complete after this turn
+                        if hasattr(game_state, 'check_setup_progress'):
+                            game_state.check_setup_progress()
+                        
+                        # Process end turn
+                        result = await self.process_end_turn(game_state)
+                        if result:
+                            # Get updated game phase after processing end turn
+                            updated_phase = getattr(game_state, 'phase', GamePhase.SETUP)
+                            
+                            # Notify all players about the turn end
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'end_turn',
+                                    'player_id': self.player_id,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                            
+                            if updated_phase != GamePhase.SETUP and updated_phase != "setup":
+                                # Bezpiecznie pobierz wartość fazy
+                                phase_value = updated_phase
+                                if hasattr(updated_phase, 'value'):
+                                    phase_value = updated_phase.value
+                                
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'phase_change',
+                                        'phase': phase_value,  
+                                        'game_state': self.serialize_game_state(game_state)
+                                    }
+                                )
+                    
+                    else:
+                        # Unknown action for setup phase
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': f'Unknown action in setup phase: {action}'
+                        }))
+                
+                elif current_phase == GamePhase.ROLL_DICE:
+                    # Roll dice phase - only dice rolling allowed
+                    
+                    if action == 'roll_dice':
+                        try:
+                            dice_result = await self.process_dice_roll(game_state)
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'dice_roll',
+                                    'player_id': self.player_id,
+                                    'dice_result': dice_result,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                        except Exception as e:
+                            print(f"Error rolling dice: {str(e)}")
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': f'Error rolling dice: {str(e)}'
+                            }))
+                    
+                    else:
+                        # Must roll dice first
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'You must roll the dice first'
+                        }))
+                
+                elif current_phase == GamePhase.MOVE_ROBBER:
+                    # Move robber phase - after rolling 7
+                    
+                    if action == 'move_robber':
+                        # Handle robber movement
+                        tile_coords = data.get('tile_coords')
+                        player_to_steal_from = data.get('player_to_steal_from')
+                        
+                        # Process robber movement
+                        # This would need a proper implementation in your game logic
+                        
+                        # For now, just send a placeholder response
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Robber movement not fully implemented yet'
+                        }))
+                    
+                    else:
+                        # Must move robber first
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'You must move the robber'
+                        }))
+                
+                elif current_phase == GamePhase.DISCARD:
+                    # Discard phase - after rolling 7, players with >7 cards must discard
+                    
+                    if action == 'discard_cards':
+                        # Handle card discarding
+                        resources = data.get('resources')
+                        
+                        # Process discarding
+                        # This would need a proper implementation in your game logic
+                        
+                        # For now, just send a placeholder response
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Card discarding not fully implemented yet'
+                        }))
+                    
+                    else:
+                        # Must discard cards first
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'You must discard cards'
+                        }))
+                
+                elif current_phase == GamePhase.MAIN:
+                    # Main phase - most actions available
+                    
+                    if action == 'build_settlement':
+                        # Process settlement building
+                        coords = data.get('coords')
+                        result = await self.process_build_settlement(game_state, self.player_id, coords)
 
-                elif action == 'build_city':
-                    coords = data.get('coords')
-                    result = await self.process_build_city(room['game_state'], self.player_id, coords)
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_settlement',
+                                    'player_id': self.player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
 
-                    if result:
-                        # Notify all players about the build
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'build_city',
-                                'player_id': self.player_id,
-                                'coords': coords,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
+                    elif action == 'build_city':
+                        coords = data.get('coords')
+                        result = await self.process_build_city(game_state, self.player_id, coords)
 
-                elif action == 'build_road':
-                    coords = data.get('coords')
-                    result = await self.process_build_road(room['game_state'], self.player_id, coords)
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_city',
+                                    'player_id': self.player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
 
-                    if result:
-                        # Notify all players about the build
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'build_road',
-                                'player_id': self.player_id,
-                                'coords': coords,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
+                    elif action == 'build_road':
+                        coords = data.get('coords')
+                        result = await self.process_build_road(game_state, self.player_id, coords)
 
-                elif action == 'end_turn':
-                    result = await self.process_end_turn(room['game_state'])
-                    if result:
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'end_turn',
-                                'player_id': self.player_id,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_road',
+                                    'player_id': self.player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                    
+                    elif action == 'buy_development_card':
+                        # Handle buying development card
+                        # This would need a proper implementation in your game logic
+                        
+                        # For now, just send a placeholder response
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Buying development cards not fully implemented yet'
+                        }))
+                    
+                    elif action == 'play_development_card':
+                        # Handle playing development card
+                        card_type = data.get('card_type')
+                        # Additional parameters based on card type
+                        
+                        # This would need a proper implementation in your game logic
+                        
+                        # For now, just send a placeholder response
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Playing development cards not fully implemented yet'
+                        }))
+                    
+                    elif action == 'trade_offer':
+                        # Handle trade offers
+                        offer = data.get('offer')
+                        request = data.get('request')
+                        
+                        # This would need a proper implementation in your game logic
+                        
+                        # For now, just send a placeholder response
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Trading not fully implemented yet'
+                        }))
+                    
+                    elif action == 'end_turn':
+                        result = await self.process_end_turn(game_state)
+                        if result:
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'end_turn',
+                                    'player_id': self.player_id,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                    
+                    else:
+                        # Unknown action for main phase
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': f'Unknown action in main phase: {action}'
+                        }))
+                
+                elif current_phase == GamePhase.TRADE:
+                    # Trade phase
+                    # Handle trade-specific actions
+                    
+                    # For now, just send a placeholder response
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Trade phase not fully implemented yet'
+                    }))
+                
+                elif current_phase == GamePhase.END_TURN:
+                    # End turn phase
+                    
+                    if action == 'end_turn':
+                        result = await self.process_end_turn(game_state)
+                        if result:
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'end_turn',
+                                    'player_id': self.player_id,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                    
+                    else:
+                        # Only end_turn action is valid here
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Only end turn action is allowed in this phase'
+                        }))
+                
+                else:
+                    # Unknown game phase
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Unknown game phase: {current_phase}'
+                    }))
+            
+            else:
+                # Unknown message type
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': f'Unknown message type: {message_type}'
+                }))
+                    
         except Exception as e:
             print(f"Error processing WebSocket message: {str(e)}")
             await self.send(text_data=json.dumps({
@@ -306,14 +563,39 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'roads_left': player.roads_left
             })
 
-        current_player_index = game_state.current_player_index if hasattr(game_state, 'current_player_index') else 0
+        # Określ bieżący indeks gracza w zależności od fazy
+        is_setup_phase = False
+        if hasattr(game_state, 'phase'):
+            if isinstance(game_state.phase, str):
+                is_setup_phase = game_state.phase.lower() == "setup"
+            else:
+                is_setup_phase = game_state.phase == GamePhase.SETUP
+        
+        current_player_index = 0
+        if is_setup_phase:
+            # W fazie setup, użyj indeksu z pokoju
+            current_room = game_rooms[self.room_id]
+            current_player_index = current_room.get('setup_player_index', 0)
+        else:
+            # W innych fazach, użyj wartości z GameState
+            current_player_index = game_state.current_player_index if hasattr(game_state, 'current_player_index') else 0
+
+        # Określ fazę gry
+        if hasattr(game_state, 'phase'):
+            if isinstance(game_state.phase, str):
+                phase = game_state.phase
+            else:
+                # Zakładając, że to enum z atrybutem value
+                phase = game_state.phase.value
+        else:
+            phase = "setup"  # Domyślnie faza setup
 
         return {
             'board': board_data,
             'players': players_data,
-            'current_player_index': current_player_index
+            'current_player_index': current_player_index,
+            'phase': phase
         }
-
     @database_sync_to_async
     def process_build_settlement(self, game_state, player_id, coords):
         # Find player by ID
@@ -341,6 +623,10 @@ class GameConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def process_dice_roll(self, game_state):
         """Roll dice and distribute resources"""
+        # Sprawdź czy jesteśmy w fazie setup
+        if not hasattr(game_state, 'phase') or game_state.phase == "setup":
+            raise Exception("Cannot roll dice in the setup phase")
+        
         if not hasattr(game_state, 'turn_manager'):
             raise Exception("Game not properly initialized")
 
@@ -363,19 +649,51 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def process_end_turn(self, game_state):
-        """End the current player's turn"""
-        if not hasattr(game_state, 'turn_manager'):
-            # Initialize turn manager if not already done
-            if len(game_state.players) > 1:
-                game_state.turn_manager = game_state.players[0]
-
-            return False
-
+        """Zakończ turę aktualnego gracza"""
         try:
-            game_state.turn_manager.end_turn()
-            return True
+            print("Rozpoczynam process_end_turn")
+            
+            # Sprawdź, czy jesteśmy w fazie setup
+            is_setup_phase = False
+            if hasattr(game_state, 'phase'):
+                if isinstance(game_state.phase, str):
+                    is_setup_phase = game_state.phase.lower() == "setup"
+                else:
+                    is_setup_phase = game_state.phase == GamePhase.SETUP
+            
+            if is_setup_phase:
+                print("Jesteśmy w fazie setup")
+                # W fazie setup, przechowujemy indeks aktualnego gracza w atrybucie pokoju
+                current_room = game_rooms[self.room_id]
+                
+                # Upewnij się, że klucz istnieje
+                if 'setup_player_index' not in current_room:
+                    current_room['setup_player_index'] = 0
+                
+                # Przejdź do następnego gracza
+                current_room['setup_player_index'] = (current_room['setup_player_index'] + 1) % len(game_state.players)
+                
+                # Sprawdź czy po zmianie tury powinniśmy zaktualizować fazę
+                if hasattr(game_state, 'check_setup_progress'):
+                    game_state.check_setup_progress()
+                
+                return True
+            
+            # W innych fazach
+            print("Jesteśmy poza fazą setup")
+            # Używaj istniejących metod
+            if hasattr(game_state, 'next_turn'):
+                game_state.next_turn()
+                return True
+            elif hasattr(game_state, 'turn_manager') and game_state.turn_manager:
+                game_state.turn_manager.next_player()
+                return True
+            
+            return False
         except Exception as e:
-            print(f"Error ending turn: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            print(f"Błąd podczas kończenia tury: {str(e)}")
             return False
 
     @database_sync_to_async
@@ -468,4 +786,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             'type': 'build_mode',
             'player_id': event['player_id'],
             'build_type': event['build_type']
+        }))
+
+    async def phase_change(self, event):
+        """Send phase change information to WebSocket"""
+        await self.send(text_data=json.dumps({
+            'type': 'phase_change',
+            'phase': event['phase'],
+            'game_state': event.get('game_state')
         }))

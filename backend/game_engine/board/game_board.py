@@ -122,7 +122,18 @@ class GameBoard:
                 if key not in self.edges:
                     self.edges[key] = Edge(tiles=coords)
 
-    def place_road(self, road: Road, edge_coords: set[tuple[int, int, int]]):
+    def place_road(self, road: Road, edge_coords: set[tuple[int, int, int]], free=False):
+        """
+        Postaw drogę na planszy
+        
+        Args:
+            road: Droga do postawienia (obiekt Road)
+            edge_coords: Koordynaty krawędzi
+            free: Czy droga ma być postawiona za darmo (faza setup)
+        
+        Returns:
+            bool: Czy udało się postawić drogę
+        """
         edge_key = frozenset(edge_coords)
 
         if edge_key not in self.edges:
@@ -132,11 +143,26 @@ class GameBoard:
 
         if edge.road is not None:
             return False
+            
+        # W fazie setup pomijamy sprawdzanie połączenia, w normalnej fazie sprawdzamy
+        if not free and not self._has_adjacent_building_or_road(edge_key, road.player):
+            return False
 
         edge.road = road
         return True
 
-    def place_building(self, building: Building, vertex_coords: set[tuple[int, int, int]]):
+    def place_building(self, building: Building, vertex_coords: set[tuple[int, int, int]], free=False):
+        """
+        Postaw budynek (osadę lub miasto) na planszy
+        
+        Args:
+            building: Obiekt budynku do postawienia
+            vertex_coords: Koordynaty wierzchołka
+            free: Czy budynek ma być postawiony za darmo (faza setup)
+        
+        Returns:
+            bool: Czy udało się postawić budynek
+        """
         vertex_key = frozenset(vertex_coords)
 
         if vertex_key not in self.vertices:
@@ -158,9 +184,101 @@ class GameBoard:
         for neighbor_key in self._get_neighboring_vertices(vertex_key):
             if neighbor_key in self.vertices and self.vertices[neighbor_key].building is not None:
                 return False
+                
+        # W normalnej fazie sprawdź połączenie z drogą, w fazie setup pomijamy
+        if not free and not self._has_connected_road(vertex_key, building.player):
+            return False
 
         vertex.building = building
         return True
+
+    def can_place_road(self, player: Player, edge_coords: set[tuple[int, int, int]], free=False):
+        """
+        Sprawdź, czy można postawić drogę na danej krawędzi
+        
+        Args:
+            player: Gracz stawiający drogę
+            edge_coords: Koordynaty krawędzi
+            free: Czy pomijamy sprawdzanie połączenia (faza setup)
+        
+        Returns:
+            bool: Czy można postawić drogę
+        """
+        edge_key = frozenset(edge_coords)
+
+        # Sprawdź, czy krawędź istnieje
+        if edge_key not in self.edges:
+            return False
+
+        edge = self.edges[edge_key]
+
+        # Sprawdź, czy krawędź jest wolna
+        if edge.road is not None:
+            return False
+
+        # W fazie setup pomijamy sprawdzanie połączenia
+        if free:
+            return True
+
+        # Sprawdź, czy istnieje połączenie z inną drogą lub budynkiem gracza
+        return self._has_adjacent_building_or_road(edge_key, player)
+
+    def can_place_settlement(self, player: Player, vertex_coords: set[tuple[int, int, int]], free=False):
+        """
+        Sprawdź, czy można postawić osadę na danym wierzchołku
+        
+        Args:
+            player: Gracz stawiający osadę
+            vertex_coords: Koordynaty wierzchołka
+            free: Czy pomijamy sprawdzanie połączenia (faza setup)
+        
+        Returns:
+            bool: Czy można postawić osadę
+        """
+        vertex_key = frozenset(vertex_coords)
+
+        # Sprawdź, czy wierzchołek istnieje
+        if vertex_key not in self.vertices:
+            return False
+
+        vertex = self.vertices[vertex_key]
+
+        # Sprawdź, czy wierzchołek jest wolny
+        if vertex.building is not None:
+            return False
+
+        # Sprawdź, czy nie ma budynków w sąsiedztwie (zasada odległości)
+        for neighbor_key in self._get_neighboring_vertices(vertex_key):
+            if neighbor_key in self.vertices and self.vertices[neighbor_key].building is not None:
+                return False
+
+        # W fazie setup pomijamy sprawdzanie połączenia
+        if free:
+            return True
+
+        # Sprawdź, czy istnieje połączenie z drogą gracza
+        return self._has_connected_road(vertex_key, player)
+
+    def get_adjacent_tiles(self, vertex_coords: set[tuple[int, int, int]]):
+        """
+        Pobierz kafelki przylegające do danego wierzchołka
+        
+        Args:
+            vertex_coords: Koordynaty wierzchołka
+        
+        Returns:
+            list[Tile]: Lista kafelków przylegających do wierzchołka
+        """
+        vertex_key = frozenset(vertex_coords)
+        adjacent_tiles = []
+        
+        # Dla każdej współrzędnej w wierzchołku, sprawdź czy istnieje kafelek o tych współrzędnych
+        for coord in vertex_key:
+            tile = self.get_tile_by_coords(coord)
+            if tile is not None:
+                adjacent_tiles.append(tile)
+        
+        return adjacent_tiles
 
     def _get_neighboring_vertices(self, vertex_key: frozenset[tuple[int, int, int]]):
         neighboring_vertices = []
