@@ -269,6 +269,23 @@ export default function OnlineGame() {
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
 
+      // Log detailed vertex data if available
+      if (data.game_state?.board?.vertices) {
+        console.log("Vertices from server:", data.game_state.board.vertices);
+
+        // Log specific details of each vertex that has a building
+        Object.entries(data.game_state.board.vertices).forEach(
+          ([key, vertexData]: [string, any]) => {
+            if (vertexData?.building) {
+              console.log(`Vertex ${key} with building:`, {
+                coordinates: vertexData.coordinates,
+                building: vertexData.building,
+              });
+            }
+          }
+        );
+      }
+
       // Pokaż powiadomienie o sukcesie
       if (data.action) {
         const actionMessages: { [key: string]: string } = {
@@ -298,7 +315,10 @@ export default function OnlineGame() {
 
       // Update game state
       if (data.game_state) {
-        console.log("Game state received in handleGameUpdate:", data.game_state);
+        console.log(
+          "Game state received in handleGameUpdate:",
+          data.game_state
+        );
         console.log("Vertices data in game_state:", data.game_state.vertices);
         setGameState(data.game_state);
 
@@ -519,92 +539,219 @@ export default function OnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
+  // Zmodyfikowana funkcja handleCornerClick z prostszym przesunięciem w prawo
+  // Wersja bazująca bardziej na twoim oryginalnym kodzie
+
   const handleCornerClick = (corner: Corner, tile: BaseTile) => {
-    console.log("Corner clicked in OnlineGame!", { corner, tile });
-    
-    // Get corner vertices using the updated method
-    const vertices = corner.getVertices ? corner.getVertices() : [];
-    console.log("Corner vertices:", vertices);
-  
+    if (!isMyTurn() || !buildMode || !board) return;
+
+    console.log("clicked corner!", corner, tile);
+
     if (buildMode === "settlement" || buildMode === "city") {
-      // Force all vertices to be in the correct format
-      let coords: number[][] = vertices.map(v => v.split(',').map(Number));
-      
-      // Make sure we have exactly 3 vertices
-      if (coords.length !== 3) {
-        // Generate missing vertices if needed
-        const cornerIndex = tile.getCorners().indexOf(corner);
-        const tileCoords = tile.tileId.split(',').map(Number);
-        
-        if (tileCoords.length === 3) {
-          const [q, r, s] = tileCoords;
-          coords = cornerIndex === 0 ? 
-            [[q, r, s], [q+1, r-1, s], [q+1, r, s-1]] : // North corner
-            [[q, r, s], [q-1, r+1, s], [q, r+1, s-1]];  // South corner
+      try {
+        // Sprawdź warunki budowania
+        let canBuild = true;
+
+        // Dla osady: sprawdź czy róg jest pusty
+        if (buildMode === "settlement" && corner.getOwner()) {
+          setError("Ten róg jest już zajęty!");
+          canBuild = false;
         }
-      }
-      
-      // Send the action to the server
-      GameService.sendMessage({
-        type: "game_action",
-        action: `build_${buildMode}`,
-        coords: coords,
-      });
-      
-      // If in setup phase, switch to road mode after placement
-      if (gamePhase === "setup" && buildMode === "settlement") {
-        setTimeout(() => {
-          setBuildMode("road");
-        }, 500);
+
+        // Dla miasta: sprawdź czy jest tam już nasza osada
+        if (buildMode === "city") {
+          const owner = corner.getOwner();
+          if (!owner) {
+            setError("Możesz ulepszać tylko własne osady!");
+            canBuild = false;
+          } else if (corner.hasCity()) {
+            setError("Ta osada jest już ulepszona do miasta!");
+            canBuild = false;
+          }
+        }
+
+        if (!canBuild) {
+          return;
+        }
+
+        // Pobierz wszystkie wierzchołki rogu
+        const vertices =
+          typeof corner.getVertices === "function" ? corner.getVertices() : [];
+        console.log("Raw vertex data:", vertices);
+
+        // Sprawdź, czy mamy wystarczającą liczbę wierzchołków (powinny być 3 dla narożnika)
+        if (vertices.length < 3) {
+          console.warn(
+            "Incomplete vertex data, corner should have 3 vertices but has:",
+            vertices.length
+          );
+
+          // Pobierz istniejące współrzędne
+          const coords = vertices.map((v) => v.split(",").map(Number));
+
+          // Pobierz dane o kafelku
+          const tileCoords = tile.tileId.split(",").map(Number);
+          const cornerIndex = tile.getCorners().indexOf(corner);
+
+          console.log(
+            "Using coordinates from tile:",
+            tileCoords,
+            "corner index:",
+            cornerIndex
+          );
+
+          // Używamy informacji o kafelku i indeksie narożnika do generowania prawidłowych koordynatów
+          const [q, r, s] = tileCoords;
+
+          // TWÓJ ORYGINALNY KOD Z PRZESUNIĘCIEM W PRAWO (+1 do q, -1 do s)
+          let vertexCoords: number[][] = [];
+
+          // if (cornerIndex === 0) {
+          //   // North corner
+          //   vertexCoords = [
+          //     [q + 2, r, s - 2], // Przesunięcie w prawo
+          //     [q + 2, r - 1, s - 1], // Przesunięcie w prawo
+          //     [q + 2, r, s - 2], // Przesunięcie w prawo
+          //   ];
+          // } else if (cornerIndex === 1) {
+          //   // South corner
+          //   vertexCoords = [
+          //     [q + 2, r, s - 2], // Przesunięcie w prawo
+          //     [q + 2, r + 1, s - 3], // Przesunięcie w prawo
+          //     [q, r + 1, s - 1], // Przesunięcie w prawo
+          //   ];
+
+          if (cornerIndex === 0) {
+            // North-East corner
+            vertexCoords = [
+              [q + 1, r - 1, s], // punkt A
+              [q + 2, r - 1, s - 1], // punkt B
+              [q + 2, r, s - 2], // punkt C
+            ];
+          } else if (cornerIndex === 1) {
+            // South-East corner
+            vertexCoords = [
+              [q + 1, r - 1, s], // punkt A
+              [q + 1, r, s - 1], // punkt B
+              [q, r, s], // (środek heksa, dla stabilizacji/wycentrowania)
+            ];
+          } else {
+            setError("Nieznany indeks narożnika");
+            return;
+          }
+
+          console.log("Generated vertex coordinates:", vertexCoords);
+
+          // Wyślij wygenerowane koordynaty
+          GameService.sendMessage({
+            type: "game_action",
+            action: `build_${buildMode}`,
+            coords: vertexCoords,
+          });
+        } else {
+          // Przetwórz wierzchołki na tablicę koordynatów
+          const vertexCoords = vertices.map((vertex) => {
+            const coords = vertex.split(",").map(Number);
+            // PRZESUNIĘCIE W PRAWO: +1 do q, -1 do s (aby zachować sumę q+r+s=0)
+            return [coords[0] + 1, coords[1], coords[2] - 1];
+          });
+
+          console.log("Shifted vertex coordinates:", vertexCoords);
+
+          // Wyślij koordynaty
+          GameService.sendMessage({
+            type: "game_action",
+            action: `build_${buildMode}`,
+            coords: vertexCoords,
+          });
+        }
+
+        // Dodaj budowlę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
+        const newPendingBuild = {
+          action: `build_${buildMode}`,
+          tileId: tile.tileId,
+          cornerIndex: tile.getCorners().indexOf(corner),
+        };
+
+        // Zapobieganie duplikatom
+        // const existingBuildIndex = pendingBuildsList.findIndex(
+        //   (item) =>
+        //     item.action === newPendingBuild.action &&
+        //     item.tileId === newPendingBuild.tileId &&
+        //     item.cornerIndex === newPendingBuild.cornerIndex
+        // );
+
+        // if (existingBuildIndex === -1) {
+        //   setPendingBuildsList((prev) => [...prev, newPendingBuild]);
+        // }
+
+        // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
+        showSuccessIndicator(
+          `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
+        );
+
+        // Jeśli jesteśmy w fazie setup, zmień tryb budowania na drogę po postawieniu osady
+        if (gamePhase === "setup" && buildMode === "settlement") {
+          setTimeout(() => {
+            setBuildMode("road");
+          }, 500);
+        }
+      } catch (err) {
+        console.error("Error processing corner click:", err);
+        setError(
+          `Error processing click: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
       }
     }
   };
 
   const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
-  
+
     // Get edge vertices
     const vertices = edge.getVertices ? edge.getVertices() : [];
-    
+
     try {
       // Ensure we have exactly 2 vertices for the edge
       let coords: number[][] = [];
-      
+
       if (vertices.length === 2) {
-        coords = vertices.map(v => v.split(',').map(Number));
+        coords = vertices.map((v) => v.split(",").map(Number));
       } else {
         // Generate vertices based on edge position in tile
         const edgeIndex = tile.getEdges().indexOf(edge);
-        const tileCoords = tile.tileId.split(',').map(Number);
-        
+        const tileCoords = tile.tileId.split(",").map(Number);
+
         if (tileCoords.length === 3) {
           const [q, r, s] = tileCoords;
           coords = [[q, r, s]]; // First vertex is the tile itself
-          
+
           // Add second vertex based on edge direction
-          switch(edgeIndex) {
+          switch (edgeIndex) {
             case 0: // NE edge
-              coords.push([q+1, r-1, s]);
+              coords.push([q + 1, r - 1, s]);
               break;
             case 1: // NW edge
-              coords.push([q, r-1, s+1]);
+              coords.push([q, r - 1, s + 1]);
               break;
             case 2: // W edge
-              coords.push([q-1, r, s+1]);
+              coords.push([q - 1, r, s + 1]);
               break;
           }
         }
       }
-      
+
       console.log("Sending road coordinates:", coords);
-      
+
       // Send the action to the server
       GameService.sendMessage({
         type: "game_action",
         action: "build_road",
         coords: coords,
       });
-      
+
       // In setup phase, end turn after placing a road
       if (gamePhase === "setup") {
         setTimeout(() => {
@@ -614,7 +761,11 @@ export default function OnlineGame() {
       }
     } catch (err) {
       console.error("Error processing edge click:", err);
-      setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
+      setError(
+        `Error processing click: ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
     }
   };
   const handleLeaveGame = () => {

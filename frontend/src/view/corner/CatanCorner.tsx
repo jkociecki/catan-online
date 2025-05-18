@@ -1,7 +1,9 @@
+// Poprawiony komponent CatanCorner.tsx
+
 import { Corner as CornerData } from "../../engine/corner";
 import styled from "styled-components";
 import { BaseTile } from "../../engine/tile";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Props {
   onClick?: (corner: CornerData, tile: BaseTile) => void;
@@ -27,7 +29,7 @@ const StyledSettlement = styled.polygon<{
   cursor: pointer;
   animation: ${({ $animate }) => ($animate ? "pulse 2s infinite" : "none")};
   transform-origin: center;
-  transform: scale(1.2);
+  /* Bez żadnej transformacji skalowania */
 
   @keyframes pulse {
     0% {
@@ -60,7 +62,7 @@ const StyledCity = styled.path<{
   cursor: pointer;
   animation: ${({ $animate }) => ($animate ? "pulse 2s infinite" : "none")};
   transform-origin: center;
-  transform: scale(1.2);
+  /* Bez żadnej transformacji skalowania */
 
   @keyframes pulse {
     0% {
@@ -80,7 +82,7 @@ const StyledCity = styled.path<{
   }
 `;
 
-// Stylizowany punkt "pusty", reagujący na kliknięcia
+// Stylizowany punkt "pusty", reagujący na kliknięcia - NIE ZMIENIAĆ!
 const StyledCircle = styled.circle<{
   $buildMode: string | null | undefined;
   $isPreviewMode: boolean;
@@ -136,6 +138,7 @@ export function Corner({
   const [isCity, setIsCity] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [animate, setAnimate] = useState(false);
+  const clickedRef = useRef(false); // Referencja do śledzenia czy właśnie kliknięto
 
   // Sprawdź, czy na tym rogu jest już jakaś budowla
   const hasBuilding = corner.getOwner() !== null;
@@ -158,16 +161,38 @@ export function Corner({
     }
   }, [isPreviewMode, coords, corner, tile]);
 
-useEffect(() => {
-  if (isPreviewMode) {
-    setIsActive(true);
-    setShowPreview(shouldShowPreview(coords, corner, buildMode, hasBuilding, isBuildingCity, myPlayerId));
-    setIsCity(buildMode === "city");
-  } else {
-    setIsActive(false);
-    setShowPreview(false);
-  }
-}, [buildMode, hasBuilding, isBuildingCity, isPreviewMode, corner, myPlayerId, coords]);
+  // Efekt dla podglądu budowli przy najechaniu
+  useEffect(() => {
+    if (isPreviewMode) {
+      setIsActive(true);
+
+      // Pokaż podgląd budowli zgodnie z trybem
+      if (buildMode === "settlement" && !hasBuilding) {
+        setShowPreview(true);
+        setIsCity(false);
+      } else if (
+        buildMode === "city" &&
+        hasBuilding &&
+        !isBuildingCity &&
+        corner.getOwner()?.getName() === myPlayerId
+      ) {
+        setShowPreview(true);
+        setIsCity(true);
+      } else {
+        setShowPreview(false);
+      }
+    } else {
+      setIsActive(false);
+      setShowPreview(false);
+    }
+  }, [
+    buildMode,
+    hasBuilding,
+    isBuildingCity,
+    isPreviewMode,
+    corner,
+    myPlayerId,
+  ]);
 
   // Efekt animacji po postawieniu budowli
   useEffect(() => {
@@ -182,63 +207,34 @@ useEffect(() => {
     }
   }, [hasBuilding]);
 
-const settlementPoints = `
-  ${coords.x},${coords.y - 0.3}
-  ${coords.x + 0.25},${coords.y - 0.1}
-  ${coords.x + 0.25},${coords.y + 0.15}
-  ${coords.x - 0.25},${coords.y + 0.15}
-  ${coords.x - 0.25},${coords.y - 0.1}
-`;
-
-
-
-function generateSettlementPoints(coords: { x: number; y: number }) {
-  // Ensure we're using exact geometry for settlement point calculation
-  const size = 0.25; // Size modifier for the settlement
-  return `
-    ${coords.x},${coords.y - 0.3 * size}
-    ${coords.x + 0.25 * size},${coords.y - 0.1 * size}
-    ${coords.x + 0.25 * size},${coords.y + 0.15 * size}
-    ${coords.x - 0.25 * size},${coords.y + 0.15 * size}
-    ${coords.x - 0.25 * size},${coords.y - 0.1 * size}
+  // DOMEK - Bardzo małe punkty, umieszczone dokładnie w pozycji punktu klikalnego
+  const settlementPoints = `
+    ${coords.x},${coords.y - 0.35}
+    ${coords.x + 0.3},${coords.y}
+    ${coords.x + 0.15},${coords.y + 0.35}
+    ${coords.x - 0.15},${coords.y + 0.35}
+    ${coords.x - 0.3},${coords.y}
   `;
-}
 
-// Better detection for valid building spots on mouse hover
-function shouldShowPreview(coords: { x: number; y: number }, corner: CornerData, buildMode: string | null | undefined, hasBuilding: boolean, isBuildingCity: boolean, myPlayerId: string | undefined): boolean {
-  if (!buildMode) return false;
-  
-  // Improved path for settlement preview
-  if (buildMode === "settlement") {
-    console.log(`Settlement preview coords: x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(2)}`);
-    return !hasBuilding; // Only show preview if corner is empty
-  }
-  
-  // Improved path for city preview
-  else if (buildMode === "city") {
-    // Only show preview if there's a settlement owned by the player
-    return hasBuilding && 
-           !isBuildingCity && 
-           corner.getOwner()?.getName() === myPlayerId;
-  }
-  
-  return false;
-}
-
-
-
-  // Miasto to bardziej skomplikowany kształt z dodatkową "wieżą"
+  // MIASTO - Bardzo mały kształt, umieszczony dokładnie w pozycji punktu klikalnego
   const cityPath = `
-    M ${coords.x - 0.3} ${coords.y - 0.1}
-    L ${coords.x - 0.3} ${coords.y + 0.2}
-    L ${coords.x + 0.3} ${coords.y + 0.2}
-    L ${coords.x + 0.3} ${coords.y - 0.1}
-    L ${coords.x + 0.15} ${coords.y - 0.25}
-    L ${coords.x - 0.15} ${coords.y - 0.25}
+    M ${coords.x - 0.32} ${coords.y - 0.05}
+    L ${coords.x - 0.32} ${coords.y + 0.35}
+    L ${coords.x + 0.32} ${coords.y + 0.35}
+    L ${coords.x + 0.32} ${coords.y - 0.05}
+    L ${coords.x} ${coords.y - 0.35}
     Z
   `;
 
-  const handleClick = () => {
+  // Obsługuje kliknięcie i zapobiega podwójnemu wywołaniu
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Zapobiegaj propagacji zdarzeń
+
+    // Zapobiegaj podwójnemu kliknięciu
+    if (clickedRef.current) return;
+
+    clickedRef.current = true;
+
     console.log(
       `Clicked corner at coords x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(
         2
@@ -249,9 +245,16 @@ function shouldShowPreview(coords: { x: number; y: number }, corner: CornerData,
         .getCorners()
         .indexOf(corner)}`
     );
-    // Add log for the corner object itself
     console.log("Clicked corner object:", corner);
-    onClick?.(corner, tile);
+
+    if (onClick) {
+      onClick(corner, tile);
+    }
+
+    // Resetowanie flagi po krótkim opóźnieniu
+    setTimeout(() => {
+      clickedRef.current = false;
+    }, 500);
   };
 
   return (
