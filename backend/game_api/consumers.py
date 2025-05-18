@@ -573,9 +573,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     # W backend/game_api/consumers.py
     @database_sync_to_async
     def process_build_settlement(self, game_state, player_id, coords, is_setup=False):
-        check_all_settlements(game_state, "POCZĄTEK process_build_settlement")
-
-        # Znajdź gracza
+        # Find player
         player = None
         for p in game_state.players:
             if p.id == player_id:
@@ -588,117 +586,80 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         try:
             print(f"Processing build settlement with coords: {coords}")
-            print("Available vertex keys:")
-            for key in list(game_state.game_board.vertices.keys())[:100]:  # Pokaż kilka przykładowych
-                print(f"  {key}")
 
-            # Poprawna konwersja koordynatów
+            # Convert coordinates to a format that the backend understands
             vertex_coords = set()
             if isinstance(coords, list):
                 for coord in coords:
                     if isinstance(coord, list) and len(coord) == 3:
                         vertex_coords.add(tuple(coord))
-            
-            # Znajdź prawidłowy klucz wierzchołka
+
+            # Find matching vertex key in the game board
             vertex_key = None
             for key in game_state.game_board.vertices.keys():
-                print(f"Checking vertex key: {key}")
-                # Sprawdź, czy klucz ma część wspólną z vertex_coords
-                common = vertex_coords.intersection(key)
-                if common:
-                    print(f"Found common coordinates: {common}")
+                # Check for any overlap between the provided coords and the vertex key
+                if vertex_coords.intersection(key):
                     vertex_key = key
                     break
-                    
+
             if not vertex_key:
                 print(f"Could not find a valid vertex for coordinates {vertex_coords}")
-                # Dodaj więcej informacji o dostępnych wierzchołkach
-                print("Available vertex keys:")
-                for key in list(game_state.game_board.vertices.keys())[:5]:  # Pokaż tylko 5 pierwszych dla czytelności
-                    print(f"  {key}")
                 return False
-            check_all_settlements(game_state, "PO SPRAWDZENIU ISTNIEJĄCYCH OSAD")
-   
+
+            # Check if the vertex is already occupied
+            vertex = game_state.game_board.vertices[vertex_key]
+            if hasattr(vertex, 'building') and vertex.building is not None:
+                print(f"Vertex {vertex_key} already has a building")
+                return False
+
+            # Create and place the settlement
             from game_engine.board.buildings import Building, BuildingType
-            # Użyj vertex_key do postawienia osady
             settlement = Building(BuildingType.SETTLEMENT, player)
-            result = game_state.game_board.place_building(settlement, vertex_key, free=is_setup)
-            
-           
 
-            # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
-            if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
-                                                                                            None) == "setup":
-                print("Building settlement in setup phase")
-                if hasattr(game_state, 'place_initial_settlement'):
-                    print("Using place_initial_settlement method")
-                    result = game_state.place_initial_settlement(player, vertex_coords)
-                else:
-                    print("Using fallback settlement building method")
-                    # Fallback, jeśli metoda place_initial_settlement nie istnieje
-                    from game_engine.board.buildings import Building, BuildingType
-                    from game_engine.common.resources import Resource
+            # Place the building - use free=True in setup phase
+            result = game_state.game_board.place_building(
+                settlement,
+                vertex_key,
+                free=is_setup
+            )
 
-                    # Znajdź wierzchołek w tablicy wierzchołków
-                    vertex_key = None
-                    for key in game_state.game_board.vertices.keys():
-                        if any(coord in key for coord in vertex_coords):
-                            vertex_key = key
-                            break
+            if result:
+                # Update player stats
+                player.settlements_left -= 1
+                player.victory_points += 1
 
-                    if not vertex_key:
-                        print(f"Could not find a valid vertex for coordinates {vertex_coords}")
-                        return False
+                # Update setup phase tracking
+                if is_setup or game_state.phase == "setup":
+                    if not hasattr(game_state, 'setup_placed'):
+                        game_state.setup_placed = {}
+                    if player.id not in game_state.setup_placed:
+                        game_state.setup_placed[player.id] = [0, 0]
+                    game_state.setup_placed[player.id][0] += 1
 
-                    settlement = Building(BuildingType.SETTLEMENT, player)
-                    result = game_state.game_board.place_building(settlement, vertex_key, free=True)
-                    if result:
-                        player.settlements_left -= 1
-                        player.victory_points += 1
+                    # Give resources for second settlement
+                    if game_state.setup_placed[player.id][0] == 2:
+                        adjacent_tiles = game_state.game_board.get_adjacent_tiles(vertex_key)
+                        for tile in adjacent_tiles:
+                            resource = tile.get_resource()
+                            if resource and resource != Resource.DESERT:
+                                player.add_resource(resource, 1)
 
-                        # Aktualizuj licznik w setup_placed
-                        if not hasattr(game_state, 'setup_placed'):
-                            game_state.setup_placed = {}
-                        if player.id not in game_state.setup_placed:
-                            game_state.setup_placed[player.id] = [0, 0]
-                        game_state.setup_placed[player.id][0] += 1
+                # Check setup progress after building
+                if hasattr(game_state, 'check_setup_progress'):
+                    game_state.check_setup_progress()
 
-                        # Sprawdź czy druga osada - przyznaj zasoby
-                        if game_state.setup_placed[player.id][0] == 2:
-                            adjacent_tiles = game_state.game_board.get_adjacent_tiles(vertex_key)
-                            for tile in adjacent_tiles:
-                                resource = tile.get_resource()
-                                if resource != Resource.DESERT and resource is not None:
-                                    player.add_resource(resource, 1)
-            else:
-                print("Building settlement in normal game phase")
-                # Normalna gra - użyj standardowej metody
-                if hasattr(game_state, 'turn_manager'):
-                    # Znajdź wierzchołek w tablicy wierzchołków
-                    vertex_key = None
-                    for key in game_state.game_board.vertices.keys():
-                        if any(coord in key for coord in vertex_coords):
-                            vertex_key = key
-                            break
-
-                    if not vertex_key:
-                        print(f"Could not find a valid vertex for coordinates {vertex_coords}")
-                        return False
-
-                    result = game_state.turn_manager.build_settlement(player, vertex_key)
-
-            # Po każdej akcji w fazie setup sprawdź postęp
-            if hasattr(game_state, 'check_setup_progress'):
-                print("Checking setup progress after building settlement")
-                game_state.check_setup_progress()
-
-            return result
+                return True
+            return False
         except Exception as e:
             import traceback
             traceback.print_exc()
             print(f"Error building settlement: {str(e)}")
             return False
-    @database_sync_to_async
+
+
+
+
+
     def process_dice_roll(self, game_state):
         """Roll dice and distribute resources"""
         # Sprawdź czy jesteśmy w fazie setup
@@ -851,7 +812,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             return False
     @database_sync_to_async
     def process_build_road(self, game_state, player_id, coords, is_setup=False):
-        """Process road building"""
+        # Find player
         player = None
         for p in game_state.players:
             if p.id == player_id:
@@ -864,97 +825,74 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         try:
             print(f"Processing build road with coords: {coords}")
-            # Convert coords to the format expected by the game engine
-            edge_coords = set()
 
-            # Sprawdź format przekazanych koordynatów
+            # Convert coordinates to a format that the backend understands
+            edge_coords = set()
             if isinstance(coords, list):
                 for coord in coords:
-                    # Koordynaty mogą być listą list lub listą krotek
                     if isinstance(coord, list) and len(coord) == 3:
                         edge_coords.add(tuple(coord))
                     elif isinstance(coord, tuple) and len(coord) == 3:
                         edge_coords.add(coord)
-            elif isinstance(coords, tuple) and len(coords) == 3:
-                # Pojedyncza krotka
-                edge_coords.add(coords)
-            elif isinstance(coords, dict) and 'type' in coords:
-                # Obsługa specjalnego formatu z frontendu
-                print(f"Received special format from frontend: {coords}")
-                # Tu dodaj odpowiednią obsługę
-
-            print(f"Edge coordinates after processing: {edge_coords}")
 
             if not edge_coords:
                 print("No valid edge coordinates found")
                 return False
 
-            # Obsługa stawiania drogi
-            result = False
+            # Find matching edge key in the game board
+            edge_key = None
+            for key in game_state.game_board.edges.keys():
+                # Check for any overlap between the provided coords and the edge key
+                if edge_coords.intersection(key):
+                    edge_key = key
+                    break
 
-            # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
-            if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
-                                                                                            None) == "setup":
-                print("Building road in setup phase")
-                if hasattr(game_state, 'place_initial_road'):
-                    print("Using place_initial_road method")
-                    result = game_state.place_initial_road(player, edge_coords)
-                else:
-                    print("Using fallback road building method")
-                    # Fallback, jeśli metoda place_initial_road nie istnieje
-                    from game_engine.board.buildings import Road
+            if not edge_key:
+                print(f"Could not find a valid edge for coordinates {edge_coords}")
+                return False
 
-                    # Znajdź krawędź w tablicy krawędzi
-                    edge_key = None
-                    for key in game_state.game_board.edges.keys():
-                        if any(coord in key for coord in edge_coords):
-                            edge_key = key
-                            break
+            # Check if the edge is already occupied
+            edge = game_state.game_board.edges[edge_key]
+            if hasattr(edge, 'road') and edge.road is not None:
+                print(f"Edge {edge_key} already has a road")
+                return False
 
-                    if not edge_key:
-                        print(f"Could not find a valid edge for coordinates {edge_coords}")
-                        return False
+            # Create and place the road
+            from game_engine.board.buildings import Road
+            road = Road(player)
 
-                    road = Road(player)
-                    result = game_state.game_board.place_road(road, edge_key, free=True)
-                    if result:
-                        player.roads_left -= 1
+            # Place the road - use free=True in setup phase
+            result = game_state.game_board.place_road(
+                road,
+                edge_key,
+                free=is_setup
+            )
 
-                        # Aktualizuj licznik w setup_placed
-                        if not hasattr(game_state, 'setup_placed'):
-                            game_state.setup_placed = {}
-                        if player.id not in game_state.setup_placed:
-                            game_state.setup_placed[player.id] = [0, 0]
-                        game_state.setup_placed[player.id][1] += 1
-            else:
-                print("Building road in normal game phase")
-                # Normalna gra - użyj standardowej metody
-                if hasattr(game_state, 'turn_manager'):
-                    # Znajdź krawędź w tablicy krawędzi
-                    edge_key = None
-                    for key in game_state.game_board.edges.keys():
-                        if any(coord in key for coord in edge_coords):
-                            edge_key = key
-                            break
+            if result:
+                # Update player stats
+                player.roads_left -= 1
 
-                    if not edge_key:
-                        print(f"Could not find a valid edge for coordinates {edge_coords}")
-                        return False
+                # Update setup phase tracking
+                if is_setup or game_state.phase == "setup":
+                    if not hasattr(game_state, 'setup_placed'):
+                        game_state.setup_placed = {}
+                    if player.id not in game_state.setup_placed:
+                        game_state.setup_placed[player.id] = [0, 0]
+                    game_state.setup_placed[player.id][1] += 1
 
-                    result = game_state.turn_manager.build_road(player, edge_key)
+                # Check setup progress after building
+                if hasattr(game_state, 'check_setup_progress'):
+                    game_state.check_setup_progress()
 
-            # Po każdej akcji w fazie setup sprawdź postęp
-            if hasattr(game_state, 'check_setup_progress'):
-                print("Checking setup progress after building road")
-                game_state.check_setup_progress()
-
-            return result
+                return True
+            return False
         except Exception as e:
             import traceback
             traceback.print_exc()
             print(f"Error building road: {str(e)}")
             return False
-    @database_sync_to_async
+
+
     def process_build_city(self, game_state, player_id, coords):
         """Process city building (upgrading settlement)"""
         player = None

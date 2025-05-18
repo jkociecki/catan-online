@@ -250,20 +250,12 @@ export class Board {
     edge.placeRoad(player);
   }
 
-// In board.ts
-private initCornerVertices(): void {
-  // First pass - add the basic vertex to each corner
-  Object.entries(this.tiles).forEach(([tileId, tile]) => {
-    // For each tile, get its corners
-    const corners = tile.getCorners();
-    
-    // Add tile ID to vertices of each corner
-    corners.forEach((corner) => {
-      corner.addVertex(tileId);
-    });
-  });
+// Enhanced vertex initialization for corners
+initCornerVertices() {
+  // First collect all tile vertices
+  const cornerVerticesMap = new Map();
   
-  // Second pass - compute the other vertices for each corner
+  // For each tile, assign vertices to its corners
   Object.entries(this.tiles).forEach(([tileId, tile]) => {
     const corners = tile.getCorners();
     const tileCoords = tileId.split(',').map(Number);
@@ -273,14 +265,45 @@ private initCornerVertices(): void {
       
       // North corner (index 0)
       const northCorner = corners[0];
-      northCorner.addVertex(`${q+1},${r-1},${s}`);
-      northCorner.addVertex(`${q+1},${r},${s-1}`);
+      const northVertices = new Set();
+      northVertices.add(tileId);
+      northVertices.add(`${q+1},${r-1},${s}`);
+      northVertices.add(`${q+1},${r},${s-1}`);
+      
+      if (!cornerVerticesMap.has(northCorner)) {
+        cornerVerticesMap.set(northCorner, northVertices);
+      } else {
+        const existingVertices = cornerVerticesMap.get(northCorner);
+        northVertices.forEach(v => existingVertices.add(v));
+      }
       
       // South corner (index 1)
       const southCorner = corners[1];
-      southCorner.addVertex(`${q},${r+1},${s-1}`);
-      southCorner.addVertex(`${q-1},${r+1},${s}`);
+      const southVertices = new Set();
+      southVertices.add(tileId);
+      southVertices.add(`${q},${r+1},${s-1}`);
+      southVertices.add(`${q-1},${r+1},${s}`);
+      
+      if (!cornerVerticesMap.has(southCorner)) {
+        cornerVerticesMap.set(southCorner, southVertices);
+      } else {
+        const existingVertices = cornerVerticesMap.get(southCorner);
+        southVertices.forEach(v => existingVertices.add(v));
+      }
     }
+  });
+  
+  // Now assign all vertices to corners
+  cornerVerticesMap.forEach((vertices, corner) => {
+    vertices.forEach((vertex: string) => {
+      corner.addVertex(vertex);
+    });
+  });
+  
+  // Verify that we have 3 vertices for each corner
+  cornerVerticesMap.forEach((vertices, corner) => {
+    const verticesArray = Array.from(vertices);
+    console.debug(`Corner has ${verticesArray.length} vertices: ${verticesArray}`);
   });
 }
 

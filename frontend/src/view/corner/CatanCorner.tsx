@@ -161,13 +161,13 @@ export function Corner({
 useEffect(() => {
   if (isPreviewMode) {
     setIsActive(true);
-    setShowPreview(shouldShowPreview());
+    setShowPreview(shouldShowPreview(coords, corner, buildMode, hasBuilding, isBuildingCity, myPlayerId));
     setIsCity(buildMode === "city");
   } else {
     setIsActive(false);
     setShowPreview(false);
   }
-}, [buildMode, hasBuilding, isBuildingCity, isPreviewMode, corner, myPlayerId]);
+}, [buildMode, hasBuilding, isBuildingCity, isPreviewMode, corner, myPlayerId, coords]);
 
   // Efekt animacji po postawieniu budowli
   useEffect(() => {
@@ -190,20 +190,42 @@ const settlementPoints = `
   ${coords.x - 0.25},${coords.y - 0.1}
 `;
 
-const shouldShowPreview = () => {
+
+
+function generateSettlementPoints(coords: { x: number; y: number }) {
+  // Ensure we're using exact geometry for settlement point calculation
+  const size = 0.25; // Size modifier for the settlement
+  return `
+    ${coords.x},${coords.y - 0.3 * size}
+    ${coords.x + 0.25 * size},${coords.y - 0.1 * size}
+    ${coords.x + 0.25 * size},${coords.y + 0.15 * size}
+    ${coords.x - 0.25 * size},${coords.y + 0.15 * size}
+    ${coords.x - 0.25 * size},${coords.y - 0.1 * size}
+  `;
+}
+
+// Better detection for valid building spots on mouse hover
+function shouldShowPreview(coords: { x: number; y: number }, corner: CornerData, buildMode: string | null | undefined, hasBuilding: boolean, isBuildingCity: boolean, myPlayerId: string | undefined): boolean {
   if (!buildMode) return false;
   
+  // Improved path for settlement preview
   if (buildMode === "settlement") {
-    // Log coordinates being used for settlement preview
     console.log(`Settlement preview coords: x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(2)}`);
     return !hasBuilding; // Only show preview if corner is empty
-  } else if (buildMode === "city") {
+  }
+  
+  // Improved path for city preview
+  else if (buildMode === "city") {
     // Only show preview if there's a settlement owned by the player
-    return hasBuilding && !isBuildingCity && corner.getOwner()?.getName() === myPlayerId;
+    return hasBuilding && 
+           !isBuildingCity && 
+           corner.getOwner()?.getName() === myPlayerId;
   }
   
   return false;
-};
+}
+
+
 
   // Miasto to bardziej skomplikowany kształt z dodatkową "wieżą"
   const cityPath = `

@@ -520,171 +520,66 @@ export default function OnlineGame() {
   }, [players, myPlayerId, gamePhase]);
 
   const handleCornerClick = (corner: Corner, tile: BaseTile) => {
-    if (!isMyTurn() || !buildMode || !board) return;
-
     console.log("Corner clicked in OnlineGame!", { corner, tile });
     
-    // Get corner vertices
+    // Get corner vertices using the updated method
     const vertices = corner.getVertices ? corner.getVertices() : [];
     console.log("Corner vertices:", vertices);
-
+  
     if (buildMode === "settlement" || buildMode === "city") {
-      try {
-        // Check building conditions
-        let canBuild = true;
-
-        // For settlement: check if corner is empty
-        if (buildMode === "settlement" && corner.getOwner()) {
-          setError("This corner is already occupied!");
-          canBuild = false;
-        }
-
-        // For city: check if it's our settlement
-        if (buildMode === "city") {
-          const owner = corner.getOwner();
-          if (!owner) {
-            setError("You can only upgrade your own settlements!");
-            canBuild = false;
-          } else if (corner.hasCity()) {
-            setError("This settlement is already upgraded to a city!");
-            canBuild = false;
-          }
-        }
-
-        if (!canBuild) {
-          return;
-        }
-
-        // Prepare coordinates for the server
-        let coords: number[][] = [];
+      // Force all vertices to be in the correct format
+      let coords: number[][] = vertices.map(v => v.split(',').map(Number));
+      
+      // Make sure we have exactly 3 vertices
+      if (coords.length !== 3) {
+        // Generate missing vertices if needed
+        const cornerIndex = tile.getCorners().indexOf(corner);
+        const tileCoords = tile.tileId.split(',').map(Number);
         
-        // Process vertices if we have them
-        if (vertices.length >= 3) {
-          // Take only the first 3 vertices
-          coords = vertices.slice(0, 3).map(v => v.split(',').map(Number));
-        } else {
-          // Not enough vertices, generate them based on tile ID and corner index
-          const cornerIndex = tile.getCorners().indexOf(corner);
-          const tileCoords = tile.tileId.split(',').map(Number);
-          
-          if (tileCoords.length === 3) {
-            const [q, r, s] = tileCoords;
-            
-            // Generate coordinates based on corner position
-            if (cornerIndex === 0) { // North corner
-              coords = [
-                [q, r, s],
-                [q+1, r, s-1],
-                [q+1, r-1, s]
-              ];
-            } else if (cornerIndex === 1) { // South corner
-              coords = [
-                [q, r, s],
-                [q, r+1, s-1],
-                [q-1, r+1, s]
-              ];
-            }
-          }
+        if (tileCoords.length === 3) {
+          const [q, r, s] = tileCoords;
+          coords = cornerIndex === 0 ? 
+            [[q, r, s], [q+1, r-1, s], [q+1, r, s-1]] : // North corner
+            [[q, r, s], [q-1, r+1, s], [q, r+1, s-1]];  // South corner
         }
-        
-        // Validate coordinates
-        if (coords.length < 3) {
-          console.error("Failed to generate enough vertices:", coords);
-          setError("Could not determine corner coordinates");
-          return;
-        }
-        
-        console.log("Sending coordinates to server:", coords);
-        
-        // Send the action to the server
-        GameService.sendMessage({
-          type: "game_action",
-          action: `build_${buildMode}`,
-          coords: coords,
-        });
-
-        // Show waiting message
-        showSuccessIndicator(`Building ${buildMode === "settlement" ? "settlement" : "city"}...`);
-
-        // If in setup phase, switch to road mode after placing a settlement
-        if (gamePhase === "setup" && buildMode === "settlement") {
-          // Wait for server response before switching modes
-          setTimeout(() => {
-            console.log("Attempting to switch to road mode.");
-            setBuildMode("road");
-            console.log("Build mode after setBuildMode:", buildMode); // Log state after setting
-          }, 1500); // Increased timeout slightly
-        }
-        
-        // Debug log
-        console.log(`Attempted to build ${buildMode} at corner with vertices:`, vertices);
-      } catch (err) {
-        console.error("Error processing corner click:", err);
-        setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      
+      // Send the action to the server
+      GameService.sendMessage({
+        type: "game_action",
+        action: `build_${buildMode}`,
+        coords: coords,
+      });
+      
+      // If in setup phase, switch to road mode after placement
+      if (gamePhase === "setup" && buildMode === "settlement") {
+        setTimeout(() => {
+          setBuildMode("road");
+        }, 500);
       }
     }
   };
 
   const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
-
-    console.log("Edge clicked!", edge, tile);
-    
+  
     // Get edge vertices
     const vertices = edge.getVertices ? edge.getVertices() : [];
-    console.log("Edge vertices:", vertices);
-
+    
     try {
-      // Check if edge is already occupied
-      if (edge.getOwner()) {
-        setError("This edge is already occupied!");
-        return;
-      }
-
-      // In setup phase, check if the road is connected to the settlement we just placed
-      if (gamePhase === "setup") {
-        const connectedCorners = edge.getVertices().map(v => {
-          const [q, r, s] = v.split(',').map(Number);
-          const tileId = `${q},${r},${s}`;
-          const tile = board.getTile({ q, r, s });
-          if (!tile) return null;
-          
-          // Find the corner that matches these coordinates
-          return tile.getCorners().find(corner => {
-            const cornerVertices = corner.getVertices();
-            return cornerVertices.some(cv => cv === v);
-          });
-        }).filter(corner => corner !== null);
-
-        const hasConnectedSettlement = connectedCorners.some(corner => {
-          if (!corner) return false;
-          const owner = corner.getOwner();
-          return owner && owner.getName() === myPlayerId;
-        });
-
-        if (!hasConnectedSettlement) {
-          setError("Road must be connected to your settlement!");
-          return;
-        }
-      }
-
-      // Prepare coordinates for the server
+      // Ensure we have exactly 2 vertices for the edge
       let coords: number[][] = [];
       
-      // Process vertices if we have them
-      if (vertices.length >= 2) {
-        // Take only the first 2 vertices
-        coords = vertices.slice(0, 2).map(v => v.split(',').map(Number));
+      if (vertices.length === 2) {
+        coords = vertices.map(v => v.split(',').map(Number));
       } else {
-        // Not enough vertices, generate them based on tile ID and edge index
+        // Generate vertices based on edge position in tile
         const edgeIndex = tile.getEdges().indexOf(edge);
         const tileCoords = tile.tileId.split(',').map(Number);
         
         if (tileCoords.length === 3) {
           const [q, r, s] = tileCoords;
-          
-          // Add first vertex (the tile itself)
-          coords.push([q, r, s]);
+          coords = [[q, r, s]]; // First vertex is the tile itself
           
           // Add second vertex based on edge direction
           switch(edgeIndex) {
@@ -701,14 +596,7 @@ export default function OnlineGame() {
         }
       }
       
-      // Validate coordinates
-      if (coords.length < 2) {
-        console.error("Failed to generate enough vertices for edge:", coords);
-        setError("Could not determine edge coordinates");
-        return;
-      }
-      
-      console.log("Sending road coordinates to server:", coords);
+      console.log("Sending road coordinates:", coords);
       
       // Send the action to the server
       GameService.sendMessage({
@@ -716,10 +604,7 @@ export default function OnlineGame() {
         action: "build_road",
         coords: coords,
       });
-
-      // Show waiting message
-      showSuccessIndicator("Building road...");
-
+      
       // In setup phase, end turn after placing a road
       if (gamePhase === "setup") {
         setTimeout(() => {
@@ -727,15 +612,11 @@ export default function OnlineGame() {
           setBuildMode(null);
         }, 1000);
       }
-      
-      // Debug log
-      console.log(`Attempted to build road at edge with vertices:`, vertices);
-    } catch (err: unknown) {
+    } catch (err) {
       console.error("Error processing edge click:", err);
       setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
-
   const handleLeaveGame = () => {
     GameService.disconnectFromRoom();
     navigate("/");
