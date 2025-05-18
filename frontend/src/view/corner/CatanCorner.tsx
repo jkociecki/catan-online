@@ -208,13 +208,20 @@ export function Corner({
   }, [hasBuilding]);
 
   // DOMEK - Bardzo małe punkty, umieszczone dokładnie w pozycji punktu klikalnego
+  // const settlementPoints = `
+  //   ${coords.x},${coords.y - 0.35}
+  //   ${coords.x + 0.3},${coords.y}
+  //   ${coords.x + 0.15},${coords.y + 0.35}
+  //   ${coords.x - 0.15},${coords.y + 0.35}
+  //   ${coords.x - 0.3},${coords.y}
+  // `;
   const settlementPoints = `
-    ${coords.x},${coords.y - 0.35}
-    ${coords.x + 0.3},${coords.y}
-    ${coords.x + 0.15},${coords.y + 0.35}
-    ${coords.x - 0.15},${coords.y + 0.35}
-    ${coords.x - 0.3},${coords.y}
-  `;
+  ${coords.x},${coords.y - 0.52}
+  ${coords.x + 0.45},${coords.y}
+  ${coords.x + 0.225},${coords.y + 0.52}
+  ${coords.x - 0.225},${coords.y + 0.52}
+  ${coords.x - 0.45},${coords.y}
+`;
 
   // MIASTO - Bardzo mały kształt, umieszczony dokładnie w pozycji punktu klikalnego
   const cityPath = `

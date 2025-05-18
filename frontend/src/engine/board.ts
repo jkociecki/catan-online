@@ -26,23 +26,6 @@ const resourceMap: { [key: string]: Resource } = {
   desert: Resource.Desert,
 };
 
-// Definiujemy interfejsy dla matchów
-interface CornerMatch {
-  corner: Corner;
-  tile: BaseTile;
-  tileId: string;
-  cornerIndex: number;
-  sharedPoints: number;
-}
-
-interface EdgeMatch {
-  edge: Edge;
-  tile: BaseTile;
-  tileId: string;
-  edgeIndex: number;
-  sharedPoints: number;
-}
-
 export class Board {
   private hexagons: Hex[];
   private tiles: Tiles;
@@ -138,18 +121,29 @@ export class Board {
         console.log("Building coordinates as strings:", buildingCoords);
 
         // Znajdź odpowiedni narożnik na planszy klienta
-        let bestMatch: CornerMatch | null = null;
+        // Jawna inicjalizacja wszystkich zmiennych
+        let foundBestMatch = false;
+        let bestCorner: Corner | null = null;
+        let bestTile: BaseTile | null = null;
+        let bestTileId = "";
+        let bestCornerIndex = -1;
+        let bestSharedPoints = 0;
 
         // Przeszukaj wszystkie narożniki, szukając najlepszego dopasowania
         Object.entries(this.tiles).forEach(([tileId, tile]) => {
           const corners = tile.getCorners();
 
           corners.forEach((corner, cornerIndex) => {
-            if (typeof corner.getVertices === "function") {
-              const cornerVertices = corner.getVertices();
+            // Bezpieczne sprawdzenie czy corner jest właściwego typu
+            if (corner && typeof (corner as any).getVertices === "function") {
+              // Jawne rzutowanie na typ z getVertices
+              const cornerWithVertices = corner as unknown as {
+                getVertices: () => string[];
+              };
+              const cornerVertices = cornerWithVertices.getVertices();
 
               // Jeśli narożnik ma wierzchołki
-              if (cornerVertices.length > 0) {
+              if (cornerVertices && cornerVertices.length > 0) {
                 // Sprawdź ile punktów jest współdzielonych
                 const sharedPoints = countSharedPoints(
                   cornerVertices,
@@ -170,15 +164,14 @@ export class Board {
                 // Jeśli mamy lepsze dopasowanie niż dotychczas
                 if (
                   sharedPoints > 0 &&
-                  (!bestMatch || sharedPoints > bestMatch.sharedPoints)
+                  (!foundBestMatch || sharedPoints > bestSharedPoints)
                 ) {
-                  bestMatch = {
-                    corner,
-                    tile,
-                    tileId,
-                    cornerIndex,
-                    sharedPoints,
-                  };
+                  foundBestMatch = true;
+                  bestCorner = corner;
+                  bestTile = tile;
+                  bestTileId = tileId;
+                  bestCornerIndex = cornerIndex;
+                  bestSharedPoints = sharedPoints;
                 }
               }
             }
@@ -186,12 +179,21 @@ export class Board {
         });
 
         // Jeśli znaleźliśmy dopasowanie
-        if (bestMatch) {
+        if (foundBestMatch && bestCorner && bestTile) {
+          // Bezpieczne wyświetlenie informacji o wierzchołkach
+          let cornerVertices: string[] = [];
+          if (typeof (bestCorner as any).getVertices === "function") {
+            const cornerWithVertices = bestCorner as unknown as {
+              getVertices: () => string[];
+            };
+            cornerVertices = cornerWithVertices.getVertices();
+          }
+
           console.log("Found best matching corner:", {
-            tileId: bestMatch.tileId,
-            cornerIndex: bestMatch.cornerIndex,
-            sharedPoints: bestMatch.sharedPoints,
-            cornerVertices: bestMatch.corner.getVertices(),
+            tileId: bestTileId,
+            cornerIndex: bestCornerIndex,
+            sharedPoints: bestSharedPoints,
+            cornerVertices: cornerVertices,
           });
 
           const player = new Player(
@@ -201,7 +203,7 @@ export class Board {
 
           // Określ kierunek narożnika (N lub S)
           let cornerDir: TileCornerDir;
-          if (bestMatch.cornerIndex === 0) {
+          if (bestCornerIndex === 0) {
             cornerDir = TileCornerDir.N;
           } else {
             cornerDir = TileCornerDir.S;
@@ -211,17 +213,12 @@ export class Board {
           if (vertexData.building.type === "SETTLEMENT") {
             console.log(
               "Placing settlement at found corner using dir:",
-              bestMatch.corner,
               cornerDir
             );
-            this.placeSettlement(bestMatch.tileId, cornerDir, player, true);
+            this.placeSettlement(bestTileId, cornerDir, player, true);
           } else if (vertexData.building.type === "CITY") {
-            console.log(
-              "Placing city at found corner using dir:",
-              bestMatch.corner,
-              cornerDir
-            );
-            this.placeCity(bestMatch.tileId, cornerDir, player, true);
+            console.log("Placing city at found corner using dir:", cornerDir);
+            this.placeCity(bestTileId, cornerDir, player, true);
           }
         } else {
           console.error(
@@ -270,18 +267,28 @@ export class Board {
         console.log("Road coordinates as strings:", roadCoords);
 
         // Znajdź odpowiednią krawędź na planszy klienta
-        let bestMatch: EdgeMatch | null = null;
+        let foundBestMatch = false;
+        let bestEdge: Edge | null = null;
+        let bestTile: BaseTile | null = null;
+        let bestTileId = "";
+        let bestEdgeIndex = -1;
+        let bestSharedPoints = 0;
 
         // Przeszukaj wszystkie krawędzie, szukając najlepszego dopasowania
         Object.entries(this.tiles).forEach(([tileId, tile]) => {
           const edges = tile.getEdges();
 
           edges.forEach((edge, edgeIndex) => {
-            if (typeof edge.getVertices === "function") {
-              const edgeVertices = edge.getVertices();
+            // Bezpieczne sprawdzenie czy edge jest właściwego typu
+            if (edge && typeof (edge as any).getVertices === "function") {
+              // Jawne rzutowanie na typ z getVertices
+              const edgeWithVertices = edge as unknown as {
+                getVertices: () => string[];
+              };
+              const edgeVertices = edgeWithVertices.getVertices();
 
               // Jeśli krawędź ma wierzchołki
-              if (edgeVertices.length > 0) {
+              if (edgeVertices && edgeVertices.length > 0) {
                 // Sprawdź ile punktów jest współdzielonych
                 const sharedPoints = countSharedPoints(
                   edgeVertices,
@@ -302,15 +309,14 @@ export class Board {
                 // Jeśli mamy lepsze dopasowanie niż dotychczas
                 if (
                   sharedPoints > 0 &&
-                  (!bestMatch || sharedPoints > bestMatch.sharedPoints)
+                  (!foundBestMatch || sharedPoints > bestSharedPoints)
                 ) {
-                  bestMatch = {
-                    edge,
-                    tile,
-                    tileId,
-                    edgeIndex,
-                    sharedPoints,
-                  };
+                  foundBestMatch = true;
+                  bestEdge = edge;
+                  bestTile = tile;
+                  bestTileId = tileId;
+                  bestEdgeIndex = edgeIndex;
+                  bestSharedPoints = sharedPoints;
                 }
               }
             }
@@ -318,12 +324,21 @@ export class Board {
         });
 
         // Jeśli znaleźliśmy dopasowanie
-        if (bestMatch) {
+        if (foundBestMatch && bestEdge && bestTile) {
+          // Bezpieczne wyświetlenie informacji o wierzchołkach
+          let edgeVertices: string[] = [];
+          if (typeof (bestEdge as any).getVertices === "function") {
+            const edgeWithVertices = bestEdge as unknown as {
+              getVertices: () => string[];
+            };
+            edgeVertices = edgeWithVertices.getVertices();
+          }
+
           console.log("Found best matching edge:", {
-            tileId: bestMatch.tileId,
-            edgeIndex: bestMatch.edgeIndex,
-            sharedPoints: bestMatch.sharedPoints,
-            edgeVertices: bestMatch.edge.getVertices(),
+            tileId: bestTileId,
+            edgeIndex: bestEdgeIndex,
+            sharedPoints: bestSharedPoints,
+            edgeVertices: edgeVertices,
           });
 
           const player = new Player(
@@ -333,21 +348,17 @@ export class Board {
 
           // Określ kierunek krawędzi (NE, NW lub W)
           let edgeDir: TileEdgeDir;
-          if (bestMatch.edgeIndex === 0) {
+          if (bestEdgeIndex === 0) {
             edgeDir = TileEdgeDir.NE;
-          } else if (bestMatch.edgeIndex === 1) {
+          } else if (bestEdgeIndex === 1) {
             edgeDir = TileEdgeDir.NW;
           } else {
             edgeDir = TileEdgeDir.W;
           }
 
           // Umieść drogę na planszy
-          console.log(
-            "Placing road at found edge using dir:",
-            bestMatch.edge,
-            edgeDir
-          );
-          this.placeRoad(bestMatch.tileId, edgeDir, player, true);
+          console.log("Placing road at found edge using dir:", edgeDir);
+          this.placeRoad(bestTileId, edgeDir, player, true);
         } else {
           console.error(
             "Could not find a matching edge for server edge data:",
@@ -457,9 +468,15 @@ export class Board {
 
     // Now assign all vertices to corners
     cornerVerticesMap.forEach((vertices, corner) => {
-      vertices.forEach((vertex: string) => {
-        corner.addVertex(vertex);
-      });
+      // Bezpieczne wywołanie metody addVertex
+      if (typeof (corner as any).addVertex === "function") {
+        const cornerWithAddVertex = corner as unknown as {
+          addVertex: (vertex: string) => void;
+        };
+        vertices.forEach((vertex: string) => {
+          cornerWithAddVertex.addVertex(vertex);
+        });
+      }
     });
 
     // Verify that we have 3 vertices for each corner
@@ -484,29 +501,27 @@ export class Board {
 
         // For each edge in the tile
         edges.forEach((edge, index) => {
-          // First vertex is always the current tile
-          edge.addVertex(tileId);
+          // Bezpieczne wywołanie metody addVertex
+          if (typeof (edge as any).addVertex === "function") {
+            const edgeWithAddVertex = edge as unknown as {
+              addVertex: (vertex: string) => void;
+            };
 
-          // Second vertex depends on the edge direction
-          switch (index) {
-            case 0: // NE edge
-              edge.addVertex(`${q + 1},${r - 1},${s}`);
-              break;
-            case 1: // NW edge
-              edge.addVertex(`${q},${r - 1},${s + 1}`);
-              break;
-            case 2: // W edge
-              edge.addVertex(`${q - 1},${r},${s + 1}`);
-              break;
-          }
+            // First vertex is always the current tile
+            edgeWithAddVertex.addVertex(tileId);
 
-          // Log for debugging
-          const vertices = edge.getVertices();
-          if (vertices.length !== 2) {
-            console.warn(
-              `Edge from tile ${tileId} at index ${index} has ${vertices.length} vertices:`,
-              vertices
-            );
+            // Second vertex depends on the edge direction
+            switch (index) {
+              case 0: // NE edge
+                edgeWithAddVertex.addVertex(`${q + 1},${r - 1},${s}`);
+                break;
+              case 1: // NW edge
+                edgeWithAddVertex.addVertex(`${q},${r - 1},${s + 1}`);
+                break;
+              case 2: // W edge
+                edgeWithAddVertex.addVertex(`${q - 1},${r},${s + 1}`);
+                break;
+            }
           }
         });
       }
@@ -519,7 +534,15 @@ export class Board {
 
       const edges = tile.getEdges();
       for (const edge of edges) {
-        const vertices = edge.getVertices();
+        // Bezpieczne pobranie wierzchołków
+        let vertices: string[] = [];
+        if (typeof (edge as any).getVertices === "function") {
+          const edgeWithVertices = edge as unknown as {
+            getVertices: () => string[];
+          };
+          vertices = edgeWithVertices.getVertices();
+        }
+
         console.log(
           `Sample edge from tile ${tileId} has ${vertices.length} vertices:`,
           vertices

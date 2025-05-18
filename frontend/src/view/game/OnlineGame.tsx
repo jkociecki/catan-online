@@ -710,49 +710,83 @@ export default function OnlineGame() {
   const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
 
-    // Get edge vertices
-    const vertices = edge.getVertices ? edge.getVertices() : [];
-
     try {
-      // Ensure we have exactly 2 vertices for the edge
-      let coords: number[][] = [];
-
-      if (vertices.length === 2) {
-        coords = vertices.map((v) => v.split(",").map(Number));
-      } else {
-        // Generate vertices based on edge position in tile
-        const edgeIndex = tile.getEdges().indexOf(edge);
-        const tileCoords = tile.tileId.split(",").map(Number);
-
-        if (tileCoords.length === 3) {
-          const [q, r, s] = tileCoords;
-          coords = [[q, r, s]]; // First vertex is the tile itself
-
-          // Add second vertex based on edge direction
-          switch (edgeIndex) {
-            case 0: // NE edge
-              coords.push([q + 1, r - 1, s]);
-              break;
-            case 1: // NW edge
-              coords.push([q, r - 1, s + 1]);
-              break;
-            case 2: // W edge
-              coords.push([q - 1, r, s + 1]);
-              break;
-          }
-        }
+      // Sprawdź czy krawędź jest już zajęta
+      if (edge.getOwner()) {
+        setError("Ta krawędź jest już zajęta!");
+        return;
       }
 
-      console.log("Sending road coordinates:", coords);
+      console.log("clicked edge!", edge, tile);
 
-      // Send the action to the server
+      // 1. Pobierz wierzchołki krawędzi
+      const vertices = edge.getVertices ? edge.getVertices() : [];
+      console.log("Raw edge vertices:", vertices);
+
+      // 2. Ustal współrzędne dla krawędzi
+      let coords: number[][] = [];
+
+      // Pobierz dane o kafelku i indeksie krawędzi
+      const tileCoords = tile.tileId.split(",").map(Number);
+      const edgeIndex = tile.getEdges().indexOf(edge);
+      console.log("Edge index in tile:", edgeIndex);
+
+      if (vertices.length >= 2) {
+        // Mamy wierzchołki - zastosuj przesunięcie jak dla domków
+        coords = vertices.map((vertex) => {
+          const points = vertex.split(",").map(Number);
+          // Zastosuj DOKŁADNIE TAKIE SAMO przesunięcie jak dla domków
+          return [points[0] + 1, points[1], points[2] - 1];
+        });
+        console.log("Coordinates from vertices with shift:", coords);
+      } else {
+        // Brak wierzchołków - wygeneruj je ręcznie
+        // Użyj konkretnych wartości dla poszczególnych typów krawędzi
+        const [q, r, s] = tileCoords;
+
+        switch (edgeIndex) {
+          case 0: // NE edge
+            coords = [
+              [q + 1, r, s - 1],
+              [q + 2, r - 1, s - 1],
+            ];
+            break;
+          case 1: // NW edge
+            coords = [
+              [q + 1, r, s - 1],
+              [q + 1, r - 1, s],
+            ];
+            break;
+          case 2: // W edge
+            coords = [
+              [q + 1, r, s - 1],
+              [q + 1 - 1, r, s - 1 + 1], // czyli też przesunięcie
+            ];
+            break;
+          default:
+            setError("Nieznany indeks krawędzi");
+            return;
+        }
+
+        console.log("Manually generated road coordinates:", coords);
+      }
+
+      if (coords.length < 2) {
+        setError("Nie można określić pozycji dla drogi. Spróbuj ponownie.");
+        return;
+      }
+
+      // 3. Wyślij akcję do serwera
       GameService.sendMessage({
         type: "game_action",
         action: "build_road",
         coords: coords,
       });
 
-      // In setup phase, end turn after placing a road
+      // 4. Pokaż komunikat o oczekiwaniu na odpowiedź serwera
+      showSuccessIndicator("Budowanie drogi...");
+
+      // 5. W fazie setup po postawieniu drogi automatycznie zakończ turę
       if (gamePhase === "setup") {
         setTimeout(() => {
           GameService.endTurn();
@@ -768,6 +802,7 @@ export default function OnlineGame() {
       );
     }
   };
+
   const handleLeaveGame = () => {
     GameService.disconnectFromRoom();
     navigate("/");
