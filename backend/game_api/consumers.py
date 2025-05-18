@@ -9,6 +9,8 @@ import uuid
 from game_engine.game.game_phase import GamePhase
 from game_engine.board.buildings import Building, BuildingType  # Dodaj ten import
 import time
+from game_engine.common.resources import Resource  # Dodaj ten import
+
 
 
 

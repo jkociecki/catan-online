@@ -161,6 +161,16 @@ export function Corner({
     }
   }, [isPreviewMode, coords, corner, tile]);
 
+  useEffect(() => {
+    if (isPreviewMode) {
+      console.log(`Preview coordinates: x=${coords.x}, y=${coords.y}`);
+    }
+
+    if (hasBuilding) {
+      console.log(`Building coordinates: x=${coords.x}, y=${coords.y}`);
+    }
+  }, [isPreviewMode, hasBuilding, coords.x, coords.y]);
+
   // Efekt dla podglądu budowli przy najechaniu
   useEffect(() => {
     if (isPreviewMode) {
