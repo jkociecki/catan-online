@@ -87,10 +87,10 @@ export function Corners({
           const renderN = shouldRenderCorner(tile, hex, TileCorner.N);
           const renderS = shouldRenderCorner(tile, hex, TileCorner.S);
 
-          // Log hexagon coordinates for debugging
-          console.log(
-            `Hex ${hex.q},${hex.r},${hex.s} pixel coords: x:${hexCoords.x}, y:${hexCoords.y}`
-          );
+          // // Log hexagon coordinates for debugging
+          // console.log(
+          //   `Hex ${hex.q},${hex.r},${hex.s} pixel coords: x:${hexCoords.x}, y:${hexCoords.y}`
+          // );
 
           return { hexCoords, tile, renderN, renderS, hex };
         })
@@ -110,7 +110,7 @@ export function Corners({
                   tile={tile}
                   coords={{
                     x: hexCoords.x,
-                    y: hexCoords.y - layout.size.y,
+                    y: hexCoords.y - layout.size.y * 0.75, // Adjusted multiplier
                   }}
                   onClick={handleCornerClick}
                   buildMode={buildMode}
@@ -135,7 +135,7 @@ export function Corners({
                   tile={tile}
                   coords={{
                     x: hexCoords.x,
-                    y: hexCoords.y + layout.size.y,
+                    y: hexCoords.y + layout.size.y * 0.75, // Adjusted multiplier
                   }}
                   onClick={handleCornerClick}
                   buildMode={buildMode}

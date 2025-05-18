@@ -49,8 +49,20 @@ export class Edge {
     }
   }
 
-  // Dodana metoda do pobierania wierzchołków
-  getVertices(): string[] {
-    return this.vertices;
-  }
+    // In edge.ts
+    getVertices(): string[] {
+      // For edges, we need exactly 2 vertices
+      if (this.vertices.length > 0) {
+        const uniqueVertices = Array.from(new Set(this.vertices));
+        
+        // Just return the first 2 if we have too many
+        if (uniqueVertices.length > 2) {
+          return uniqueVertices.slice(0, 2);
+        }
+        
+        return uniqueVertices;
+      }
+      
+      return [];
+    }
 }

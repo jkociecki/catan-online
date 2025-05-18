@@ -158,38 +158,16 @@ export function Corner({
     }
   }, [isPreviewMode, coords, corner, tile]);
 
-  // Efekt dla podglądu budowli przy najechaniu
-  useEffect(() => {
-    if (isPreviewMode) {
-      setIsActive(true);
-
-      // Pokaż podgląd budowli zgodnie z trybem
-      if (buildMode === "settlement" && !hasBuilding) {
-        setShowPreview(true);
-        setIsCity(false);
-      } else if (
-        buildMode === "city" &&
-        hasBuilding &&
-        !isBuildingCity &&
-        corner.getOwner()?.getName() === myPlayerId
-      ) {
-        setShowPreview(true);
-        setIsCity(true);
-      } else {
-        setShowPreview(false);
-      }
-    } else {
-      setIsActive(false);
-      setShowPreview(false);
-    }
-  }, [
-    buildMode,
-    hasBuilding,
-    isBuildingCity,
-    isPreviewMode,
-    corner,
-    myPlayerId,
-  ]);
+useEffect(() => {
+  if (isPreviewMode) {
+    setIsActive(true);
+    setShowPreview(shouldShowPreview());
+    setIsCity(buildMode === "city");
+  } else {
+    setIsActive(false);
+    setShowPreview(false);
+  }
+}, [buildMode, hasBuilding, isBuildingCity, isPreviewMode, corner, myPlayerId]);
 
   // Efekt animacji po postawieniu budowli
   useEffect(() => {
@@ -204,23 +182,37 @@ export function Corner({
     }
   }, [hasBuilding]);
 
-  // Osada to prosty pięciokąt - wycentrowany dokładnie na koordynatach
-  const settlementPoints = `
-    ${coords.x},${coords.y - 0.4}
-    ${coords.x + 0.35},${coords.y - 0.1}
-    ${coords.x + 0.35},${coords.y + 0.3}
-    ${coords.x - 0.35},${coords.y + 0.3}
-    ${coords.x - 0.35},${coords.y - 0.1}
-  `;
+const settlementPoints = `
+  ${coords.x},${coords.y - 0.3}
+  ${coords.x + 0.25},${coords.y - 0.1}
+  ${coords.x + 0.25},${coords.y + 0.15}
+  ${coords.x - 0.25},${coords.y + 0.15}
+  ${coords.x - 0.25},${coords.y - 0.1}
+`;
+
+const shouldShowPreview = () => {
+  if (!buildMode) return false;
+  
+  if (buildMode === "settlement") {
+    // Log coordinates being used for settlement preview
+    console.log(`Settlement preview coords: x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(2)}`);
+    return !hasBuilding; // Only show preview if corner is empty
+  } else if (buildMode === "city") {
+    // Only show preview if there's a settlement owned by the player
+    return hasBuilding && !isBuildingCity && corner.getOwner()?.getName() === myPlayerId;
+  }
+  
+  return false;
+};
 
   // Miasto to bardziej skomplikowany kształt z dodatkową "wieżą"
   const cityPath = `
-    M ${coords.x - 0.4} ${coords.y - 0.1}
-    L ${coords.x - 0.4} ${coords.y + 0.3}
-    L ${coords.x + 0.4} ${coords.y + 0.3}
-    L ${coords.x + 0.4} ${coords.y - 0.1}
-    L ${coords.x + 0.2} ${coords.y - 0.3}
-    L ${coords.x - 0.2} ${coords.y - 0.3}
+    M ${coords.x - 0.3} ${coords.y - 0.1}
+    L ${coords.x - 0.3} ${coords.y + 0.2}
+    L ${coords.x + 0.3} ${coords.y + 0.2}
+    L ${coords.x + 0.3} ${coords.y - 0.1}
+    L ${coords.x + 0.15} ${coords.y - 0.25}
+    L ${coords.x - 0.15} ${coords.y - 0.25}
     Z
   `;
 
@@ -235,6 +227,8 @@ export function Corner({
         .getCorners()
         .indexOf(corner)}`
     );
+    // Add log for the corner object itself
+    console.log("Clicked corner object:", corner);
     onClick?.(corner, tile);
   };
 

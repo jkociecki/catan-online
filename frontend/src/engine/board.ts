@@ -13,7 +13,9 @@ import {
 import { Hex, Resource } from './types';
 import { BasicGameConfig } from '../game/config';
 import { BoardData } from './board/BoardService';
-import { Tile, TileType } from './tile';
+import { Tile, TileType, BaseTile } from './tile';
+import { Corner } from './corner';
+import { Edge } from './edge';
 
 /**
  * This will be the class for a Catan Board,
@@ -82,31 +84,127 @@ export class Board {
     });
 
     // Update vertices (buildings)
+    console.log("Server vertices data received:", data.vertices);
     Object.entries(data.vertices).forEach(([key, vertexData]) => {
       if (vertexData?.building) {
-        const coords = vertexData.coordinates[0];
-        const hexId = `${coords[0]},${coords[1]},${coords[2]}`;
-        const tile = this.tiles[hexId];
-        if (tile) {
-          const player = new Player(vertexData.building.player_id, vertexData.building.player_color || '');
-          if (vertexData.building.type === 'SETTLEMENT') {
-            this.placeSettlement(hexId, TileCornerDir.N, player, true);
-          } else if (vertexData.building.type === 'CITY') {
-            this.placeCity(hexId, TileCornerDir.N, player);
+        console.log("Processing vertex with building:", vertexData);
+        const buildingCoords = vertexData.coordinates.map((c: number[]) => c.join(',')); // Get coordinates as strings
+
+        // Try to find the corresponding corner on the client-side board
+        let foundCorner: Corner | undefined;
+        let foundTile: BaseTile | undefined;
+
+        // Iterate through all tiles and their corners to find a match
+        for (const tileId in this.tiles) {
+          const tile = this.tiles[tileId];
+          const corners = tile.getCorners();
+
+          foundCorner = corners.find(corner => {
+            // Compare the set of vertices. Sort them to make comparison order-independent.
+            const cornerVerticesSorted = corner.getVertices().map(v => v.split(',').map(Number).sort().join(',')).sort().join('|');
+            const buildingVerticesSorted = buildingCoords.map((v: string) => v.split(',').map(Number).sort().join(',')).sort().join('|');
+
+            return cornerVerticesSorted === buildingVerticesSorted;
+          });
+
+          if (foundCorner) {
+            foundTile = tile;
+            break; // Found the corner, exit the tile loop
           }
+        }
+
+        if (foundCorner && foundTile) {
+           console.log("Found matching corner and tile for building:", foundCorner, foundTile);
+          const player = new Player(vertexData.building.player_id, vertexData.building.player_color || '');
+
+          // Determine the correct TileCornerDir based on the found corner's index within the tile
+          const cornerIndex = foundTile.getCorners().indexOf(foundCorner);
+          let cornerDir: TileCornerDir | undefined;
+
+          // Assuming the order of corners in tile.getCorners() is consistent (e.g., N, S)
+          if (cornerIndex === 0) { // Assuming index 0 is North
+              cornerDir = TileCornerDir.N;
+          } else if (cornerIndex === 1) { // Assuming index 1 is South
+              cornerDir = TileCornerDir.S;
+          }
+          // Add more cases if there are more than 2 corners per tile type
+
+          if (cornerDir !== undefined) {
+              if (vertexData.building.type === 'SETTLEMENT') {
+                 console.log("Placing settlement at found corner using dir:", foundCorner, cornerDir);
+                // In setup phase, road check is bypassed, so this should be fine.
+                this.placeSettlement(foundTile.tileId, cornerDir, player, true);
+
+              } else if (vertexData.building.type === 'CITY') {
+                 console.log("Placing city at found corner using dir:", foundCorner, cornerDir);
+                 this.placeCity(foundTile.tileId, cornerDir, player);
+              }
+          } else {
+               console.error("Could not determine TileCornerDir for found corner.", foundCorner, foundTile);
+          }
+
+        } else {
+          console.error("Could not find a matching corner for server vertex data:", vertexData);
         }
       }
     });
 
     // Update edges (roads)
+    console.log("Server edge data received:", data.edges);
     Object.entries(data.edges).forEach(([key, edgeData]) => {
       if (edgeData?.road) {
-        const coords = edgeData.coordinates[0];
-        const hexId = `${coords[0]},${coords[1]},${coords[2]}`;
-        const tile = this.tiles[hexId];
-        if (tile) {
-          const player = new Player(edgeData.road.player_id, edgeData.road.player_color || '');
-          this.placeRoad(hexId, TileEdgeDir.NE, player);
+        console.log("Processing edge with road:", edgeData);
+        const edgeCoords = edgeData.coordinates.map((c: number[]) => c.join(',')); // Get coordinates as strings
+
+        // Try to find the corresponding edge on the client-side board
+        let foundEdge: Edge | undefined;
+        let foundEdgeTile: BaseTile | undefined;
+
+        for (const tileId in this.tiles) {
+          const tile = this.tiles[tileId];
+          const edges = tile.getEdges();
+
+          foundEdge = edges.find(edge => {
+             // Compare the set of vertices. Sort them to make comparison order-independent.
+             const edgeVerticesSorted = edge.getVertices().map(v => v.split(',').map(Number).sort().join(',')).sort().join('|');
+             const buildingVerticesSorted = edgeCoords.map((v: string) => v.split(',').map(Number).sort().join(',')).sort().join('|');
+
+             return edgeVerticesSorted === buildingVerticesSorted;
+          });
+
+          if(foundEdge) {
+             foundEdgeTile = tile;
+             break; // Found the edge, exit the loop
+          }
+        }
+
+        if (foundEdge && foundEdgeTile) {
+            console.log("Found matching edge and tile for road:", foundEdge, foundEdgeTile);
+            const player = new Player(edgeData.road.player_id, edgeData.road.player_color || '');
+
+            // Determine the correct TileEdgeDir based on the found edge's index within the tile
+            const edgeIndex = foundEdgeTile.getEdges().indexOf(foundEdge);
+            let edgeDir: TileEdgeDir | undefined;
+
+            // Assuming the order of edges in tile.getEdges() is consistent (e.g., NE, NW, W)
+            if (edgeIndex === 0) { // Assuming index 0 is NE
+                 edgeDir = TileEdgeDir.NE;
+            } else if (edgeIndex === 1) { // Assuming index 1 is NW
+                 edgeDir = TileEdgeDir.NW;
+            } else if (edgeIndex === 2) { // Assuming index 2 is W
+                 edgeDir = TileEdgeDir.W;
+            }
+            // Add more cases if there are more edge directions
+
+            if(edgeDir !== undefined) {
+               console.log("Placing road at found edge using dir:", foundEdge, edgeDir);
+               this.placeRoad(foundEdgeTile.tileId, edgeDir, player);
+            } else {
+               console.error("Could not determine TileEdgeDir for found edge.", foundEdge, foundEdgeTile);
+            }
+
+        } else {
+           console.error("Could not find a matching edge for server edge data:", edgeData);
         }
       }
     });
@@ -152,33 +250,86 @@ export class Board {
     edge.placeRoad(player);
   }
 
-  // Dodane metody w klasie Board w pliku board.ts
-// Te metody powinny zostać dodane do klasy Board
-
-// Metoda do inicjalizacji wierzchołków dla narożników (Corners)
+// In board.ts
 private initCornerVertices(): void {
+  // First pass - add the basic vertex to each corner
   Object.entries(this.tiles).forEach(([tileId, tile]) => {
-    // Dla każdego kafelka, pobieramy jego narożniki
+    // For each tile, get its corners
     const corners = tile.getCorners();
     
-    // Dodajemy ID kafelka do wierzchołków każdego narożnika
-    corners.forEach((corner, index) => {
+    // Add tile ID to vertices of each corner
+    corners.forEach((corner) => {
       corner.addVertex(tileId);
     });
   });
+  
+  // Second pass - compute the other vertices for each corner
+  Object.entries(this.tiles).forEach(([tileId, tile]) => {
+    const corners = tile.getCorners();
+    const tileCoords = tileId.split(',').map(Number);
+    
+    if (tileCoords.length === 3) {
+      const [q, r, s] = tileCoords;
+      
+      // North corner (index 0)
+      const northCorner = corners[0];
+      northCorner.addVertex(`${q+1},${r-1},${s}`);
+      northCorner.addVertex(`${q+1},${r},${s-1}`);
+      
+      // South corner (index 1)
+      const southCorner = corners[1];
+      southCorner.addVertex(`${q},${r+1},${s-1}`);
+      southCorner.addVertex(`${q-1},${r+1},${s}`);
+    }
+  });
 }
 
-// Metoda do inicjalizacji wierzchołków dla krawędzi (Edges)
 private initEdgeVertices(): void {
+  // Map to store edges and their calculated vertices
+  const edgeVerticesMap = new Map();
+  
+  // First pass - add the tile ID vertex to each edge
   Object.entries(this.tiles).forEach(([tileId, tile]) => {
-    // Dla każdego kafelka, pobieramy jego krawędzie
     const edges = tile.getEdges();
-    
-    // Dodajemy ID kafelka do wierzchołków każdej krawędzi
     edges.forEach((edge, index) => {
+      // Add the tile ID as a vertex
       edge.addVertex(tileId);
+      
+      // Store the edge in map for second pass
+      const key = `${tileId}-${index}`;
+      edgeVerticesMap.set(key, edge);
     });
   });
+  
+  // Second pass - add the second vertex for each edge
+  edgeVerticesMap.forEach((edge, key) => {
+    const [tileId, indexStr] = key.split('-');
+    const index = parseInt(indexStr);
+    const coords = tileId.split(',').map(Number);
+    
+    if (coords.length === 3) {
+      const [q, r, s] = coords;
+      
+      // Add second vertex based on edge direction
+      switch(index) {
+        case 0: // NE edge
+          edge.addVertex(`${q+1},${r-1},${s}`);
+          break;
+        case 1: // NW edge
+          edge.addVertex(`${q},${r-1},${s+1}`);
+          break;
+        case 2: // W edge
+          edge.addVertex(`${q-1},${r},${s+1}`);
+          break;
+      }
+    }
+  });
+  
+  // Log verification
+  // edgeVerticesMap.forEach((edge, key) => {
+  //   const vertices = edge.getVertices();
+  //   console.log(`Edge ${key} has ${vertices.length} vertices:`, vertices);
+  // });
 }
 
 // Zaktualizowany konstruktor klasy Board
