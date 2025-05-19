@@ -19,6 +19,8 @@ from django.contrib import admin
 from django.urls import path, include
 from django.views.generic import RedirectView
 from users.callbacks import token_callback
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -27,4 +29,4 @@ urlpatterns = [
     path('auth/token-callback/', token_callback, name='token_callback'),
     path('api/auth/', include('users.urls')),
     path('', RedirectView.as_view(url='http://localhost:3000/', permanent=False)),
-]
+] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

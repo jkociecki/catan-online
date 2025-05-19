@@ -37,6 +37,68 @@ const Title = styled.h2`
   font-size: 28px;
 `;
 
+const UserInfoBox = styled.div`
+  background-color: #e3f2fd;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  text-align: center;
+`;
+
+const UserAvatar = styled.img`
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin-bottom: 15px;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+`;
+
+const UserName = styled.h3`
+  color: #2c3e50;
+  margin: 0 0 10px 0;
+  font-size: 20px;
+`;
+
+const UserStatus = styled.p`
+  color: #666;
+  margin: 0 0 15px 0;
+`;
+
+const ActionButton = styled.button`
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  margin: 5px 0;
+  
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+`;
+
+const PlayButton = styled(ActionButton)`
+  background-color: #4caf50;
+  color: white;
+  
+  &:hover {
+    background-color: #45a049;
+  }
+`;
+
+const LogoutButton = styled(ActionButton)`
+  background-color: #f44336;
+  color: white;
+  
+  &:hover {
+    background-color: #d32f2f;
+  }
+`;
+
 const Form = styled.form`
   display: flex;
   flex-direction: column;
@@ -178,6 +240,8 @@ export default function Login() {
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [selectedColor, setSelectedColor] = useState('red');
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [userData, setUserData] = useState<any>(null);
     const navigate = useNavigate();
 
     const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
@@ -185,10 +249,28 @@ export default function Login() {
     useEffect(() => {
         // Check if user is already logged in
         const token = localStorage.getItem('auth_token');
-        if (token) {
-            navigate('/');
+        const userDataStr = localStorage.getItem('user_data');
+        
+        if (token && userDataStr) {
+            try {
+                const parsedUserData = JSON.parse(userDataStr);
+                setIsLoggedIn(true);
+                setUserData(parsedUserData);
+            } catch (e) {
+                console.error("Error parsing user data", e);
+                localStorage.removeItem('user_data');
+                localStorage.removeItem('auth_token');
+            }
         }
-    }, [navigate]);
+    }, []);
+
+    const handleLogout = () => {
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('user_data');
+        setIsLoggedIn(false);
+        setUserData(null);
+        window.location.reload();
+    };
 
     const handleRegularLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -283,73 +365,92 @@ export default function Login() {
 
             {error && <ErrorMessage>{error}</ErrorMessage>}
 
-            <GoogleButton onClick={() => navigate('/google-login')}>
-                <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
-                Continue with Google
-            </GoogleButton>
+            {isLoggedIn && userData ? (
+                <UserInfoBox>
+                    <UserAvatar 
+                        src={userData.avatar_url || `https://ui-avatars.com/api/?name=${userData.display_name || userData.username}&background=random`}
+                        alt="User avatar"
+                    />
+                    <UserName>Welcome back, {userData.display_name || userData.username}!</UserName>
+                    <UserStatus>You are already logged in</UserStatus>
+                    <PlayButton onClick={() => navigate('/room/new')}>
+                        Play Game
+                    </PlayButton>
+                    <LogoutButton onClick={handleLogout}>
+                        Logout
+                    </LogoutButton>
+                </UserInfoBox>
+            ) : (
+                <>
+                    <GoogleButton onClick={() => navigate('/google-login')}>
+                        <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
+                        Continue with Google
+                    </GoogleButton>
 
-            <Divider><span>OR</span></Divider>
+                    <Divider><span>OR</span></Divider>
 
-            <Form onSubmit={handleRegularLogin}>
-                <Input
-                    type="text"
-                    placeholder="Username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    disabled={loading}
-                />
-                <Input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={loading}
-                />
-                <Button type="submit" disabled={loading}>
-                    Login
-                </Button>
-            </Form>
+                    <Form onSubmit={handleRegularLogin}>
+                        <Input
+                            type="text"
+                            placeholder="Username"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            disabled={loading}
+                        />
+                        <Input
+                            type="password"
+                            placeholder="Password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            disabled={loading}
+                        />
+                        <Button type="submit" disabled={loading}>
+                            Login
+                        </Button>
+                    </Form>
 
-            <Divider><span>OR</span></Divider>
+                    <Divider><span>OR</span></Divider>
 
-            <GuestOptions>
-                <Input
-                    type="text"
-                    placeholder="Guest Name (optional)"
-                    value={guestName}
-                    onChange={(e) => setGuestName(e.target.value)}
-                    disabled={loading}
-                />
+                    <GuestOptions>
+                        <Input
+                            type="text"
+                            placeholder="Guest Name (optional)"
+                            value={guestName}
+                            onChange={(e) => setGuestName(e.target.value)}
+                            disabled={loading}
+                        />
 
-                <div>
-                    <p>Choose your color:</p>
-                    <ColorOptions>
-                        {colors.map(color => (
-                            <ColorOption
-                                key={color}
-                                color={color}
-                                selected={selectedColor === color}
-                                onClick={() => setSelectedColor(color)}
-                            />
-                        ))}
-                    </ColorOptions>
-                </div>
+                        <div>
+                            <p>Choose your color:</p>
+                            <ColorOptions>
+                                {colors.map(color => (
+                                    <ColorOption
+                                        key={color}
+                                        color={color}
+                                        selected={selectedColor === color}
+                                        onClick={() => setSelectedColor(color)}
+                                    />
+                                ))}
+                            </ColorOptions>
+                        </div>
 
-                <Button
-                    onClick={handleGuestLogin}
-                    disabled={loading}
-                    type="button"
-                >
-                    Play as Guest
-                </Button>
-            </GuestOptions>
+                        <Button
+                            onClick={handleGuestLogin}
+                            disabled={loading}
+                            type="button"
+                        >
+                            Play as Guest
+                        </Button>
+                    </GuestOptions>
 
-            <SkipLoginButton
-                onClick={handleSkipLogin}
-                type="button"
-            >
-                Skip Login and Create Game
-            </SkipLoginButton>
+                    <SkipLoginButton
+                        onClick={handleSkipLogin}
+                        type="button"
+                    >
+                        Skip Login and Create Game
+                    </SkipLoginButton>
+                </>
+            )}
         </AuthContainer>
     );
 }

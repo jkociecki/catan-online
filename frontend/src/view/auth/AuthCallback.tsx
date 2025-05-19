@@ -1,127 +1,108 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
+import { useAuth } from '../../context/AuthContext';
 
 const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
+  padding: 20px;
   background-color: #f5f5f5;
 `;
 
-const Spinner = styled.div`
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #4caf50;
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  animation: spin 1s linear infinite;
-  margin-bottom: 20px;
-  
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-
-const Message = styled.div`
-  font-size: 18px;
-  color: #333;
+const Card = styled.div`
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   text-align: center;
   max-width: 400px;
-  margin: 0 20px;
+  width: 90%;
 `;
 
-const ErrorMessage = styled(Message)`
+const Title = styled.h1`
+  color: #2c3e50;
+  font-size: 24px;
+  margin-bottom: 20px;
+`;
+
+const Message = styled.p`
+  color: #666;
+  margin-bottom: 20px;
+`;
+
+const ErrorMessage = styled.p`
   color: #d32f2f;
+  background-color: #ffebee;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 20px;
 `;
 
-const SuccessMessage = styled(Message)`
-  color: #2e7d32;
-`;
+const AuthCallback: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { setUser, setToken } = useAuth();
+  const [error, setError] = useState<string | null>(null);
 
-const fetchUserProfile = async (token: string) => {
-    const endpoints = [
-        'http://localhost:8000/api/auth/users/profile/',
-        'http://localhost:8000/api/auth/users/me/',
+  useEffect(() => {
+    const fetchUserData = async (token: string) => {
+      const endpoints = [
         'http://localhost:8000/api/auth/profile/',
-        'http://localhost:8000/api/auth/me/'
-    ];
+        'http://localhost:8000/api/auth/me/',
+      ];
 
-    for (const endpoint of endpoints) {
+      for (const endpoint of endpoints) {
         try {
-            console.log(`Trying endpoint: ${endpoint}`);
-            const response = await fetch(endpoint, {
-                headers: {
-                    'Authorization': `Token ${token}`
-                }
-            });
-            
-            if (response.ok) {
-                const data = await response.json();
-                console.log(`Success from ${endpoint}:`, data);
-                return data;
-            } else {
-                console.log(`Failed from ${endpoint}:`, response.status);
-            }
-        } catch (error) {
-            console.log(`Error from ${endpoint}:`, error);
+          console.log(`Trying endpoint: ${endpoint}`);
+          const response = await fetch(endpoint, {
+            headers: {
+              'Authorization': `Token ${token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            console.log('Success response:', data);
+            setUser(data);
+            setToken(token);
+            navigate('/room/lobby');
+            return;
+          } else {
+            console.log(`Failed response from ${endpoint}:`, response.status);
+          }
+        } catch (err) {
+          console.error(`Error fetching from ${endpoint}:`, err);
         }
+      }
+
+      setError('Failed to fetch user data. Please try logging in again.');
+    };
+
+    const token = new URLSearchParams(location.search).get('token');
+    if (token) {
+      fetchUserData(token);
+    } else {
+      setError('No authentication token found. Please try logging in again.');
     }
-    
-    throw new Error('Failed to fetch user profile from all endpoints');
+  }, [location, navigate, setUser, setToken]);
+
+  return (
+    <Container>
+      <Card>
+        <Title>Processing Login</Title>
+        {error ? (
+          <ErrorMessage>{error}</ErrorMessage>
+        ) : (
+          <Message>Please wait while we complete your login...</Message>
+        )}
+      </Card>
+    </Container>
+  );
 };
 
-export default function AuthCallback() {
-    const navigate = useNavigate();
-    const location = useLocation();
-    const [status, setStatus] = useState('Authenticating...');
-    const [isError, setIsError] = useState(false);
-
-    useEffect(() => {
-        console.log("Auth callback mounted. Search params:", location.search);
-        const params = new URLSearchParams(location.search);
-        const token = params.get('token');
-
-        if (!token) {
-            console.error("No token found in URL");
-            setStatus('Authentication failed. No token received.');
-            setIsError(true);
-            setTimeout(() => navigate('/'), 3000);
-            return;
-        }
-
-        console.log("Token received:", token);
-        // Save token
-        localStorage.setItem('auth_token', token);
-
-        // Get user data
-        fetchUserProfile(token)
-            .then(userData => {
-                console.log("User data received:", userData);
-                localStorage.setItem('user_data', JSON.stringify(userData));
-                setStatus('Login successful! Redirecting to game...');
-                setIsError(false);
-                setTimeout(() => navigate('/room/new'), 1500);
-            })
-            .catch(error => {
-                console.error('Error fetching user data:', error);
-                setStatus('Failed to get user profile. Please try logging in again.');
-                setIsError(true);
-                setTimeout(() => navigate('/'), 3000);
-            });
-    }, [navigate, location]);
-
-    return (
-        <Container>
-            <Spinner />
-            {isError ? (
-                <ErrorMessage>{status}</ErrorMessage>
-            ) : (
-                <SuccessMessage>{status}</SuccessMessage>
-            )}
-        </Container>
-    );
-} 
+export default AuthCallback; 
