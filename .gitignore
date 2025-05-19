@@ -1,0 +1,9 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*.class
+.pytest_cache/
+*.so
+.Python
+.coverage
+htmlcov/
