@@ -47,58 +47,78 @@ const AuthCallback: React.FC = () => {
   const location = useLocation();
   const { setUser, setToken } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchUserData = async (token: string) => {
-      const endpoints = [
-        'http://localhost:8000/api/auth/profile/',
-        'http://localhost:8000/api/auth/me/',
-      ];
+      try {
+        // Save token to localStorage first
+        localStorage.setItem('auth_token', token);
+        
+        // First verify the token is valid
+        const testResponse = await fetch('http://localhost:8000/api/auth/test-token/', {
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
 
-      for (const endpoint of endpoints) {
-        try {
-          console.log(`Trying endpoint: ${endpoint}`);
-          const response = await fetch(endpoint, {
-            headers: {
-              'Authorization': `Token ${token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            console.log('Success response:', data);
-            setUser(data);
-            setToken(token);
-            navigate('/room/lobby');
-            return;
-          } else {
-            console.log(`Failed response from ${endpoint}:`, response.status);
-          }
-        } catch (err) {
-          console.error(`Error fetching from ${endpoint}:`, err);
+        if (!testResponse.ok) {
+          throw new Error('Invalid token');
         }
-      }
 
-      setError('Failed to fetch user data. Please try logging in again.');
+        // Now fetch user profile
+        const response = await fetch('http://localhost:8000/api/auth/profile/', {
+          headers: {
+            'Authorization': `Token ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (response.ok) {
+          const userData = await response.json();
+          console.log('User data fetched successfully:', userData);
+          
+          // Save user data to localStorage
+          localStorage.setItem('user_data', JSON.stringify(userData));
+          
+          // Update auth context
+          setUser(userData);
+          setToken(token);
+          
+          // Redirect to game room
+          navigate('/room/new');
+        } else {
+          throw new Error(`Failed to fetch user data: ${response.status}`);
+        }
+      } catch (err) {
+        console.error('Error in auth flow:', err);
+        setError(err instanceof Error ? err.message : 'Network or server error. Please try again.');
+      } finally {
+        setLoading(false);
+      }
     };
 
+    // Get token from URL params
     const token = new URLSearchParams(location.search).get('token');
     if (token) {
       fetchUserData(token);
     } else {
-      setError('No authentication token found. Please try logging in again.');
+      setError('No authentication token found');
+      setLoading(false);
     }
   }, [location, navigate, setUser, setToken]);
 
   return (
     <Container>
       <Card>
-        <Title>Processing Login</Title>
-        {error ? (
+        <Title>Authentication</Title>
+        {loading ? (
+          <Message>Logging you in...</Message>
+        ) : error ? (
           <ErrorMessage>{error}</ErrorMessage>
         ) : (
-          <Message>Please wait while we complete your login...</Message>
+          <Message>Success! Redirecting...</Message>
         )}
       </Card>
     </Container>

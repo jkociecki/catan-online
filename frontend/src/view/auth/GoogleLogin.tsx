@@ -7,8 +7,8 @@ const Container = styled.div`
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background-color: #f5f5f5;
   padding: 20px;
+  background-color: #f5f5f5;
 `;
 
 const LoginCard = styled.div`
@@ -16,18 +16,15 @@ const LoginCard = styled.div`
   padding: 40px;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  max-width: 400px;
   text-align: center;
+  max-width: 400px;
+  width: 90%;
 `;
 
-const Logo = styled.div`
-  margin-bottom: 30px;
-  
-  img {
-    width: 80px;
-    height: 80px;
-  }
+const Logo = styled.img`
+  width: 80px;
+  height: 80px;
+  margin-bottom: 20px;
 `;
 
 const Title = styled.h1`
@@ -37,111 +34,67 @@ const Title = styled.h1`
 `;
 
 const Subtitle = styled.p`
-  color: #7f8c8d;
+  color: #666;
   margin-bottom: 30px;
-  font-size: 16px;
 `;
 
 const GoogleButton = styled.button`
-  background-color: #4285f4;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 12px 24px;
-  font-size: 16px;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   width: 100%;
+  padding: 12px 24px;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 16px;
+  color: #333;
+  cursor: pointer;
   transition: all 0.2s ease;
-  
+
   &:hover {
-    background-color: #357ae8;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
-  }
-  
-  &:active {
-    transform: translateY(0);
+    background-color: #f8f8f8;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
 `;
 
 const GoogleIcon = styled.img`
   width: 24px;
   height: 24px;
+  margin-right: 12px;
 `;
 
 const BackLink = styled.a`
+  display: inline-block;
+  margin-top: 20px;
   color: #4285f4;
   text-decoration: none;
-  margin-top: 20px;
-  display: inline-block;
-  transition: all 0.2s ease;
-  
+
   &:hover {
-    color: #357ae8;
     text-decoration: underline;
   }
 `;
 
-const InfoBox = styled.div`
-  background-color: #f8f9fa;
-  border-radius: 8px;
-  padding: 15px;
-  margin: 20px 0;
-  text-align: left;
-  font-size: 14px;
-  color: #666;
-  
-  h3 {
-    color: #2c3e50;
-    margin: 0 0 10px 0;
-    font-size: 16px;
-  }
-  
-  ul {
-    margin: 0;
-    padding-left: 20px;
-  }
-  
-  li {
-    margin: 5px 0;
-  }
-`;
-
-export default function GoogleLogin() {
+const GoogleLogin: React.FC = () => {
   const handleGoogleLogin = () => {
+    // Directly redirect to Django's OAuth endpoint
     window.location.href = 'http://localhost:8000/accounts/google/login/';
   };
 
   return (
     <Container>
       <LoginCard>
-        <Logo>
-          <img src="/logo.png" alt="Catan Logo" />
-        </Logo>
+        <Logo src="/static/logo.svg" alt="Catan Logo" />
         <Title>Welcome to Catan</Title>
         <Subtitle>Sign in with your Google account to continue</Subtitle>
-        
-        <InfoBox>
-          <h3>Why sign in with Google?</h3>
-          <ul>
-            <li>Save your game progress</li>
-            <li>Play with friends</li>
-            <li>Track your achievements</li>
-            <li>Access your game history</li>
-          </ul>
-        </InfoBox>
-        
         <GoogleButton onClick={handleGoogleLogin}>
           <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
           Continue with Google
         </GoogleButton>
-        
         <BackLink href="/">← Back to login</BackLink>
       </LoginCard>
     </Container>
   );
-} 
+};
+
+export default GoogleLogin; 

@@ -11,4 +11,5 @@ urlpatterns = [
     path('token-callback/', callbacks.token_callback, name='token_callback'),
     path('profile/', user_profile, name='user_profile'),
     path('me/', user_profile, name='user_me'),
+    path('test-token/', views.test_token, name='test_token'),
 ]

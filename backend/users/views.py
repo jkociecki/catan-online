@@ -155,3 +155,14 @@ class UserProfileView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def test_token(request):
+    return Response({
+        'success': True,
+        'message': 'Token is valid',
+        'user_id': request.user.id,
+        'username': request.user.username,
+        'email': request.user.email
+    })
