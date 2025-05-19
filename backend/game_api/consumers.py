@@ -6,9 +6,12 @@ from game_engine.common.game_config import GameConfig
 from game_engine.player.player import Player
 from game_engine.common.player_color import PlayerColor
 import uuid
-from django.contrib.auth import get_user_model
+from game_engine.game.game_phase import GamePhase
+from game_engine.board.buildings import Building, BuildingType  # Dodaj ten import
+import time
 
-User = get_user_model()
+
+
 
 # Store active game rooms
 game_rooms = {}
@@ -18,26 +21,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'game_{self.room_id}'
-        
-        # Extract authentication token from query params if present
-        query_string = self.scope.get('query_string', b'').decode('utf-8')
-        query_params = dict(param.split('=') for param in query_string.split('&') if '=' in param)
-        token = query_params.get('token', None)
-        
-        # Default player information
         self.player_id = str(uuid.uuid4())
-        self.user = None
-        self.display_name = f"Player_{self.player_id[:6]}"
-        self.is_authenticated = False
-        
-        # If token is present, authenticate user
-        if token:
-            self.user = await self.get_user_by_token(token)
-            if self.user:
-                self.is_authenticated = True
-                self.display_name = self.user.display_name or self.user.username
-                # Use user's ID as player ID for consistency
-                self.player_id = str(self.user.id)
 
         # Join room group
         await self.channel_layer.group_add(
@@ -50,8 +34,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Initialize game room if it doesn't exist
         if self.room_id not in game_rooms:
             config = GameConfig()
+            game_state = GameState(config)
+            game_state.phase = "setup"  # Jawnie ustawiamy fazę gry
+            game_state.setup_placed = {}  # Słownik do śledzenia postępu fazy setup
+            
             game_rooms[self.room_id] = {
-                'game_state': GameState(config),
+                'game_state': game_state,
                 'players': [],
                 'max_players': 4,
                 'started': False
@@ -68,16 +56,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                 player_color = available_colors[0]
                 player = Player(player_color, room['game_state'].game_config)
                 player.id = self.player_id
-                player.display_name = self.display_name  # Add display name to player
                 room['game_state'].add_player(player)
                 room['players'].append(self.player_id)
 
                 # Send client_id to the new player
                 await self.send(text_data=json.dumps({
                     'type': 'client_id',
-                    'player_id': self.player_id,
-                    'display_name': self.display_name,
-                    'is_authenticated': self.is_authenticated
+                    'player_id': self.player_id
                 }))
 
                 # Notify about new player
@@ -87,9 +72,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                         'type': 'player_joined',
                         'player_id': self.player_id,
                         'player_color': player_color.value,
-                        'player_count': len(room['players']),
-                        'display_name': self.display_name,
-                        'is_authenticated': self.is_authenticated
+                        'player_count': len(room['players'])
                     }
                 )
 
@@ -151,6 +134,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                 if not room['players']:
                     del game_rooms[self.room_id]
 
+
+
+    # Receive message from WebSocket
     # Receive message from WebSocket
     async def receive(self, text_data):
         try:
@@ -166,6 +152,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return
 
             room = game_rooms[self.room_id]
+            game_state = room['game_state']
 
             if message_type == 'create_room':
                 # Room already created on connect
@@ -182,7 +169,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             elif message_type == 'get_game_state':
                 await self.send(text_data=json.dumps({
                     'type': 'game_state',
-                    'game_state': self.serialize_game_state(room['game_state'])
+                    'game_state': self.serialize_game_state(game_state)
                 }))
 
             elif message_type == 'get_client_id':
@@ -205,8 +192,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                 )
 
             elif message_type == 'game_action':
+                check_all_settlements(game_state, "PRZED AKCJĄ")
+
                 # Process game actions (build, trade, etc.)
                 action = data.get('action')
+                print(f"Received game action: {action} with data: {data}")
 
                 # Only process actions if game has started
                 if not room['started'] and len(room['players']) >= 2:
@@ -216,7 +206,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                         self.room_group_name,
                         {
                             'type': 'game_start',
-                            'game_state': self.serialize_game_state(room['game_state'])
+                            'game_state': self.serialize_game_state(game_state)
                         }
                     )
                 elif not room['started']:
@@ -226,89 +216,215 @@ class GameConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                if action == 'roll_dice':
-                    try:
-                        dice_result = await self.process_dice_roll(room['game_state'])
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'dice_roll',
-                                'player_id': self.player_id,
-                                'dice_result': dice_result,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
-                    except Exception as e:
-                        print(f"Error rolling dice: {str(e)}")
+                # Get current game phase
+                current_phase = getattr(game_state, 'phase', GamePhase.SETUP)
+                print(f"Current game phase: {current_phase}")
+
+                # Pobranie player_id z wiadomości jeśli dostępne, w przeciwnym razie użyj ID klienta websocket
+                player_id = data.get('player_id', self.player_id)
+
+                # Znajdź gracza na podstawie ID
+                player = None
+                for p in game_state.players:
+                    if p.id == player_id:
+                        player = p
+                        break
+
+                if not player:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Player with ID {player_id} not found'
+                    }))
+                    return
+
+                # Handle actions based on game phase
+                # Sprawdź czy jesteśmy w fazie setup
+                is_setup_phase = False
+                if isinstance(current_phase, str):
+                    is_setup_phase = current_phase.lower() == "setup"
+                else:
+                    is_setup_phase = current_phase == GamePhase.SETUP
+
+                print(f"Is setup phase: {is_setup_phase}")
+
+                if is_setup_phase:
+                    # Setup phase - limited actions available
+                    if action == 'roll_dice':
+                        # Cannot roll dice in setup phase
                         await self.send(text_data=json.dumps({
                             'type': 'error',
-                            'message': f'Error rolling dice: {str(e)}'
+                            'message': 'Cannot roll dice in the setup phase'
+                        }))
+                        return
+
+                    elif action == 'build_settlement':
+                        # Obsługa budowania osady
+                        # Pobierz albo współrzędne albo tileId i cornerIndex
+                        coords = data.get('coords')
+                        tile_id = data.get('tileId')
+                        corner_index = data.get('cornerIndex')
+
+                        print(
+                            f"Build settlement request: coords={coords}, tileId={tile_id}, cornerIndex={corner_index}")
+
+                        # Obsługa budowania na podstawie tileId i cornerIndex
+                        if tile_id is not None and corner_index is not None:
+                            print(f"Building settlement using tileId={tile_id} and cornerIndex={corner_index}")
+
+                            # Konwertuj tile_id na współrzędne
+                            try:
+                                tile_coords = tuple(map(int, tile_id.split(',')))
+
+                                # Użyj współrzędnych kafelka jako koordynatów
+                                coords = [list(tile_coords)]
+                                print(f"Converted tileId to coords: {coords}")
+                            except Exception as e:
+                                print(f"Error converting tileId to coordinates: {str(e)}")
+                                await self.send(text_data=json.dumps({
+                                    'type': 'error',
+                                    'message': f'Invalid tileId format: {str(e)}'
+                                }))
+                                return
+
+                        # Kontynuuj standardową obsługę budowania osady
+                        if not coords:
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': 'Missing coordinates for settlement'
+                            }))
+                            return
+
+                        print(f"Building settlement with coords: {coords}")
+                        result = await self.process_build_settlement(game_state, player_id, coords,
+                                                                     is_setup=is_setup_phase)
+
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_settlement',
+                                    'player_id': player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                        else:
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': 'Cannot build settlement at this location'
+                            }))
+                    elif action == 'build_road':
+                        coords = data.get('coords')
+                        tile_id = data.get('tileId')
+                        edge_index = data.get('edgeIndex')
+
+                        print(f"Build road request: coords={coords}, tileId={tile_id}, edgeIndex={edge_index}")
+
+                        # Obsługa budowania na podstawie tileId i edgeIndex
+                        if tile_id is not None and edge_index is not None:
+                            print(f"Building road using tileId={tile_id} and edgeIndex={edge_index}")
+
+                            # Konwertuj tile_id na współrzędne
+                            try:
+                                tile_coords = tuple(map(int, tile_id.split(',')))
+
+                                # Użyj współrzędnych kafelka jako koordynatów
+                                coords = [list(tile_coords)]
+                                print(f"Converted tileId to coords: {coords}")
+                            except Exception as e:
+                                print(f"Error converting tileId to coordinates: {str(e)}")
+                                await self.send(text_data=json.dumps({
+                                    'type': 'error',
+                                    'message': f'Invalid tileId format: {str(e)}'
+                                }))
+                                return
+
+                        # Kontynuuj standardową obsługę budowania drogi
+                        if not coords:
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': 'Missing coordinates for road'
+                            }))
+                            return
+
+                        print(f"Building road with coords: {coords} by player {player_id}")
+                        result = await self.process_build_road(game_state, player_id, coords, is_setup=is_setup_phase)
+
+                        if result:
+                            # Notify all players about the build
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'build_road',
+                                    'player_id': player_id,
+                                    'coords': coords,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+                        else:
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': 'Cannot build road at this location'
+                            }))
+
+                    elif action == 'end_turn':
+                        # End turn in setup phase
+                        # Check if setup phase is complete after this turn
+                        if hasattr(game_state, 'check_setup_progress'):
+                            print("Checking setup progress before end turn")
+                            game_state.check_setup_progress()
+
+                        # Process end turn
+                        result = await self.process_end_turn(game_state)
+                        if result:
+                            # Get updated game phase after processing end turn
+                            updated_phase = getattr(game_state, 'phase', GamePhase.SETUP)
+
+                            # Notify all players about the turn end
+                            await self.channel_layer.group_send(
+                                self.room_group_name,
+                                {
+                                    'type': 'game_update',
+                                    'action': 'end_turn',
+                                    'player_id': player_id,
+                                    'game_state': self.serialize_game_state(game_state)
+                                }
+                            )
+
+                            print(f"Updated phase after end turn: {updated_phase}")
+                            if updated_phase != GamePhase.SETUP and updated_phase != "setup":
+                                # Bezpiecznie pobierz wartość fazy
+                                phase_value = updated_phase
+                                if hasattr(updated_phase, 'value'):
+                                    phase_value = updated_phase.value
+
+                                print(f"Phase changed to: {phase_value}")
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'phase_change',
+                                        'phase': phase_value,
+                                        'game_state': self.serialize_game_state(game_state)
+                                    }
+                                )
+                        else:
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': 'Failed to end turn'
+                            }))
+
+                    else:
+                        # Unknown action for setup phase
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': f'Unknown action in setup phase: {action}'
                         }))
 
-                elif action == 'build_settlement':
-                    # Process settlement building
-                    coords = data.get('coords')
-                    result = await self.process_build_settlement(room['game_state'], self.player_id, coords)
+                # Pozostała część metody receive pozostaje bez zmian...
 
-                    if result:
-                        # Notify all players about the build
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'build_settlement',
-                                'player_id': self.player_id,
-                                'coords': coords,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
-
-                elif action == 'build_city':
-                    coords = data.get('coords')
-                    result = await self.process_build_city(room['game_state'], self.player_id, coords)
-
-                    if result:
-                        # Notify all players about the build
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'build_city',
-                                'player_id': self.player_id,
-                                'coords': coords,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
-
-                elif action == 'build_road':
-                    coords = data.get('coords')
-                    result = await self.process_build_road(room['game_state'], self.player_id, coords)
-
-                    if result:
-                        # Notify all players about the build
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'build_road',
-                                'player_id': self.player_id,
-                                'coords': coords,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
-
-                elif action == 'end_turn':
-                    result = await self.process_end_turn(room['game_state'])
-                    if result:
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_update',
-                                'action': 'end_turn',
-                                'player_id': self.player_id,
-                                'game_state': self.serialize_game_state(room['game_state'])
-                            }
-                        )
         except Exception as e:
             print(f"Error processing WebSocket message: {str(e)}")
             await self.send(text_data=json.dumps({
@@ -318,32 +434,148 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     # Helper methods
     def serialize_game_state(self, game_state):
-        board_data = game_state.game_board.serialize_board()
+        try:
+            print("Serializing game state")
+            # Serializacja planszy
+            board_data = game_state.game_board.serialize_board() if hasattr(game_state.game_board,
+                                                                            'serialize_board') else {}
 
-        players_data = []
-        for player in game_state.players:
-            players_data.append({
-                'id': player.id,
-                'color': player.color.value,
-                'resources': player.player_resources.serialize() if hasattr(player.player_resources,
-                                                                            'serialize') else player.player_resources.resources,
-                'victory_points': player.victory_points,
-                'settlements_left': player.settlements_left,
-                'cities_left': player.cities_left,
-                'roads_left': player.roads_left
-            })
+            # Jeśli board_data jest puste, spróbuj alternatywnej serializacji
+            if not board_data:
+                board_data = {
+                    'tiles': [],
+                    'vertices': {},
+                    'edges': {}
+                }
 
-        current_player_index = game_state.current_player_index if hasattr(game_state, 'current_player_index') else 0
+                # Serializacja kafelków
+                if hasattr(game_state.game_board, 'tiles'):
+                    for tile in game_state.game_board.tiles:
+                        tile_data = {
+                            'coordinates': {'q': tile.coords[0], 'r': tile.coords[1], 's': tile.coords[2]},
+                            'resource': str(tile.resource) if hasattr(tile, 'resource') else 'desert',
+                            'number': tile.number if hasattr(tile, 'number') else None,
+                            'has_robber': tile.has_robber if hasattr(tile, 'has_robber') else False
+                        }
+                        board_data['tiles'].append(tile_data)
 
-        return {
-            'board': board_data,
-            'players': players_data,
-            'current_player_index': current_player_index
-        }
+                # Serializacja wierzchołków (vertices) z budynkami
+                if hasattr(game_state.game_board, 'vertices'):
+                    for vertex_key, vertex in game_state.game_board.vertices.items():
+                        coords_list = [list(coord) if isinstance(coord, tuple) else coord for coord in vertex_key]
+                        building_data = None
 
+                        if hasattr(vertex, 'building') and vertex.building:
+                            building_player = vertex.building.player
+                            building_data = {
+                                'type': 'CITY' if vertex.building.building_type == BuildingType.CITY else 'SETTLEMENT',
+                                'player_id': building_player.id if hasattr(building_player, 'id') else str(
+                                    building_player),
+                                'player_color': building_player.color.value if hasattr(building_player,
+                                                                                       'color') else 'red'
+                            }
+
+                        board_data['vertices'][str(vertex_key)] = {
+                            'coordinates': coords_list,
+                            'building': building_data
+                        }
+
+                # Serializacja krawędzi (edges) z drogami
+                if hasattr(game_state.game_board, 'edges'):
+                    for edge_key, edge in game_state.game_board.edges.items():
+                        coords_list = [list(coord) if isinstance(coord, tuple) else coord for coord in edge_key]
+                        road_data = None
+
+                        if hasattr(edge, 'road') and edge.road:
+                            road_player = edge.road.player
+                            road_data = {
+                                'player_id': road_player.id if hasattr(road_player, 'id') else str(road_player),
+                                'player_color': road_player.color.value if hasattr(road_player, 'color') else 'red'
+                            }
+
+                        board_data['edges'][str(edge_key)] = {
+                            'coordinates': coords_list,
+                            'road': road_data
+                        }
+
+            # Serializacja graczy
+            players_data = []
+            for player in game_state.players:
+                player_data = {
+                    'id': player.id,
+                    'color': player.color.value if hasattr(player.color, 'value') else str(player.color),
+                    'resources': player.player_resources.serialize() if hasattr(player.player_resources,
+                                                                                'serialize') else (
+                        player.player_resources.resources if hasattr(player.player_resources, 'resources') else {}
+                    ),
+                    'victory_points': player.victory_points if hasattr(player, 'victory_points') else 0,
+                    'settlements_left': player.settlements_left if hasattr(player, 'settlements_left') else 5,
+                    'cities_left': player.cities_left if hasattr(player, 'cities_left') else 4,
+                    'roads_left': player.roads_left if hasattr(player, 'roads_left') else 15
+                }
+                players_data.append(player_data)
+                print(f"Serialized player: {player_data['id']} with color {player_data['color']}")
+
+            # Określ bieżący indeks gracza w zależności od fazy
+            is_setup_phase = False
+            if hasattr(game_state, 'phase'):
+                if isinstance(game_state.phase, str):
+                    is_setup_phase = game_state.phase.lower() == "setup"
+                else:
+                    is_setup_phase = game_state.phase == GamePhase.SETUP
+
+            current_player_index = 0
+            if is_setup_phase:
+                # W fazie setup, użyj indeksu z pokoju
+                current_room = game_rooms[self.room_id]
+                current_player_index = current_room.get('setup_player_index', 0)
+            else:
+                # W innych fazach, użyj wartości z GameState
+                current_player_index = game_state.current_player_index if hasattr(game_state,
+                                                                                  'current_player_index') else 0
+
+            # Określ fazę gry
+            if hasattr(game_state, 'phase'):
+                if isinstance(game_state.phase, str):
+                    phase = game_state.phase
+                else:
+                    # Zakładając, że to enum z atrybutem value
+                    phase = game_state.phase.value if hasattr(game_state.phase, 'value') else str(game_state.phase)
+            else:
+                phase = "setup"  # Domyślnie faza setup
+
+            # Debugging info
+            print(f"Current game phase: {phase}")
+            print(f"Current player index: {current_player_index}")
+            print(f"Number of players: {len(players_data)}")
+            print(f"Board tiles count: {len(board_data.get('tiles', []))}")
+            print(f"Board vertices count: {len(board_data.get('vertices', {}))}")
+            print(f"Board edges count: {len(board_data.get('edges', {}))}")
+
+            return {
+                'board': board_data,
+                'players': players_data,
+                'current_player_index': current_player_index,
+                'phase': phase
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Error serializing game state: {str(e)}")
+            # Zwróć minimalny stan gry, aby uniknąć błędów na kliencie
+            return {
+                'board': {'tiles': [], 'vertices': {}, 'edges': {}},
+                'players': [],
+                'current_player_index': 0,
+                'phase': 'setup'
+            }
+
+    # W backend/game_api/consumers.py
     @database_sync_to_async
-    def process_build_settlement(self, game_state, player_id, coords):
-        # Find player by ID
+    def process_build_settlement(self, game_state, player_id, coords, is_setup=False):
+        check_all_settlements(game_state, "POCZĄTEK process_build_settlement")
+
+        # Znajdź gracza
         player = None
         for p in game_state.players:
             if p.id == player_id:
@@ -351,25 +583,137 @@ class GameConsumer(AsyncWebsocketConsumer):
                 break
 
         if not player:
+            print(f"Player with ID {player_id} not found")
             return False
 
         try:
-            # Convert coords to the format expected by the game engine
-            vertex_coords = set([tuple(coord) for coord in coords])
+            print(f"Processing build settlement with coords: {coords}")
+            print("Available vertex keys:")
+            for key in list(game_state.game_board.vertices.keys())[:100]:  # Pokaż kilka przykładowych
+                print(f"  {key}")
 
-            # Assuming your game has a method to handle settlement building
-            if hasattr(game_state, 'turn_manager'):
-                return game_state.turn_manager.build_settlement(player, vertex_coords)
-            return False
+            # Poprawna konwersja koordynatów
+            vertex_coords = set()
+            if isinstance(coords, list):
+                for coord in coords:
+                    if isinstance(coord, list) and len(coord) == 3:
+                        vertex_coords.add(tuple(coord))
+            
+            # Znajdź prawidłowy klucz wierzchołka
+            vertex_key = None
+            for key in game_state.game_board.vertices.keys():
+                print(f"Checking vertex key: {key}")
+                # Sprawdź, czy klucz ma część wspólną z vertex_coords
+                common = vertex_coords.intersection(key)
+                if common:
+                    print(f"Found common coordinates: {common}")
+                    vertex_key = key
+                    break
+                    
+            if not vertex_key:
+                print(f"Could not find a valid vertex for coordinates {vertex_coords}")
+                # Dodaj więcej informacji o dostępnych wierzchołkach
+                print("Available vertex keys:")
+                for key in list(game_state.game_board.vertices.keys())[:5]:  # Pokaż tylko 5 pierwszych dla czytelności
+                    print(f"  {key}")
+                return False
+            check_all_settlements(game_state, "PO SPRAWDZENIU ISTNIEJĄCYCH OSAD")
+   
+            from game_engine.board.buildings import Building, BuildingType
+            # Użyj vertex_key do postawienia osady
+            settlement = Building(BuildingType.SETTLEMENT, player)
+            result = game_state.game_board.place_building(settlement, vertex_key, free=is_setup)
+            
+           
+
+            # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
+            if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
+                                                                                            None) == "setup":
+                print("Building settlement in setup phase")
+                if hasattr(game_state, 'place_initial_settlement'):
+                    print("Using place_initial_settlement method")
+                    result = game_state.place_initial_settlement(player, vertex_coords)
+                else:
+                    print("Using fallback settlement building method")
+                    # Fallback, jeśli metoda place_initial_settlement nie istnieje
+                    from game_engine.board.buildings import Building, BuildingType
+                    from game_engine.common.resources import Resource
+
+                    # Znajdź wierzchołek w tablicy wierzchołków
+                    vertex_key = None
+                    for key in game_state.game_board.vertices.keys():
+                        if any(coord in key for coord in vertex_coords):
+                            vertex_key = key
+                            break
+
+                    if not vertex_key:
+                        print(f"Could not find a valid vertex for coordinates {vertex_coords}")
+                        return False
+
+                    settlement = Building(BuildingType.SETTLEMENT, player)
+                    result = game_state.game_board.place_building(settlement, vertex_key, free=True)
+                    if result:
+                        player.settlements_left -= 1
+                        player.victory_points += 1
+
+                        # Aktualizuj licznik w setup_placed
+                        if not hasattr(game_state, 'setup_placed'):
+                            game_state.setup_placed = {}
+                        if player.id not in game_state.setup_placed:
+                            game_state.setup_placed[player.id] = [0, 0]
+                        game_state.setup_placed[player.id][0] += 1
+
+                        # Sprawdź czy druga osada - przyznaj zasoby
+                        if game_state.setup_placed[player.id][0] == 2:
+                            adjacent_tiles = game_state.game_board.get_adjacent_tiles(vertex_key)
+                            for tile in adjacent_tiles:
+                                resource = tile.get_resource()
+                                if resource != Resource.DESERT and resource is not None:
+                                    player.add_resource(resource, 1)
+            else:
+                print("Building settlement in normal game phase")
+                # Normalna gra - użyj standardowej metody
+                if hasattr(game_state, 'turn_manager'):
+                    # Znajdź wierzchołek w tablicy wierzchołków
+                    vertex_key = None
+                    for key in game_state.game_board.vertices.keys():
+                        if any(coord in key for coord in vertex_coords):
+                            vertex_key = key
+                            break
+
+                    if not vertex_key:
+                        print(f"Could not find a valid vertex for coordinates {vertex_coords}")
+                        return False
+
+                    result = game_state.turn_manager.build_settlement(player, vertex_key)
+
+            # Po każdej akcji w fazie setup sprawdź postęp
+            if hasattr(game_state, 'check_setup_progress'):
+                print("Checking setup progress after building settlement")
+                game_state.check_setup_progress()
+
+            return result
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"Error building settlement: {str(e)}")
             return False
-
     @database_sync_to_async
     def process_dice_roll(self, game_state):
         """Roll dice and distribute resources"""
+        # Sprawdź czy jesteśmy w fazie setup
+        if not hasattr(game_state, 'phase') or game_state.phase == "setup" or game_state.phase == GamePhase.SETUP:
+            raise Exception("Cannot roll dice in the setup phase")
+
+        # Sprawdź czy gra jest prawidłowo zainicjowana
         if not hasattr(game_state, 'turn_manager'):
-            raise Exception("Game not properly initialized")
+            # Utwórz turn_manager, jeśli nie istnieje
+            if hasattr(game_state, 'players') and hasattr(game_state, 'game_board') and hasattr(game_state,
+                                                                                                'game_config'):
+                from game_engine.game.turn_manager import TurnManager
+                game_state.turn_manager = TurnManager(game_state.game_board, game_state.game_config, game_state.players)
+            else:
+                raise Exception("Game not properly initialized")
 
         try:
             # Roll dice
@@ -377,7 +721,19 @@ class GameConsumer(AsyncWebsocketConsumer):
             dice_total = dice1 + dice2
 
             # Distribute resources based on dice roll
-            game_state.distribute_resources(dice_total)
+            if dice_total != 7:  # Standardowe przydzielanie zasobów
+                if hasattr(game_state, 'distribute_resources'):
+                    game_state.distribute_resources(dice_total)
+                elif hasattr(game_state.turn_manager, '_distribute_resources'):
+                    game_state.turn_manager._distribute_resources(dice_total)
+            else:  # Obsługa rabusia (7)
+                if hasattr(game_state, 'handle_robber_roll'):
+                    game_state.handle_robber_roll()
+                elif hasattr(game_state.turn_manager, '_handle_robber'):
+                    game_state.turn_manager._handle_robber()
+
+            # Zmień fazę na MAIN po rzucie kośćmi
+            game_state.phase = GamePhase.MAIN
 
             return {
                 'dice1': dice1,
@@ -388,25 +744,113 @@ class GameConsumer(AsyncWebsocketConsumer):
             print(f"Error rolling dice: {str(e)}")
             raise e
 
-    @database_sync_to_async
-    def process_end_turn(self, game_state):
-        """End the current player's turn"""
-        if not hasattr(game_state, 'turn_manager'):
-            # Initialize turn manager if not already done
-            if len(game_state.players) > 1:
-                game_state.turn_manager = game_state.players[0]
-
-            return False
-
+    async def process_end_turn(self, game_state):
+        """Zakończ turę aktualnego gracza"""
         try:
-            game_state.turn_manager.end_turn()
-            return True
-        except Exception as e:
-            print(f"Error ending turn: {str(e)}")
-            return False
+            print("Rozpoczynam process_end_turn")
 
+            # Sprawdź, czy jesteśmy w fazie setup
+            is_setup_phase = False
+            if hasattr(game_state, 'phase'):
+                if isinstance(game_state.phase, str):
+                    is_setup_phase = game_state.phase.lower() == "setup"
+                else:
+                    is_setup_phase = game_state.phase == GamePhase.SETUP
+
+            if is_setup_phase:
+                print("Jesteśmy w fazie setup - obsługa końca tury w fazie setup")
+                # W fazie setup, przechowujemy indeks aktualnego gracza w atrybucie pokoju
+                current_room = game_rooms[self.room_id]
+
+                # Upewnij się, że klucz istnieje
+                if 'setup_player_index' not in current_room:
+                    current_room['setup_player_index'] = 0
+
+                # Sprawdź aktualny indeks gracza
+                current_player_index = current_room['setup_player_index']
+                print(f"Current player index before update: {current_player_index}")
+
+                # Przejdź do następnego gracza
+                current_room['setup_player_index'] = (current_player_index + 1) % len(game_state.players)
+                print(f"Updated player index: {current_room['setup_player_index']}")
+
+                # Sprawdź czy po zmianie tury powinniśmy zaktualizować fazę
+                if hasattr(game_state, 'check_setup_progress'):
+                    print("Checking setup progress after end turn")
+                    game_state.check_setup_progress()
+
+                # Sprawdź czy po zmianie gracza zmieniliśmy też fazę
+                new_phase = getattr(game_state, 'phase', None)
+                print(f"New phase after end turn: {new_phase}")
+
+                if new_phase != GamePhase.SETUP and new_phase != "setup":
+                    print(f"Faza gry zmieniła się z SETUP na {new_phase}")
+                    # Wyślij powiadomienie o zmianie fazy
+                    phase_value = new_phase
+                    if hasattr(new_phase, 'value'):
+                        phase_value = new_phase.value
+                    else:
+                        phase_value = str(new_phase)
+
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'phase_change',
+                            'phase': phase_value,
+                            'game_state': self.serialize_game_state(game_state)
+                        }
+                    )
+
+                return True
+
+            # W innych fazach
+            print("Jesteśmy poza fazą setup - standardowa obsługa końca tury")
+            # Zapisz poprzednią fazę
+            prev_phase = getattr(game_state, 'phase', GamePhase.MAIN)
+
+            # Używaj istniejących metod
+            if hasattr(game_state, 'next_turn'):
+                print("Using game_state.next_turn method")
+                game_state.next_turn()
+                result = True
+            elif hasattr(game_state, 'turn_manager') and hasattr(game_state.turn_manager, 'next_player'):
+                print("Using turn_manager.next_player method")
+                game_state.turn_manager.next_player()
+                result = True
+            else:
+                print("No valid method found to end turn")
+                result = False
+
+            # Sprawdź czy faza się zmieniła i powiadom klientów
+            new_phase = getattr(game_state, 'phase', None)
+            print(f"New phase after end turn: {new_phase}")
+
+            if new_phase != prev_phase:
+                print(f"Faza gry zmieniła się z {prev_phase} na {new_phase}")
+                # Wyślij powiadomienie o zmianie fazy
+                phase_value = new_phase
+                if hasattr(new_phase, 'value'):
+                    phase_value = new_phase.value
+                else:
+                    phase_value = str(new_phase)
+
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'phase_change',
+                        'phase': phase_value,
+                        'game_state': self.serialize_game_state(game_state)
+                    }
+                )
+
+            return result
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Błąd podczas kończenia tury: {str(e)}")
+            return False
     @database_sync_to_async
-    def process_build_road(self, game_state, player_id, coords):
+    def process_build_road(self, game_state, player_id, coords, is_setup=False):
         """Process road building"""
         player = None
         for p in game_state.players:
@@ -415,19 +859,101 @@ class GameConsumer(AsyncWebsocketConsumer):
                 break
 
         if not player:
+            print(f"Player with ID {player_id} not found")
             return False
 
         try:
+            print(f"Processing build road with coords: {coords}")
             # Convert coords to the format expected by the game engine
-            edge_coords = set([tuple(coord) for coord in coords])
+            edge_coords = set()
 
-            if hasattr(game_state, 'turn_manager'):
-                return game_state.turn_manager.build_road(player, edge_coords)
-            return False
+            # Sprawdź format przekazanych koordynatów
+            if isinstance(coords, list):
+                for coord in coords:
+                    # Koordynaty mogą być listą list lub listą krotek
+                    if isinstance(coord, list) and len(coord) == 3:
+                        edge_coords.add(tuple(coord))
+                    elif isinstance(coord, tuple) and len(coord) == 3:
+                        edge_coords.add(coord)
+            elif isinstance(coords, tuple) and len(coords) == 3:
+                # Pojedyncza krotka
+                edge_coords.add(coords)
+            elif isinstance(coords, dict) and 'type' in coords:
+                # Obsługa specjalnego formatu z frontendu
+                print(f"Received special format from frontend: {coords}")
+                # Tu dodaj odpowiednią obsługę
+
+            print(f"Edge coordinates after processing: {edge_coords}")
+
+            if not edge_coords:
+                print("No valid edge coordinates found")
+                return False
+
+            # Obsługa stawiania drogi
+            result = False
+
+            # Jeśli jesteśmy w fazie setup, użyj specjalnej logiki
+            if is_setup or getattr(game_state, 'phase', None) == GamePhase.SETUP or getattr(game_state, 'phase',
+                                                                                            None) == "setup":
+                print("Building road in setup phase")
+                if hasattr(game_state, 'place_initial_road'):
+                    print("Using place_initial_road method")
+                    result = game_state.place_initial_road(player, edge_coords)
+                else:
+                    print("Using fallback road building method")
+                    # Fallback, jeśli metoda place_initial_road nie istnieje
+                    from game_engine.board.buildings import Road
+
+                    # Znajdź krawędź w tablicy krawędzi
+                    edge_key = None
+                    for key in game_state.game_board.edges.keys():
+                        if any(coord in key for coord in edge_coords):
+                            edge_key = key
+                            break
+
+                    if not edge_key:
+                        print(f"Could not find a valid edge for coordinates {edge_coords}")
+                        return False
+
+                    road = Road(player)
+                    result = game_state.game_board.place_road(road, edge_key, free=True)
+                    if result:
+                        player.roads_left -= 1
+
+                        # Aktualizuj licznik w setup_placed
+                        if not hasattr(game_state, 'setup_placed'):
+                            game_state.setup_placed = {}
+                        if player.id not in game_state.setup_placed:
+                            game_state.setup_placed[player.id] = [0, 0]
+                        game_state.setup_placed[player.id][1] += 1
+            else:
+                print("Building road in normal game phase")
+                # Normalna gra - użyj standardowej metody
+                if hasattr(game_state, 'turn_manager'):
+                    # Znajdź krawędź w tablicy krawędzi
+                    edge_key = None
+                    for key in game_state.game_board.edges.keys():
+                        if any(coord in key for coord in edge_coords):
+                            edge_key = key
+                            break
+
+                    if not edge_key:
+                        print(f"Could not find a valid edge for coordinates {edge_coords}")
+                        return False
+
+                    result = game_state.turn_manager.build_road(player, edge_key)
+
+            # Po każdej akcji w fazie setup sprawdź postęp
+            if hasattr(game_state, 'check_setup_progress'):
+                print("Checking setup progress after building road")
+                game_state.check_setup_progress()
+
+            return result
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"Error building road: {str(e)}")
             return False
-
     @database_sync_to_async
     def process_build_city(self, game_state, player_id, coords):
         """Process city building (upgrading settlement)"""
@@ -451,26 +977,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             print(f"Error building city: {str(e)}")
             return False
 
-    @database_sync_to_async
-    def get_user_by_token(self, token):
-        from rest_framework.authtoken.models import Token
-        try:
-            token_obj = Token.objects.get(key=token)
-            user = token_obj.user
-            # Update user's stats if needed
-            return user
-        except Token.DoesNotExist:
-            return None
-
     # Event handlers
     async def player_joined(self, event):
         await self.send(text_data=json.dumps({
             'type': 'player_joined',
             'player_id': event['player_id'],
             'player_color': event['player_color'],
-            'player_count': event['player_count'],
-            'display_name': event['display_name'],
-            'is_authenticated': event['is_authenticated']
+            'player_count': event['player_count']
         }))
 
     async def player_left(self, event):
@@ -486,14 +999,35 @@ class GameConsumer(AsyncWebsocketConsumer):
             'game_state': event['game_state']
         }))
 
+    # async def game_update(self, event):
+    #     await self.send(text_data=json.dumps({
+    #         'type': 'game_update',
+    #         'action': event['action'],
+    #         'player_id': event['player_id'],
+    #         'coords': event.get('coords'),
+    #         'game_state': event['game_state']
+    #     }))
+
     async def game_update(self, event):
+    # Niestandardowy enkoder JSON dla typów, które nie są domyślnie serializowalne
+        class CustomJSONEncoder(json.JSONEncoder):
+            def default(self, obj):
+                # Obsługa enumów (jak PlayerColor)
+                if hasattr(obj, 'value'):
+                    return obj.value
+                # Obsługa innych niestandardowych typów
+                try:
+                    return super().default(obj)
+                except:
+                    return str(obj)  # Ostatecznie konwertuj wszystko na string
+        
         await self.send(text_data=json.dumps({
             'type': 'game_update',
             'action': event['action'],
             'player_id': event['player_id'],
             'coords': event.get('coords'),
             'game_state': event['game_state']
-        }))
+        }, cls=CustomJSONEncoder))
 
     async def dice_roll(self, event):
         """Send dice roll result to WebSocket"""
@@ -509,3 +1043,61 @@ class GameConsumer(AsyncWebsocketConsumer):
             'player_id': event['player_id'],
             'build_type': event['build_type']
         }))
+
+    async def phase_change(self, event):
+        """Send phase change information to WebSocket"""
+        await self.send(text_data=json.dumps({
+            'type': 'phase_change',
+            'phase': event['phase'],
+            'game_state': event.get('game_state')
+        }))
+
+    #####
+# Dodaj to do pliku consumers.py, tuż po importach
+
+def check_all_settlements(game_state, point_name):
+    try:
+
+        """Sprawdza i loguje stan osad wszystkich graczy w określonym momencie"""
+        print(f"\n===== SPRAWDZANIE OSAD W MOMENCIE: {point_name} =====")
+        print(f"Czas: {time.time()}")
+        
+        if not hasattr(game_state, 'game_board') or not hasattr(game_state.game_board, 'vertices'):
+            print("Brak planszy lub wierzchołków")
+            return
+        
+        # Sprawdź osady dla każdego gracza
+        for player in game_state.players:
+            player_id = getattr(player, 'id', 'unknown')
+            print(f"\nGracz: {player_id}")
+            
+            # Znajdź wszystkie osady gracza
+            player_settlements = []
+            for vertex_key, vertex in game_state.game_board.vertices.items():
+                if hasattr(vertex, 'building') and vertex.building:
+                    if hasattr(vertex.building, 'player') and vertex.building.player == player:
+                        building_type = getattr(vertex.building, 'building_type', 'nieznany')
+                        building_type_name = getattr(building_type, 'name', str(building_type))
+                        player_settlements.append((vertex_key, building_type_name))
+            
+            print(f"Liczba osad gracza {player_id}: {len(player_settlements)}")
+            for i, (vertex_key, building_type) in enumerate(player_settlements):
+                print(f"  {i+1}. Budynek typu {building_type} na wierzchołku {vertex_key}")
+        
+        # Znajdź wszystkie budynki bez określonego właściciela
+        orphan_buildings = []
+        for vertex_key, vertex in game_state.game_board.vertices.items():
+            if hasattr(vertex, 'building') and vertex.building:
+                if not hasattr(vertex.building, 'player') or not vertex.building.player:
+                    building_type = getattr(vertex.building, 'building_type', 'nieznany')
+                    building_type_name = getattr(building_type, 'name', str(building_type))
+                    orphan_buildings.append((vertex_key, building_type_name))
+        
+        if orphan_buildings:
+            print("\nBudynki bez właściciela:")
+            for i, (vertex_key, building_type) in enumerate(orphan_buildings):
+                print(f"  {i+1}. Budynek typu {building_type} na wierzchołku {vertex_key}")
+        
+        print("===== KONIEC SPRAWDZANIA =====\n")
+    except Exception as e:
+        print(f"Błąd podczas sprawdzania osad: {str(e)}")

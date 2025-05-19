@@ -1,12 +1,12 @@
-import React from 'react';
-import { Board } from '../../engine/board';
-import { Hex } from '../../engine/types';
-import { Corner } from './CatanCorner';
-import { TileCorner } from '../../engine/tileHelpers';
-import { HexUtils } from 'react-hexgrid';
-import { BaseTile, TileType } from '../../engine/tile';
-import { Corner as CornerData } from '../../engine/corner';
-import { useLayout } from '../context/LayoutContext';
+import React from "react";
+import { Board } from "../../engine/board";
+import { Hex } from "../../engine/types";
+import { Corner } from "./CatanCorner";
+import { TileCorner } from "../../engine/tileHelpers";
+import { HexUtils } from "react-hexgrid";
+import { BaseTile, TileType } from "../../engine/tile";
+import { Corner as CornerData } from "../../engine/corner";
+import { useLayout } from "../context/LayoutContext";
 
 function shouldRenderCorner(
   tile: BaseTile,
@@ -24,47 +24,128 @@ interface Props {
   hexagons: Hex[];
   board: Board;
   onClick: (corner: CornerData, tile: BaseTile) => void;
+  buildMode?: string | null | undefined;
+  myPlayerId?: string;
+  myColor?: string;
 }
 
-export function Corners({ board, hexagons, onClick }: Props) {
+export function Corners({
+  board,
+  hexagons,
+  onClick,
+  buildMode,
+  myPlayerId,
+  myColor = "red",
+}: Props) {
   const layout = useLayout();
+  const [hoveredCorner, setHoveredCorner] = React.useState<{
+    corner: CornerData;
+    tile: BaseTile;
+  } | null>(null);
+
+  // Funkcja wspomagająca do obsługi kliknięcia rogu
+  const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
+    // Log details before passing to parent handler
+    console.log(`Corner clicked on tile: ${tile.tileId}`, {
+      corner,
+      cornerVertices: corner.getVertices?.() || "No vertices",
+      cornerHasOwner: corner.getOwner() !== null,
+    });
+
+    onClick(corner, tile);
+  };
+
+  // Obsługa najechania myszą na róg
+  const handleMouseEnter = (corner: CornerData, tile: BaseTile) => {
+    console.log(`Mouse entered corner on tile: ${tile.tileId}`);
+
+    // Log useful diagnostic info
+    if (typeof corner.getVertices === "function") {
+      console.log("Corner vertices:", corner.getVertices());
+    }
+
+    if (typeof corner.getOwner === "function") {
+      const owner = corner.getOwner();
+      console.log("Corner owner:", owner ? owner.getName() : "none");
+    }
+
+    setHoveredCorner({ corner, tile });
+  };
+
+  // Obsługa opuszczenia rogiem myszą
+  const handleMouseLeave = () => {
+    setHoveredCorner(null);
+  };
 
   return (
     <>
       {hexagons
         // Get every hex coords and tile data
-        .map((hex) => ({
-          hexCoords: HexUtils.hexToPixel(hex, layout),
-          tile: board.getTile(hex),
-          renderN: shouldRenderCorner(board.getTile(hex), hex, TileCorner.N),
-          renderS: shouldRenderCorner(board.getTile(hex), hex, TileCorner.S)
-        }))
+        .map((hex) => {
+          const hexCoords = HexUtils.hexToPixel(hex, layout);
+          const tile = board.getTile(hex);
+          const renderN = shouldRenderCorner(tile, hex, TileCorner.N);
+          const renderS = shouldRenderCorner(tile, hex, TileCorner.S);
+
+          // Log hexagon coordinates for debugging
+          console.log(
+            `Hex ${hex.q},${hex.r},${hex.s} pixel coords: x:${hexCoords.x}, y:${hexCoords.y}`
+          );
+
+          return { hexCoords, tile, renderN, renderS, hex };
+        })
         // Render
-        .map(({ hexCoords, tile, renderN, renderS }, i: number) => (
+        .map(({ hexCoords, tile, renderN, renderS, hex }, i: number) => (
           <React.Fragment key={`hex-${i}`}>
             {renderN && (
-              <Corner
+              <g
                 key={`corner-${i}-N`}
-                corner={tile.getCorners()[TileCorner.N]}
-                tile={tile}
-                coords={{
-                  x: hexCoords.x,
-                  y: hexCoords.y - layout.size.y
-                }}
-                onClick={onClick}
-              />
+                onMouseEnter={() =>
+                  handleMouseEnter(tile.getCorners()[TileCorner.N], tile)
+                }
+                onMouseLeave={handleMouseLeave}
+              >
+                <Corner
+                  corner={tile.getCorners()[TileCorner.N]}
+                  tile={tile}
+                  coords={{
+                    x: hexCoords.x,
+                    y: hexCoords.y - layout.size.y,
+                  }}
+                  onClick={handleCornerClick}
+                  buildMode={buildMode}
+                  isPreviewMode={
+                    hoveredCorner?.corner === tile.getCorners()[TileCorner.N]
+                  }
+                  myPlayerId={myPlayerId}
+                  myColor={myColor}
+                />
+              </g>
             )}
             {renderS && (
-              <Corner
+              <g
                 key={`corner-${i}-S`}
-                corner={tile.getCorners()[TileCorner.S]}
-                tile={tile}
-                coords={{
-                  x: hexCoords.x,
-                  y: hexCoords.y + layout.size.y
-                }}
-                onClick={onClick}
-              />
+                onMouseEnter={() =>
+                  handleMouseEnter(tile.getCorners()[TileCorner.S], tile)
+                }
+                onMouseLeave={handleMouseLeave}
+              >
+                <Corner
+                  corner={tile.getCorners()[TileCorner.S]}
+                  tile={tile}
+                  coords={{
+                    x: hexCoords.x,
+                    y: hexCoords.y + layout.size.y,
+                  }}
+                  onClick={handleCornerClick}
+                  buildMode={buildMode}
+                  isPreviewMode={
+                    hoveredCorner?.corner === tile.getCorners()[TileCorner.S]
+                  }
+                  myPlayerId={myPlayerId}
+                  myColor={myColor}
+                />
+              </g>
             )}
           </React.Fragment>
         ))}

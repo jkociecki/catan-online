@@ -1,4 +1,3 @@
-# backend/asgi.py
 import os
 import django
 
