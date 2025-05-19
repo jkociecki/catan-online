@@ -17,8 +17,14 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from django.views.generic import RedirectView
+from users.callbacks import token_callback
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    path('admin/', admin.site.urls),
     path('api/', include('game_api.urls')),
+    path('accounts/', include('allauth.urls')),
+    path('auth/token-callback/', token_callback, name='token_callback'),
+    path('api/auth/', include('users.urls')),
+    path('', RedirectView.as_view(url='http://localhost:3000/', permanent=False)),
 ]

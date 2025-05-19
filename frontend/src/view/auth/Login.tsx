@@ -24,16 +24,17 @@ const AUTH_API_URL = 'http://localhost:8000/api/auth';
 const AuthContainer = styled.div`
   max-width: 400px;
   margin: 50px auto;
-  padding: 20px;
-  background-color: #f8f8f8;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 30px;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 `;
 
 const Title = styled.h2`
   text-align: center;
-  color: #333;
-  margin-bottom: 20px;
+  color: #2c3e50;
+  margin-bottom: 30px;
+  font-size: 28px;
 `;
 
 const Form = styled.form`
@@ -50,13 +51,15 @@ const Input = styled.input`
 `;
 
 const Button = styled.button`
-  padding: 10px 15px;
+  padding: 12px 20px;
   background-color: #4caf50;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 16px;
+  width: 100%;
+  transition: background-color 0.2s;
   
   &:hover {
     background-color: #45a049;
@@ -77,6 +80,33 @@ const GoogleButton = styled(Button)`
   
   &:hover {
     background-color: #357ae8;
+  }
+`;
+
+const GoogleIcon = styled.img`
+  width: 20px;
+  height: 20px;
+`;
+
+const DirectLink = styled.a`
+  display: block;
+  text-align: center;
+  margin-top: 15px;
+  color: #4285f4;
+  text-decoration: none;
+  font-size: 14px;
+  
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const SkipLoginButton = styled(Button)`
+  background-color: #95a5a6;
+  margin-top: 20px;
+  
+  &:hover {
+    background-color: #7f8c8d;
   }
 `;
 
@@ -201,7 +231,7 @@ export default function Login() {
     };
 
     const handleGoogleSignIn = () => {
-        // Redirect to Google login URL
+        // Redirect to Django's Google login URL from allauth
         window.location.href = 'http://localhost:8000/accounts/google/login/';
     };
 
@@ -243,18 +273,19 @@ export default function Login() {
         }
     };
 
+    const handleSkipLogin = () => {
+        navigate('/room/new');  // Przekierowanie do tworzenia nowego pokoju
+    };
+
     return (
         <AuthContainer>
-            <Title>Login to Catan</Title>
+            <Title>Welcome to Catan</Title>
 
             {error && <ErrorMessage>{error}</ErrorMessage>}
 
-            <GoogleButton
-                onClick={handleGoogleSignIn}
-                disabled={loading}
-                type="button"
-            >
-                <span>Sign in with Google</span>
+            <GoogleButton onClick={() => navigate('/google-login')}>
+                <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
+                Continue with Google
             </GoogleButton>
 
             <Divider><span>OR</span></Divider>
@@ -312,6 +343,13 @@ export default function Login() {
                     Play as Guest
                 </Button>
             </GuestOptions>
+
+            <SkipLoginButton
+                onClick={handleSkipLogin}
+                type="button"
+            >
+                Skip Login and Create Game
+            </SkipLoginButton>
         </AuthContainer>
     );
 }

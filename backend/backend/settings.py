@@ -37,17 +37,44 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-   # "game_api.apps.GameApiConfig",
+    "django.contrib.sites",
     "corsheaders",
     'channels',
     'game_api',
+    'users',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+    'rest_framework.authtoken',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True  # For development only, restrict in production
-CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React app
+    "http://localhost:3000",
     "http://127.0.0.1:3000",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
 ]
 
 MIDDLEWARE = [
@@ -59,6 +86,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 ]
 
 ROOT_URLCONF = "backend.urls"
@@ -139,5 +167,72 @@ STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Custom user model
+AUTH_USER_MODEL = 'users.User'
+
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True  # Only for development! Configure properly for production
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+
+SITE_ID = 1
+
+# Google OAuth settings
+SOCIALACCOUNT_PROVIDERS = {
+    'google': {
+        'APP': {
+            'client_id': '41654275853-bkj2e4sidsm5nfurkcjj8emcfckgbtd6.apps.googleusercontent.com',
+            'secret': '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',
+            'key': ''
+        },
+        'SCOPE': [
+            'profile',
+            'email',
+        ],
+        'AUTH_PARAMS': {
+            'access_type': 'online',
+        }
+    }
+}
+
+LOGIN_REDIRECT_URL = '/auth/token-callback/'
+
+# Additional django-allauth settings
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = False
+ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_EMAIL_VERIFICATION = 'none'  # Set to 'mandatory' if you want email verification
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_SESSION_REMEMBER = True
+ACCOUNT_LOGOUT_ON_GET = True
+ACCOUNT_LOGOUT_REDIRECT_URL = '/'
+ACCOUNT_LOGIN_REDIRECT_URL = '/auth/token-callback/'
+
+# Logging configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+        'allauth': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}
+
+# Additional allauth settings
+ACCOUNT_EMAIL_VERIFICATION = 'none'
+SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'
+SOCIALACCOUNT_STORE_TOKENS = True

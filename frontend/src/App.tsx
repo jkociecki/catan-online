@@ -10,6 +10,9 @@ import RoomLobby from "./view/room/LobbyRoom";
 import OnlineGame from "./view/game/OnlineGame";
 import { Board } from "./engine/board";
 import { BasicGameConfig } from "./game/config";
+import Login from "./view/auth/Login";
+import AuthCallback from "./view/auth/AuthCallback";
+import GoogleLogin from "./view/auth/GoogleLogin";
 
 /**
  * What's next?
@@ -26,15 +29,15 @@ export default function App() {
     <BrowserRouter>
       <div className="App">
         <Routes>
-          <Route path="/" element={<RoomJoin />} />
-          <Route
-            path="/room/:roomId"
-            element={
-              <RoomLobby
-                roomId={window.location.pathname.split("/").pop() || ""}
-              />
-            }
-          />
+          <Route path="/" element={<Login />} />
+          <Route path="/auth-callback" element={<AuthCallback />} />
+          <Route path="/google-login" element={<GoogleLogin />} />
+          <Route path="/room/new" element={<RoomJoin />} />
+          <Route path="/room/:roomId" element={
+            <RoomLobby
+              roomId={window.location.pathname.split("/").pop() || ""}
+            />
+          } />
           <Route path="/game/:roomId" element={<OnlineGame />} />
           <Route
             path="/local-game"

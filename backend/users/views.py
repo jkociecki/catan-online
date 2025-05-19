@@ -1,7 +1,8 @@
-from rest_framework import viewsets, status, permissions
-from rest_framework.decorators import action
+from rest_framework import viewsets, status, permissions, generics
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
 import uuid
@@ -127,3 +128,23 @@ class UserViewSet(viewsets.ModelViewSet):
         # Return current user profile
         serializer = UserSerializer(request.user)
         return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    try:
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+    except Exception as e:
+        print(f"Error in user_profile view: {str(e)}")
+        return Response(
+            {'error': 'Failed to fetch user profile'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+class UserProfileView(generics.RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserSerializer
+
+    def get_object(self):
+        return self.request.user
