@@ -5,6 +5,7 @@ from game_engine.player.player import Player
 from game_engine.common.player_color import PlayerColor
 from game_engine.common.resources import Resource
 from game_engine.board.buildings import BuildingType
+from game_engine.game.game_phase import GamePhase
 
 @pytest.fixture
 def game_config():
@@ -43,6 +44,9 @@ def test_turn_order(game_state):
 def test_turn_phases(game_state):
     """Test faz tury"""
     current_player = game_state.players[game_state.current_player_index]
+    
+    # Ustaw fazę gry na ROLL_DICE w TurnManager
+    game_state.turn_manager.current_game_phase = GamePhase.ROLL_DICE
     
     # Faza 1: Rzut kostką
     dice_roll = game_state.roll_dice()
