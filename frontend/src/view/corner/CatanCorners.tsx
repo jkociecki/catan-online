@@ -1,3 +1,5 @@
+// Poprawiony komponent CatanCorners.tsx
+
 import React from "react";
 import { Board } from "../../engine/board";
 import { Hex } from "../../engine/types";
@@ -45,7 +47,7 @@ export function Corners({
 
   // Funkcja wspomagająca do obsługi kliknięcia rogu
   const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
-    // Log details before passing to parent handler
+    // Dodaj więcej logów diagnostycznych
     console.log(`Corner clicked on tile: ${tile.tileId}`, {
       corner,
       cornerVertices: corner.getVertices?.() || "No vertices",
@@ -87,15 +89,21 @@ export function Corners({
           const renderN = shouldRenderCorner(tile, hex, TileCorner.N);
           const renderS = shouldRenderCorner(tile, hex, TileCorner.S);
 
-          // Log hexagon coordinates for debugging
-          console.log(
-            `Hex ${hex.q},${hex.r},${hex.s} pixel coords: x:${hexCoords.x}, y:${hexCoords.y}`
-          );
+          // Debugowanie jeśli aktywny jest tryb budowania
+          if (buildMode) {
+            console.log(
+              `Hex ${hex.q},${hex.r},${
+                hex.s
+              } pixel coords: x:${hexCoords.x.toFixed(
+                2
+              )}, y:${hexCoords.y.toFixed(2)}`
+            );
+          }
 
           return { hexCoords, tile, renderN, renderS, hex };
         })
         // Render
-        .map(({ hexCoords, tile, renderN, renderS, hex }, i: number) => (
+        .map(({ hexCoords, tile, renderN, renderS }, i: number) => (
           <React.Fragment key={`hex-${i}`}>
             {renderN && (
               <g
@@ -109,6 +117,7 @@ export function Corners({
                   corner={tile.getCorners()[TileCorner.N]}
                   tile={tile}
                   coords={{
+                    // Używamy dokładnie tych samych koordynatów, które są używane przez hexagon
                     x: hexCoords.x,
                     y: hexCoords.y - layout.size.y,
                   }}
@@ -134,6 +143,7 @@ export function Corners({
                   corner={tile.getCorners()[TileCorner.S]}
                   tile={tile}
                   coords={{
+                    // Używamy dokładnie tych samych koordynatów, które są używane przez hexagon
                     x: hexCoords.x,
                     y: hexCoords.y + layout.size.y,
                   }}

@@ -55,30 +55,91 @@ export class Corner {
     }
   }
 
-  // Dodana metoda do pobierania wierzchołków
-  getVertices(): string[] {
-    // Jeśli mamy tylko jeden wierzchołek, spróbujmy skonstruować brakujące
-    if (this.vertices.length === 1) {
-      // Pobierz współrzędne jedynego wierzchołka
-      const coords = this.vertices[0].split(",").map(Number);
-      if (coords.length === 3) {
-        const [q, r, s] = coords;
+  //   getVertices(): string[] {
+  //     // We need exactly 3 coordinates for a corner
+  //     if (this.vertices.length > 0) {
+  //       // Make sure we return exactly 3 unique vertices
+  //       const uniqueVertices = Array.from(new Set(this.vertices));
 
-        // Wygeneruj brakujące wierzchołki dla narożnika
-        // North corner (góra) - musimy wiedzieć, czy to North czy South
-        // Ta heurystyka zakłada, że jeśli r jest dodatnie, to to najprawdopodobniej South corner
-        if (r > 0) {
-          // South corner logic - dodajemy sąsiednie wierzchołki na południe
-          this.addVertex(`${q},${r + 1},${s - 1}`);
-          this.addVertex(`${q - 1},${r + 1},${s}`);
-        } else {
-          // North corner logic - dodajemy sąsiednie wierzchołki na północ
-          this.addVertex(`${q + 1},${r - 1},${s}`);
-          this.addVertex(`${q + 1},${r},${s - 1}`);
-        }
+  //       // If we have too many, just take the first 3
+  //       if (uniqueVertices.length > 3) {
+  //         return uniqueVertices.slice(0, 3);
+  //       }
+
+  //       // If we don't have enough, try to generate the missing ones
+  //       if (uniqueVertices.length === 1) {
+  //         const coords = uniqueVertices[0].split(",").map(Number);
+  //         if (coords.length === 3) {
+  //           const [q, r, s] = coords;
+
+  //           // Determine if this is a North or South corner based on the coordinates
+  //           // For North corners, s is negative, for South corners, s is positive
+  //           if (s < 0) {
+  //             // North corner
+  //             return [
+  //               uniqueVertices[0],
+  //               `${q+1},${r},${s-1}`,
+  //               `${q+1},${r-1},${s}`
+  //             ];
+  //           } else {
+  //             // South corner
+  //             return [
+  //               uniqueVertices[0],
+  //               `${q},${r+1},${s-1}`,
+  //               `${q-1},${r+1},${s}`
+  //             ];
+  //           }
+  //         }
+  //       }
+
+  //       return uniqueVertices;
+  //     }
+
+  //     return [];
+  //   }
+  // }
+
+  getVertices(): string[] {
+    // We need exactly 3 coordinates for a corner
+    if (this.vertices.length > 0) {
+      // Make sure we return exactly 3 unique vertices
+      const uniqueVertices = Array.from(new Set(this.vertices));
+
+      // If we have too many, just take the first 3
+      if (uniqueVertices.length > 3) {
+        return uniqueVertices.slice(0, 3);
       }
+
+      // If we don't have enough, try to generate the missing ones
+      if (uniqueVertices.length < 3) {
+        // Zapisz oryginalne wierzchołki, które już mamy
+        const result = [...uniqueVertices];
+
+        // Jeśli mamy tylko jeden wierzchołek, spróbujmy wygenerować pozostałe dwa
+        if (uniqueVertices.length === 1) {
+          const coords = uniqueVertices[0].split(",").map(Number);
+          if (coords.length === 3) {
+            const [q, r, s] = coords;
+
+            // NIE zmieniamy ŻADNYCH współrzędnych - używamy dokładnie tych samych co w renderowaniu
+            if (r <= 0) {
+              // Prawdopodobnie North corner
+              result.push(`${q + 1},${r - 1},${s}`);
+              result.push(`${q + 1},${r},${s - 1}`);
+            } else {
+              // Prawdopodobnie South corner
+              result.push(`${q},${r + 1},${s - 1}`);
+              result.push(`${q - 1},${r + 1},${s}`);
+            }
+          }
+        }
+
+        return result;
+      }
+
+      return uniqueVertices;
     }
 
-    return this.vertices;
+    return [];
   }
 }

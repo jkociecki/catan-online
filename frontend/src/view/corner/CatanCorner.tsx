@@ -1,7 +1,9 @@
+// Poprawiony komponent CatanCorner.tsx
+
 import { Corner as CornerData } from "../../engine/corner";
 import styled from "styled-components";
 import { BaseTile } from "../../engine/tile";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Props {
   onClick?: (corner: CornerData, tile: BaseTile) => void;
@@ -27,7 +29,7 @@ const StyledSettlement = styled.polygon<{
   cursor: pointer;
   animation: ${({ $animate }) => ($animate ? "pulse 2s infinite" : "none")};
   transform-origin: center;
-  transform: scale(1.2);
+  /* Bez żadnej transformacji skalowania */
 
   @keyframes pulse {
     0% {
@@ -60,7 +62,7 @@ const StyledCity = styled.path<{
   cursor: pointer;
   animation: ${({ $animate }) => ($animate ? "pulse 2s infinite" : "none")};
   transform-origin: center;
-  transform: scale(1.2);
+  /* Bez żadnej transformacji skalowania */
 
   @keyframes pulse {
     0% {
@@ -80,7 +82,7 @@ const StyledCity = styled.path<{
   }
 `;
 
-// Stylizowany punkt "pusty", reagujący na kliknięcia
+// Stylizowany punkt "pusty", reagujący na kliknięcia - NIE ZMIENIAĆ!
 const StyledCircle = styled.circle<{
   $buildMode: string | null | undefined;
   $isPreviewMode: boolean;
@@ -136,6 +138,7 @@ export function Corner({
   const [isCity, setIsCity] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [animate, setAnimate] = useState(false);
+  const clickedRef = useRef(false); // Referencja do śledzenia czy właśnie kliknięto
 
   // Sprawdź, czy na tym rogu jest już jakaś budowla
   const hasBuilding = corner.getOwner() !== null;
@@ -157,6 +160,16 @@ export function Corner({
       }
     }
   }, [isPreviewMode, coords, corner, tile]);
+
+  useEffect(() => {
+    if (isPreviewMode) {
+      console.log(`Preview coordinates: x=${coords.x}, y=${coords.y}`);
+    }
+
+    if (hasBuilding) {
+      console.log(`Building coordinates: x=${coords.x}, y=${coords.y}`);
+    }
+  }, [isPreviewMode, hasBuilding, coords.x, coords.y]);
 
   // Efekt dla podglądu budowli przy najechaniu
   useEffect(() => {
@@ -204,27 +217,41 @@ export function Corner({
     }
   }, [hasBuilding]);
 
-  // Osada to prosty pięciokąt - wycentrowany dokładnie na koordynatach
+  // DOMEK - Bardzo małe punkty, umieszczone dokładnie w pozycji punktu klikalnego
+  // const settlementPoints = `
+  //   ${coords.x},${coords.y - 0.35}
+  //   ${coords.x + 0.3},${coords.y}
+  //   ${coords.x + 0.15},${coords.y + 0.35}
+  //   ${coords.x - 0.15},${coords.y + 0.35}
+  //   ${coords.x - 0.3},${coords.y}
+  // `;
   const settlementPoints = `
-    ${coords.x},${coords.y - 0.4}
-    ${coords.x + 0.35},${coords.y - 0.1}
-    ${coords.x + 0.35},${coords.y + 0.3}
-    ${coords.x - 0.35},${coords.y + 0.3}
-    ${coords.x - 0.35},${coords.y - 0.1}
-  `;
+  ${coords.x},${coords.y - 0.52}
+  ${coords.x + 0.45},${coords.y}
+  ${coords.x + 0.225},${coords.y + 0.52}
+  ${coords.x - 0.225},${coords.y + 0.52}
+  ${coords.x - 0.45},${coords.y}
+`;
 
-  // Miasto to bardziej skomplikowany kształt z dodatkową "wieżą"
+  // MIASTO - Bardzo mały kształt, umieszczony dokładnie w pozycji punktu klikalnego
   const cityPath = `
-    M ${coords.x - 0.4} ${coords.y - 0.1}
-    L ${coords.x - 0.4} ${coords.y + 0.3}
-    L ${coords.x + 0.4} ${coords.y + 0.3}
-    L ${coords.x + 0.4} ${coords.y - 0.1}
-    L ${coords.x + 0.2} ${coords.y - 0.3}
-    L ${coords.x - 0.2} ${coords.y - 0.3}
+    M ${coords.x - 0.32} ${coords.y - 0.05}
+    L ${coords.x - 0.32} ${coords.y + 0.35}
+    L ${coords.x + 0.32} ${coords.y + 0.35}
+    L ${coords.x + 0.32} ${coords.y - 0.05}
+    L ${coords.x} ${coords.y - 0.35}
     Z
   `;
 
-  const handleClick = () => {
+  // Obsługuje kliknięcie i zapobiega podwójnemu wywołaniu
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation(); // Zapobiegaj propagacji zdarzeń
+
+    // Zapobiegaj podwójnemu kliknięciu
+    if (clickedRef.current) return;
+
+    clickedRef.current = true;
+
     console.log(
       `Clicked corner at coords x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(
         2
@@ -235,7 +262,16 @@ export function Corner({
         .getCorners()
         .indexOf(corner)}`
     );
-    onClick?.(corner, tile);
+    console.log("Clicked corner object:", corner);
+
+    if (onClick) {
+      onClick(corner, tile);
+    }
+
+    // Resetowanie flagi po krótkim opóźnieniu
+    setTimeout(() => {
+      clickedRef.current = false;
+    }, 500);
   };
 
   return (

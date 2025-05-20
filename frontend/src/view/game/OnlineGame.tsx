@@ -269,6 +269,23 @@ export default function OnlineGame() {
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
 
+      // Log detailed vertex data if available
+      if (data.game_state?.board?.vertices) {
+        console.log("Vertices from server:", data.game_state.board.vertices);
+
+        // Log specific details of each vertex that has a building
+        Object.entries(data.game_state.board.vertices).forEach(
+          ([key, vertexData]: [string, any]) => {
+            if (vertexData?.building) {
+              console.log(`Vertex ${key} with building:`, {
+                coordinates: vertexData.coordinates,
+                building: vertexData.building,
+              });
+            }
+          }
+        );
+      }
+
       // Pokaż powiadomienie o sukcesie
       if (data.action) {
         const actionMessages: { [key: string]: string } = {
@@ -298,6 +315,11 @@ export default function OnlineGame() {
 
       // Update game state
       if (data.game_state) {
+        console.log(
+          "Game state received in handleGameUpdate:",
+          data.game_state
+        );
+        console.log("Vertices data in game_state:", data.game_state.vertices);
         setGameState(data.game_state);
 
         // Update game phase
@@ -517,8 +539,9 @@ export default function OnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
-  // Poprawiona funkcja obsługi kliknięcia w róg planszy, wykorzystująca getVertices
-  // Zmodyfikowana funkcja handleCornerClick w kliencie
+  // Zmodyfikowana funkcja handleCornerClick z prostszym przesunięciem w prawo
+  // Wersja bazująca bardziej na twoim oryginalnym kodzie
+
   // const handleCornerClick = (corner: Corner, tile: BaseTile) => {
   //   if (!isMyTurn() || !buildMode || !board) return;
 
@@ -541,7 +564,7 @@ export default function OnlineGame() {
   //         if (!owner) {
   //           setError("Możesz ulepszać tylko własne osady!");
   //           canBuild = false;
-  //         }else if (corner.hasCity()) {
+  //         } else if (corner.hasCity()) {
   //           setError("Ta osada jest już ulepszona do miasta!");
   //           canBuild = false;
   //         }
@@ -551,58 +574,121 @@ export default function OnlineGame() {
   //         return;
   //       }
 
-  //       // Przygotuj współrzędne dla serwera - użyj ID kafelka
-  //       const tileCoords = tile.tileId.split(',').map(Number);
-  //       if (tileCoords.length !== 3) {
-  //         setError("Niepoprawne współrzędne kafelka");
-  //         return;
-  //       }
+  //       // Pobierz wszystkie wierzchołki rogu
+  //       const vertices =
+  //         typeof corner.getVertices === "function" ? corner.getVertices() : [];
+  //       console.log("Raw vertex data:", vertices);
 
-  //       // Znajdź indeks narożnika w kafelku
-  //       const corners = tile.getCorners();
-  //       let cornerIndex = -1;
-  //       for (let i = 0; i < corners.length; i++) {
-  //         if (corners[i] === corner) {
-  //           cornerIndex = i;
-  //           break;
+  //       // Sprawdź, czy mamy wystarczającą liczbę wierzchołków (powinny być 3 dla narożnika)
+  //       if (vertices.length < 3) {
+  //         console.warn(
+  //           "Incomplete vertex data, corner should have 3 vertices but has:",
+  //           vertices.length
+  //         );
+
+  //         // Pobierz istniejące współrzędne
+  //         const coords = vertices.map((v) => v.split(",").map(Number));
+
+  //         // Pobierz dane o kafelku
+  //         const tileCoords = tile.tileId.split(",").map(Number);
+  //         const cornerIndex = tile.getCorners().indexOf(corner);
+
+  //         console.log(
+  //           "Using coordinates from tile:",
+  //           tileCoords,
+  //           "corner index:",
+  //           cornerIndex
+  //         );
+
+  //         // Używamy informacji o kafelku i indeksie narożnika do generowania prawidłowych koordynatów
+  //         const [q, r, s] = tileCoords;
+
+  //         // TWÓJ ORYGINALNY KOD Z PRZESUNIĘCIEM W PRAWO (+1 do q, -1 do s)
+  //         let vertexCoords: number[][] = [];
+
+  //         // if (cornerIndex === 0) {
+  //         //   // North corner
+  //         //   vertexCoords = [
+  //         //     [q + 2, r, s - 2], // Przesunięcie w prawo
+  //         //     [q + 2, r - 1, s - 1], // Przesunięcie w prawo
+  //         //     [q + 2, r, s - 2], // Przesunięcie w prawo
+  //         //   ];
+  //         // } else if (cornerIndex === 1) {
+  //         //   // South corner
+  //         //   vertexCoords = [
+  //         //     [q + 2, r, s - 2], // Przesunięcie w prawo
+  //         //     [q + 2, r + 1, s - 3], // Przesunięcie w prawo
+  //         //     [q, r + 1, s - 1], // Przesunięcie w prawo
+  //         //   ];
+
+  //         if (cornerIndex === 0) {
+  //           // North-East corner
+  //           vertexCoords = [
+  //             [q + 1, r - 1, s], // punkt A
+  //             [q + 2, r - 1, s - 1], // punkt B
+  //             [q + 2, r, s - 2], // punkt C
+  //           ];
+  //         } else if (cornerIndex === 1) {
+  //           // South-East corner
+  //           vertexCoords = [
+  //             [q + 1, r - 1, s], // punkt A
+  //             [q + 1, r, s - 1], // punkt B
+  //             [q, r, s], // (środek heksa, dla stabilizacji/wycentrowania)
+  //           ];
+  //         } else {
+  //           setError("Nieznany indeks narożnika");
+  //           return;
   //         }
-  //       }
 
-  //       if (cornerIndex === -1) {
-  //         setError("Nie można określić indeksu narożnika");
-  //         return;
-  //       }
+  //         console.log("Generated vertex coordinates:", vertexCoords);
 
-  //       console.log(`Building ${buildMode} at tile ${tile.tileId}, corner index ${cornerIndex}`);
+  //         // Wyślij wygenerowane koordynaty
+  //         GameService.sendMessage({
+  //           type: "game_action",
+  //           action: `build_${buildMode}`,
+  //           coords: vertexCoords,
+  //         });
+  //       } else {
+  //         // Przetwórz wierzchołki na tablicę koordynatów
+  //         const vertexCoords = vertices.map((vertex) => {
+  //           const coords = vertex.split(",").map(Number);
+  //           // PRZESUNIĘCIE W PRAWO: +1 do q, -1 do s (aby zachować sumę q+r+s=0)
+  //           return [coords[0] + 1, coords[1], coords[2] - 1];
+  //         });
+
+  //         console.log("Shifted vertex coordinates:", vertexCoords);
+
+  //         // Wyślij koordynaty
+  //         GameService.sendMessage({
+  //           type: "game_action",
+  //           action: `build_${buildMode}`,
+  //           coords: vertexCoords,
+  //         });
+  //       }
 
   //       // Dodaj budowlę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
   //       const newPendingBuild = {
   //         action: `build_${buildMode}`,
   //         tileId: tile.tileId,
-  //         cornerIndex: cornerIndex
+  //         cornerIndex: tile.getCorners().indexOf(corner),
   //       };
 
   //       // Zapobieganie duplikatom
-  //       const existingBuildIndex = pendingBuilds.findIndex(
-  //         item => item.action === newPendingBuild.action &&
-  //               item.tileId === newPendingBuild.tileId &&
-  //               item.cornerIndex === newPendingBuild.cornerIndex
-  //       );
+  //       // const existingBuildIndex = pendingBuildsList.findIndex(
+  //       //   (item) =>
+  //       //     item.action === newPendingBuild.action &&
+  //       //     item.tileId === newPendingBuild.tileId &&
+  //       //     item.cornerIndex === newPendingBuild.cornerIndex
+  //       // );
 
-  //       if (existingBuildIndex === -1) {
-  //         setPendingBuilds(prev => [...prev, newPendingBuild]);
-  //       }
-
-  //       // Wyślij akcję do serwera
-  //       GameService.sendMessage({
-  //         type: "game_action",
-  //         action: `build_${buildMode}`,
-  //         tileId: tile.tileId,
-  //         cornerIndex: cornerIndex
-  //       });
+  //       // if (existingBuildIndex === -1) {
+  //       //   setPendingBuildsList((prev) => [...prev, newPendingBuild]);
+  //       // }
 
   //       // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
-  //       showSuccessIndicator(`Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`);
+  //       showSuccessIndicator(
+  //         `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
+  //       );
 
   //       // Jeśli jesteśmy w fazie setup, zmień tryb budowania na drogę po postawieniu osady
   //       if (gamePhase === "setup" && buildMode === "settlement") {
@@ -612,16 +698,25 @@ export default function OnlineGame() {
   //       }
   //     } catch (err) {
   //       console.error("Error processing corner click:", err);
-  //       setError(`Error processing click: ${err instanceof Error ? err.message : String(err)}`);
+  //       setError(
+  //         `Error processing click: ${
+  //           err instanceof Error ? err.message : String(err)
+  //         }`
+  //       );
   //     }
   //   }
   // };
-
-  // Poprawiona funkcja handleCornerClick w OnlineGame.tsx
   const handleCornerClick = (corner: Corner, tile: BaseTile) => {
     if (!isMyTurn() || !buildMode || !board) return;
 
-    console.log("clicked corner!", corner, tile);
+    // Dodaj szczegółowe logi z informacją o kafelku i rogu
+    console.log("Clicked corner details:", {
+      tileId: tile.tileId,
+      cornerIndex: tile.getCorners().indexOf(corner),
+      cornerVertices:
+        typeof corner.getVertices === "function" ? corner.getVertices() : [],
+      hasOwner: corner.getOwner() !== null,
+    });
 
     if (buildMode === "settlement" || buildMode === "city") {
       try {
@@ -655,99 +750,43 @@ export default function OnlineGame() {
           typeof corner.getVertices === "function" ? corner.getVertices() : [];
         console.log("Raw vertex data:", vertices);
 
-        // Sprawdź, czy mamy wystarczającą liczbę wierzchołków (powinny być 3 dla narożnika)
+        // Sprawdź, czy mamy wystarczającą liczbę wierzchołków
+        let vertexCoords: number[][] = [];
+
         if (vertices.length < 3) {
-          console.warn(
-            "Incomplete vertex data, corner should have 3 vertices but has:",
-            vertices.length
-          );
+          console.warn("Incomplete vertex data, using tile coordinates");
 
-          // Spróbujmy uzupełnić brakujące dane
-          // Pobierz istniejące współrzędne
-          const coords = vertices.map((v) => v.split(",").map(Number));
-
-          // Pobierz dane o kafelku
+          // Używamy bezpośrednio współrzędnych kafelka jako podstawy
           const tileCoords = tile.tileId.split(",").map(Number);
           const cornerIndex = tile.getCorners().indexOf(corner);
 
-          console.log(
-            "Using coordinates from tile:",
-            tileCoords,
-            "corner index:",
-            cornerIndex
-          );
-
-          // Manualne określenie prawidłowych koordynatów dla narożnika
-          let vertexCoords: number[][] = [];
-
-          // Używamy informacji o kafelku i indeksie narożnika do generowania prawidłowych koordynatów
-          const [q, r, s] = tileCoords;
-
-          if (cornerIndex === 0) {
-            // North corner
-            vertexCoords = [
-              [q, r, s],
-              [q + 1, r - 1, s],
-              [q + 1, r, s - 1],
-            ];
-          } else if (cornerIndex === 1) {
-            // South corner
-            vertexCoords = [
-              [q, r, s],
-              [q, r + 1, s - 1],
-              [q - 1, r + 1, s],
-            ];
-          } else {
-            setError("Nieznany indeks narożnika");
-            return;
-          }
-
-          console.log("Generated vertex coordinates:", vertexCoords);
-
-          // Wyślij wygenerowane koordynaty
-          console.log(
-            "Sending vertex coordinates in format:",
-            JSON.stringify(vertexCoords)
-          );
-
-          GameService.sendMessage({
-            type: "game_action",
-            action: `build_${buildMode}`,
-            coords: vertexCoords,
-          });
+          // Stwórz minimalny zestaw współrzędnych wymagany przez serwer
+          vertexCoords = [tileCoords];
         } else {
-          // Przetwórz wierzchołki na tablicę koordynatów
-          const vertexCoords = vertices.map((vertex) =>
+          // Mamy komplet wierzchołków
+          vertexCoords = vertices.map((vertex) =>
             vertex.split(",").map(Number)
           );
-          console.log("Sending complete vertex coordinates:", vertexCoords);
-
-          // Wyślij koordynaty
-          GameService.sendMessage({
-            type: "game_action",
-            action: `build_${buildMode}`,
-            coords: vertexCoords,
-          });
         }
 
-        // Dodaj budowlę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
-        const newPendingBuild = {
+        console.log("Original coordinates before adjustment:", vertexCoords);
+
+        // Przesunięcie o 3 jednostki w kierunku q i -3 w kierunku s
+        // Używamy stałego przesunięcia, ponieważ zrozumieliśmy, że problem jest konsekwentny
+        const adjustedCoords = vertexCoords.map((coords) => [
+          coords[0] + 1, // +3q
+          coords[1], // r bez zmian
+          coords[2] - 1, // -3s (aby zachować q+r+s=0)
+        ]);
+
+        console.log("Adjusted coordinates with +3q,-3s shift:", adjustedCoords);
+
+        // Wyślij SKORYGOWANE koordynaty
+        GameService.sendMessage({
+          type: "game_action",
           action: `build_${buildMode}`,
-          tileId: tile.tileId,
-          cornerIndex: tile.getCorners().indexOf(corner),
-        };
-
-        // Zapobieganie duplikatom
-        const existingBuildIndex = pendingBuilds.findIndex(
-          (item) =>
-            item.action === newPendingBuild.action &&
-            item.tileId === newPendingBuild.tileId &&
-            item.cornerIndex === newPendingBuild.cornerIndex
-        );
-
-        if (existingBuildIndex === -1) {
-          setPendingBuilds((prev) => [...prev, newPendingBuild]);
-        }
+          coords: adjustedCoords,
+        });
 
         // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
         showSuccessIndicator(
@@ -771,70 +810,132 @@ export default function OnlineGame() {
     }
   };
 
-  // Poprawiona funkcja do obsługi kliknięcia krawędzi planszy, wykorzystująca getVertices
+  // const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
+  //   if (!isMyTurn() || buildMode !== "road" || !board) return;
+
+  //   try {
+  //     // Sprawdź czy krawędź jest już zajęta
+  //     if (edge.getOwner()) {
+  //       setError("Ta krawędź jest już zajęta!");
+  //       return;
+  //     }
+
+  //     console.log("clicked edge!", edge, tile);
+
+  //     // 1. Pobierz wierzchołki krawędzi
+  //     const vertices = edge.getVertices ? edge.getVertices() : [];
+  //     console.log("Raw edge vertices:", vertices);
+
+  //     // 2. Ustal współrzędne dla krawędzi
+  //     let coords: number[][] = [];
+
+  //     // Pobierz dane o kafelku i indeksie krawędzi
+  //     const tileCoords = tile.tileId.split(",").map(Number);
+  //     const edgeIndex = tile.getEdges().indexOf(edge);
+  //     console.log("Edge index in tile:", edgeIndex);
+
+  //     if (vertices.length >= 2) {
+  //       // Mamy wierzchołki - zastosuj przesunięcie jak dla domków
+  //       coords = vertices.map((vertex) => {
+  //         const points = vertex.split(",").map(Number);
+  //         // Zastosuj DOKŁADNIE TAKIE SAMO przesunięcie jak dla domków
+  //         return [points[0] + 1, points[1], points[2] - 1];
+  //       });
+  //       console.log("Coordinates from vertices with shift:", coords);
+  //     } else {
+  //       // Brak wierzchołków - wygeneruj je ręcznie
+  //       // Użyj konkretnych wartości dla poszczególnych typów krawędzi
+  //       const [q, r, s] = tileCoords;
+
+  //       // switch (edgeIndex) {
+  //       //   case 0: // NE edge
+  //       //     coords = [
+  //       //       [q + 1, r, s - 1],
+  //       //       [q + 2, r - 1, s - 1],
+  //       //     ];
+  //       //     break;
+  //       //   case 1: // NW edge
+  //       //     coords = [
+  //       //       [q + 1, r, s - 1],
+  //       //       [q + 1, r - 1, s],
+  //       //     ];
+  //       //     break;
+  //       //   case 2: // W edge
+  //       //     coords = [
+  //       //       [q + 1, r, s - 1],
+  //       //       [q + 1 - 1, r, s - 1 + 1], // czyli też przesunięcie
+  //       //     ];
+  //       //     break;
+  //       //   default:
+  //       //     setError("Nieznany indeks krawędzi");
+  //       //     return;
+  //       // }
+
+  //       coords = [
+  //         [q + 1, r, s - 1],
+  //         [q + 1, r - 1, s],
+  //       ];
+
+  //       console.log("Manually generated road coordinates:", coords);
+  //     }
+
+  //     if (coords.length < 2) {
+  //       setError("Nie można określić pozycji dla drogi. Spróbuj ponownie.");
+  //       return;
+  //     }
+
+  //     // 3. Wyślij akcję do serwera
+  //     GameService.sendMessage({
+  //       type: "game_action",
+  //       action: "build_road",
+  //       coords: coords,
+  //     });
+
+  //     // 4. Pokaż komunikat o oczekiwaniu na odpowiedź serwera
+  //     showSuccessIndicator("Budowanie drogi...");
+
+  //     // 5. W fazie setup po postawieniu drogi automatycznie zakończ turę
+  //     if (gamePhase === "setup") {
+  //       setTimeout(() => {
+  //         GameService.endTurn();
+  //         setBuildMode(null);
+  //       }, 1000);
+  //     }
+  //   } catch (err) {
+  //     console.error("Error processing edge click:", err);
+  //     setError(
+  //       `Error processing click: ${
+  //         err instanceof Error ? err.message : String(err)
+  //       }`
+  //     );
+  //   }
+  // };
+
   const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
 
     try {
-      // Przygotuj współrzędne dla serwera wykorzystując metodę getVertices
-      const coords: number[][] = [];
-      const edgeVertices = edge.getVertices();
-
-      console.log("Edge vertices:", edgeVertices);
-
-      // Przetwarzanie wierzchołków z edge.getVertices()
-      if (edgeVertices && edgeVertices.length > 0) {
-        for (const vertex of edgeVertices) {
-          const tileCoords = vertex.split(",").map(Number);
-          if (tileCoords.length === 3) {
-            coords.push(tileCoords);
-          }
-        }
-      } else {
-        // Fallback do starej metody, jeśli getVertices nie zwraca danych
-        if (tile && tile.tileId) {
-          const tileCoords = tile.tileId.split(",").map(Number);
-          if (tileCoords.length === 3) {
-            coords.push(tileCoords);
-          }
-        }
-      }
-
-      console.log("Sending coordinates for road:", coords);
-
       // Sprawdź czy krawędź jest już zajęta
       if (edge.getOwner()) {
         setError("Ta krawędź jest już zajęta!");
         return;
       }
 
-      if (coords.length === 0) {
-        setError("Nie można określić pozycji dla drogi. Spróbuj ponownie.");
-        return;
-      }
+      // Pobierz indeks krawędzi w kafelku
+      const edgeIndex = tile.getEdges().indexOf(edge);
 
-      // Dodaj drogę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
-      const newPendingBuild = {
-        action: "build_road",
-        coords: coords,
-      };
+      console.log("Edge click details:", {
+        tileId: tile.tileId,
+        edgeIndex: edgeIndex,
+      });
 
-      // Zapobieganie duplikatom
-      const existingBuildIndex = pendingBuilds.findIndex(
-        (item) =>
-          item.action === newPendingBuild.action &&
-          JSON.stringify(item.coords) === JSON.stringify(newPendingBuild.coords)
-      );
-
-      if (existingBuildIndex === -1) {
-        setPendingBuilds((prev) => [...prev, newPendingBuild]);
-      }
-
-      // Wyślij akcję do serwera
+      // Wyślij tileId i edgeIndex zamiast koordynatów
+      // Backend powinien być w stanie poprawnie zidentyfikować krawędź na podstawie tych informacji
       GameService.sendMessage({
         type: "game_action",
         action: "build_road",
-        coords: coords,
+        tileId: tile.tileId,
+        edgeIndex: edgeIndex,
       });
 
       // Pokaż komunikat o oczekiwaniu na odpowiedź serwera

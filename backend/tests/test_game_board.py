@@ -45,8 +45,8 @@ def test_place_settlement(game_board, player):
     vertex_key = next(iter(game_board.vertices.keys()))
     settlement = Building(BuildingType.SETTLEMENT, player)
     
-    # Umieść osadę
-    result = game_board.place_building(settlement, vertex_key)
+    # Umieść osadę (w fazie setup)
+    result = game_board.place_building(settlement, vertex_key, free=True)
     
     assert result == True
     assert game_board.vertices[vertex_key].building == settlement
@@ -54,12 +54,24 @@ def test_place_settlement(game_board, player):
 
 def test_place_road(game_board, player):
     """Test umieszczania drogi"""
-    # Wybierz pierwszą dostępną krawędź
-    edge_key = next(iter(game_board.edges.keys()))
+    # Najpierw postaw osadę
+    vertex_key = next(iter(game_board.vertices.keys()))
+    settlement = Building(BuildingType.SETTLEMENT, player)
+    game_board.place_building(settlement, vertex_key, free=True)
+    
+    # Znajdź krawędź połączoną z osadą
+    connected_edges = []
+    for edge_key, edge in game_board.edges.items():
+        vertices = game_board.get_edge_vertices(edge_key)
+        if vertex_key in vertices:
+            connected_edges.append(edge_key)
+    
+    # Wybierz pierwszą połączoną krawędź
+    edge_key = connected_edges[0]
     road = Road(player)
     
-    # Umieść drogę
-    result = game_board.place_road(road, edge_key)
+    # Umieść drogę (w fazie setup)
+    result = game_board.place_road(road, edge_key, free=True)
     
     assert result == True
     assert game_board.edges[edge_key].road == road
