@@ -268,6 +268,8 @@ class GameBoard:
 
     # ========== SERIALIZACJA ==========
 
+    # backend/game_engine/board/game_board.py - fragment serialize_board
+
     def serialize_board(self) -> Dict:
         """Serializuj planszę do JSON w formacie kompatybilnym z frontendem"""
         
@@ -284,9 +286,7 @@ class GameBoard:
             }
             tiles_data.append(tile_data)
 
-        # ========== KOMPATYBILNY FORMAT DLA FRONTENDU ==========
-        
-        # Serializuj wierzchołki w starym formacie (coordinates zamiast adjacent_tiles)
+        # ========== POPRAWIONA SERIALIZACJA WIERZCHOŁKÓW ==========
         vertices_data = {}
         for vertex_id, vertex in enumerate(self.vertices):
             building_data = None
@@ -295,10 +295,12 @@ class GameBoard:
                 building_data = {
                     "type": building.building_type.name,
                     "player_id": getattr(building.player, 'id', 'unknown'),
-                    "player_color": getattr(building.player.color, 'value', 'red') if hasattr(building.player, 'color') else 'red'
+                    "player_color": getattr(building.player.color, 'value', 'red') if hasattr(building.player, 'color') else 'red',
+                    # KLUCZOWE: Dodaj vertex_id dla jednoznacznej identyfikacji
+                    "vertex_id": vertex_id
                 }
 
-            # Konwertuj adjacent_tiles na coordinates (stary format)
+            # Konwertuj adjacent_tiles na coordinates (dla kompatybilności)
             coordinates = []
             for tile_id in vertex.adjacent_tiles:
                 if tile_id < len(self.tiles):
@@ -307,16 +309,15 @@ class GameBoard:
                     coordinates.append([q, r, s])
 
             vertices_data[f"vertex_{vertex_id}"] = {
-                "coordinates": coordinates,  # Frontend oczekuje tego pola
+                "vertex_id": vertex_id,  # DODAJ UNIKALNY ID
+                "coordinates": coordinates,
                 "building": building_data
             }
 
             if vertex.has_building():
-                print(f"SERIALIZE: Vertex {vertex_id} with building:")
-                print(f"  Adjacent tiles: {vertex.adjacent_tiles}")
-                print(f"  Coordinates sent to frontend: {coordinates}")
+                print(f"SERIALIZE: Vertex {vertex_id} with building at tiles: {vertex.adjacent_tiles}")
 
-        # Serializuj krawędzie w starym formacie  
+        # ========== POPRAWIONA SERIALIZACJA KRAWĘDZI ==========  
         edges_data = {}
         for edge_id, edge in enumerate(self.edges):
             road_data = None
@@ -324,10 +325,12 @@ class GameBoard:
                 road = edge.road
                 road_data = {
                     "player_id": getattr(road.player, 'id', 'unknown'),
-                    "player_color": getattr(road.player.color, 'value', 'red') if hasattr(road.player, 'color') else 'red'
+                    "player_color": getattr(road.player.color, 'value', 'red') if hasattr(road.player, 'color') else 'red',
+                    # KLUCZOWE: Dodaj edge_id dla jednoznacznej identyfikacji
+                    "edge_id": edge_id
                 }
 
-            # Konwertuj adjacent_tiles na coordinates (stary format)
+            # Konwertuj adjacent_tiles na coordinates (dla kompatybilności)
             coordinates = []
             for tile_id in edge.adjacent_tiles:
                 if tile_id < len(self.tiles):
@@ -336,7 +339,8 @@ class GameBoard:
                     coordinates.append([q, r, s])
 
             edges_data[f"edge_{edge_id}"] = {
-                "coordinates": coordinates,  # Frontend oczekuje tego pola
+                "edge_id": edge_id,  # DODAJ UNIKALNY ID
+                "coordinates": coordinates,
                 "road": road_data
             }
 
