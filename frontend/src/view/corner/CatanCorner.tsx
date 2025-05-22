@@ -322,6 +322,36 @@ export function Corner({
             onClick={handleClick}
           />
         ))}
+
+      {/* DEBUG: Numerek wierzchołka */}
+      <text
+        x={coords.x}
+        y={coords.y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="0.7"
+        fill="blue"
+        fontWeight="bold"
+        pointerEvents="none"
+        style={{ userSelect: "none" }}
+      >
+        {tile.getCorners().indexOf(corner)}
+      </text>
+
+      {/* DEBUG: Info o kafelku */}
+      <text
+        x={coords.x}
+        y={coords.y + 0.4}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize="0.7"
+        fill="green"
+        fontWeight="bold"
+        pointerEvents="none"
+        style={{ userSelect: "none" }}
+      >
+        {tile.tileId}
+      </text>
     </>
   );
 }

@@ -1,25 +1,17 @@
-// Poprawiony komponent CatanCorners.tsx
+// frontend/src/view/corner/CatanCorners.tsx - KOMPLETNIE PRZEPISANY
 
 import React from "react";
 import { Board } from "../../engine/board";
 import { Hex } from "../../engine/types";
 import { Corner } from "./CatanCorner";
-import { TileCorner } from "../../engine/tileHelpers";
 import { HexUtils } from "react-hexgrid";
 import { BaseTile, TileType } from "../../engine/tile";
 import { Corner as CornerData } from "../../engine/corner";
 import { useLayout } from "../context/LayoutContext";
 
-function shouldRenderCorner(
-  tile: BaseTile,
-  hex: Hex,
-  corner: TileCorner
-): boolean {
-  return (
-    tile.getTileType() === TileType.TILE ||
-    (hex.r > 0 && corner === TileCorner.N) ||
-    (hex.r < 0 && corner === TileCorner.S)
-  );
+function shouldRenderCorner(tile: BaseTile): boolean {
+  // Renderuj narożniki tylko dla prawdziwych kafelków, nie dla offset tiles
+  return tile.getTileType() === TileType.TILE;
 }
 
 interface Props {
@@ -45,12 +37,22 @@ export function Corners({
     tile: BaseTile;
   } | null>(null);
 
+  // DEBUG: Sprawdź ile narożników ma każdy kafelek
+  React.useEffect(() => {
+    console.log("=== DEBUG TILE CORNERS ===");
+    hexagons.slice(0, 3).forEach((hex) => {
+      const tile = board.getTile(hex);
+      const corners = tile.getCorners();
+      console.log(`Tile ${tile.tileId}: ${corners.length} corners`);
+    });
+    console.log("==========================");
+  }, [hexagons, board]);
+
   // Funkcja wspomagająca do obsługi kliknięcia rogu
   const handleCornerClick = (corner: CornerData, tile: BaseTile) => {
-    // Dodaj więcej logów diagnostycznych
     console.log(`Corner clicked on tile: ${tile.tileId}`, {
       corner,
-      cornerVertices: corner.getVertices?.() || "No vertices",
+      cornerIndex: tile.getCorners().indexOf(corner),
       cornerHasOwner: corner.getOwner() !== null,
     });
 
@@ -59,18 +61,6 @@ export function Corners({
 
   // Obsługa najechania myszą na róg
   const handleMouseEnter = (corner: CornerData, tile: BaseTile) => {
-    console.log(`Mouse entered corner on tile: ${tile.tileId}`);
-
-    // Log useful diagnostic info
-    if (typeof corner.getVertices === "function") {
-      console.log("Corner vertices:", corner.getVertices());
-    }
-
-    if (typeof corner.getOwner === "function") {
-      const owner = corner.getOwner();
-      console.log("Corner owner:", owner ? owner.getName() : "none");
-    }
-
     setHoveredCorner({ corner, tile });
   };
 
@@ -82,83 +72,65 @@ export function Corners({
   return (
     <>
       {hexagons
-        // Get every hex coords and tile data
         .map((hex) => {
           const hexCoords = HexUtils.hexToPixel(hex, layout);
           const tile = board.getTile(hex);
-          const renderN = shouldRenderCorner(tile, hex, TileCorner.N);
-          const renderS = shouldRenderCorner(tile, hex, TileCorner.S);
+          const shouldRender = shouldRenderCorner(tile);
 
-          // Debugowanie jeśli aktywny jest tryb budowania
-          if (buildMode) {
-            console.log(
-              `Hex ${hex.q},${hex.r},${
-                hex.s
-              } pixel coords: x:${hexCoords.x.toFixed(
-                2
-              )}, y:${hexCoords.y.toFixed(2)}`
-            );
-          }
-
-          return { hexCoords, tile, renderN, renderS, hex };
+          return { hexCoords, tile, shouldRender, hex };
         })
-        // Render
-        .map(({ hexCoords, tile, renderN, renderS }, i: number) => (
-          <React.Fragment key={`hex-${i}`}>
-            {renderN && (
-              <g
-                key={`corner-${i}-N`}
-                onMouseEnter={() =>
-                  handleMouseEnter(tile.getCorners()[TileCorner.N], tile)
-                }
-                onMouseLeave={handleMouseLeave}
-              >
-                <Corner
-                  corner={tile.getCorners()[TileCorner.N]}
-                  tile={tile}
-                  coords={{
-                    // Używamy dokładnie tych samych koordynatów, które są używane przez hexagon
-                    x: hexCoords.x,
-                    y: hexCoords.y - layout.size.y,
-                  }}
-                  onClick={handleCornerClick}
-                  buildMode={buildMode}
-                  isPreviewMode={
-                    hoveredCorner?.corner === tile.getCorners()[TileCorner.N]
-                  }
-                  myPlayerId={myPlayerId}
-                  myColor={myColor}
-                />
-              </g>
-            )}
-            {renderS && (
-              <g
-                key={`corner-${i}-S`}
-                onMouseEnter={() =>
-                  handleMouseEnter(tile.getCorners()[TileCorner.S], tile)
-                }
-                onMouseLeave={handleMouseLeave}
-              >
-                <Corner
-                  corner={tile.getCorners()[TileCorner.S]}
-                  tile={tile}
-                  coords={{
-                    // Używamy dokładnie tych samych koordynatów, które są używane przez hexagon
-                    x: hexCoords.x,
-                    y: hexCoords.y + layout.size.y,
-                  }}
-                  onClick={handleCornerClick}
-                  buildMode={buildMode}
-                  isPreviewMode={
-                    hoveredCorner?.corner === tile.getCorners()[TileCorner.S]
-                  }
-                  myPlayerId={myPlayerId}
-                  myColor={myColor}
-                />
-              </g>
-            )}
-          </React.Fragment>
-        ))}
+        .filter(({ shouldRender }) => shouldRender)
+        .map(({ hexCoords, tile }, i: number) => {
+          // ========== NOWE: RENDERUJ WSZYSTKIE 6 NAROŻNIKÓW ==========
+
+          const corners = tile.getCorners();
+
+          // Pozycje wszystkich 6 narożników względem centrum kafelka
+          // Zgodne z backendem: 0=N, 1=NE, 2=SE, 3=S, 4=SW, 5=NW
+          const cornerPositions = [
+            { x: hexCoords.x, y: hexCoords.y - layout.size.y }, // 0: North
+            {
+              x: hexCoords.x + layout.size.x * 0.866,
+              y: hexCoords.y - layout.size.y * 0.5,
+            }, // 1: North-East
+            {
+              x: hexCoords.x + layout.size.x * 0.866,
+              y: hexCoords.y + layout.size.y * 0.5,
+            }, // 2: South-East
+            { x: hexCoords.x, y: hexCoords.y + layout.size.y }, // 3: South
+            {
+              x: hexCoords.x - layout.size.x * 0.866,
+              y: hexCoords.y + layout.size.y * 0.5,
+            }, // 4: South-West
+            {
+              x: hexCoords.x - layout.size.x * 0.866,
+              y: hexCoords.y - layout.size.y * 0.5,
+            }, // 5: North-West
+          ];
+
+          return (
+            <React.Fragment key={`hex-${i}`}>
+              {corners.map((corner, cornerIndex) => (
+                <g
+                  key={`corner-${i}-${cornerIndex}`}
+                  onMouseEnter={() => handleMouseEnter(corner, tile)}
+                  onMouseLeave={handleMouseLeave}
+                >
+                  <Corner
+                    corner={corner}
+                    tile={tile}
+                    coords={cornerPositions[cornerIndex]}
+                    onClick={handleCornerClick}
+                    buildMode={buildMode}
+                    isPreviewMode={hoveredCorner?.corner === corner}
+                    myPlayerId={myPlayerId}
+                    myColor={myColor}
+                  />
+                </g>
+              ))}
+            </React.Fragment>
+          );
+        })}
     </>
   );
 }

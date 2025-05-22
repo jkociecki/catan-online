@@ -1,40 +1,52 @@
+# backend/game_engine/board/game_board.py
 import random
-from typing import List
-
-from xlwings.constants import directions
+from typing import List, Dict, Optional, Tuple
 
 from game_engine.board.buildings import Building, BuildingType, Road
 from game_engine.board.game_tile import Tile
 from game_engine.board.tile_factory import TileFactory
 from game_engine.common.resources import Resource
 from game_engine.common.game_config import GameConfig
-from game_engine.board.vertex import Vertex, Edge
+from game_engine.board.vertex import Vertex, Edge, BoardGeometry
 from game_engine.player.player import Player
 
 
 class GameBoard:
+    """Plansza gry Catan z nowym systemem indeksów"""
 
-    def __init__(self, config):
-
+    def __init__(self, config: GameConfig, board_radius: int = 2):
         self.config: GameConfig = config
+        self.board_radius = board_radius
+        
+        # Tablice zamiast słowników
         self.tiles: List[Tile] = []
-        self.tiles_coords: List[tuple[int, int, int]] = []
-
-        #to sa osady/miasta klucz to sa wspolrzedne tego punktu to widac na tym zdjecu lepiej
-        # a w klasie Vertex jest info czy cos tam juz jest postawione i kto postawil
-        self.vertices: dict[frozenset[tuple[int, int, int]], Vertex] = {}
-        #tutaj podobnie ale to sa drogi po prostu
-        self.edges: dict[frozenset[tuple[int, int, int]], Edge] = {}
-
-
+        self.vertices: List[Vertex] = []
+        self.edges: List[Edge] = []
+        
+        # Mapowania dla łatwiejszego dostępu
+        self.tile_to_vertices: Dict[int, List[int]] = {}  # tile_id -> [vertex_ids]
+        self.tile_to_edges: Dict[int, List[int]] = {}     # tile_id -> [edge_ids]
+        
+        # Wygeneruj planszę
         self._generate_board()
-        self._generate_edges()
-        self._generate_vertices()
-
 
     def _generate_board(self):
+        """Wygeneruj całą planszę - kafelki, wierzchołki i krawędzie"""
+        
+        # 1. Wygeneruj geometrię planszy
+        self.vertices, self.edges, self.tile_to_vertices, self.tile_to_edges = \
+            BoardGeometry.generate_vertices_and_edges(self.board_radius)
+        
+        # 2. Wygeneruj kafelki z zasobami
+        self._generate_tiles()
+        
+        print(f"Generated board: {len(self.tiles)} tiles, {len(self.vertices)} vertices, {len(self.edges)} edges")
 
-        tiles_to_be_places = {
+    def _generate_tiles(self):
+        """Wygeneruj kafelki z losowymi zasobami i numerami"""
+        
+        # Przygotuj zasoby do rozłożenia
+        tiles_to_place = {
             Resource.WOOD: self.config.wood_tiles,
             Resource.BRICK: self.config.brick_tiles,
             Resource.DESERT: self.config.desert_tiles,
@@ -43,528 +55,293 @@ class GameBoard:
             Resource.WHEAT: self.config.wheat_tiles
         }
 
-        tiles: List[Tile] = []
-        available_numbers: List[int] = self.config.tiles_numbers.copy()
-
-        for resource, count in tiles_to_be_places.items():
+        # Stwórz listę kafelków
+        tile_resources = []
+        for resource, count in tiles_to_place.items():
             for _ in range(count):
+                tile_resources.append(resource)
 
-                if resource == Resource.DESERT:
-                    tile_number = None
-                else:
-                    tile_number = random.choice(available_numbers)
+        # Wymieszaj zasoby
+        random.shuffle(tile_resources)
 
-                if tile_number:
-                    available_numbers.remove(tile_number)
+        # Przygotuj numery kości
+        available_numbers = self.config.tiles_numbers.copy()
+        random.shuffle(available_numbers)
 
-                tile: Tile = TileFactory.create_tile(resource, number=tile_number)
-                tiles.append(tile)
-
-        random.shuffle(tiles)
-
-
-        index = 0
-        for q in range(-2, 3):
-            for r in range(-2, 3):
+        # Wygeneruj kafelki na pozycjach heksagonalnych
+        tile_id = 0
+        for q in range(-self.board_radius, self.board_radius + 1):
+            for r in range(-self.board_radius, self.board_radius + 1):
                 s = -q - r
-                if -2 <= s <= 2:
-                    tile = tiles[index]
-                    tile.set_coordinates(q,r,s)
+                if abs(s) <= self.board_radius:
+                    
+                    # Wybierz zasób
+                    resource = tile_resources[tile_id] if tile_id < len(tile_resources) else Resource.DESERT
+                    
+                    # Wybierz numer (pustynia nie ma numeru)
+                    if resource == Resource.DESERT:
+                        tile_number = None
+                    else:
+                        tile_number = available_numbers.pop() if available_numbers else None
+
+                    # Stwórz kafelek
+                    tile = TileFactory.create_tile(resource, number=tile_number)
+                    tile.set_coordinates(q, r, s)
+                    
                     self.tiles.append(tile)
-                    tile_cords: tuple[int, int, int] = (q, r, s)
-                    self.tiles_coords.append(tile_cords)
-                    index += 1
-
-
-    def _generate_vertices(self):
-        vertex_directions = [
-            [(0, 0, 0), (1, -1, 0), (1, 0, -1)],
-            [(0, 0, 0), (1, 0, -1), (0, 1, -1)],
-            [(0, 0, 0), (0, 1, -1), (-1, 1, 0)],
-            [(0, 0, 0), (-1, 1, 0), (-1, 0, 1)],
-            [(0, 0, 0), (-1, 0, 1), (0, -1, 1)],
-            [(0, 0, 0), (0, -1, 1), (1, -1, 0)],
-        ]
-
-        for tile in self.tiles:
+                    tile_id += 1
+                # W _generate_tiles(), po pętli generowania
+        print("=== GENERATED TILES ===")
+        for tile_id, tile in enumerate(self.tiles):
             q, r, s = tile.get_coordinates()
+            print(f"Tile {tile_id}: ({q}, {r}, {s}) - {tile.get_resource()}")
+        print("=======================")
 
-            for offset_group in vertex_directions:
-                coords = set()
-                for dq, dr, ds in offset_group:
-                    coords.add((q + dq, r + dr, s + ds))
-                key = frozenset(coords)
+    # ========== NOWE METODY Z PROSTYMI INDEKSAMI ==========
 
-                if key not in self.vertices:
-                    self.vertices[key] = Vertex(tiles=coords)
-
-
-
-    def _generate_edges(self):
-        edge_directions = [
-            [(0, 0, 0), (1, -1, 0)],
-            [(0, 0, 0), (1, 0, -1)],
-            [(0, 0, 0), (0, 1, -1)],
-            [(0, 0, 0), (-1, 1, 0)],
-            [(0, 0, 0), (-1, 0, 1)],
-            [(0, 0, 0), (0, -1, 1)],
-        ]
-
-        for tile in self.tiles:
-            q, r, s = tile.get_coordinates()
-
-            for offset_pair in edge_directions:
-                coords = set()
-                for dq, dr, ds in offset_pair:
-                    coords.add((q + dq, r + dr, s + ds))
-                key = frozenset(coords)
-
-                if key not in self.edges:
-                    self.edges[key] = Edge(tiles=coords)
-
-    def place_road(self, road: Road, edge_coords: set[tuple[int, int, int]], free=False):
-        """
-        Postaw drogę na planszy
+    def place_settlement(self, vertex_id: int, player: Player, is_setup: bool = False) -> bool:
+        """Postaw osadę na wierzchołku o danym ID"""
         
-        Args:
-            road: Droga do postawienia (obiekt Road)
-            edge_coords: Koordynaty krawędzi
-            free: Czy droga ma być postawiona za darmo (faza setup)
+        # Sprawdź czy wierzchołek istnieje
+        if vertex_id >= len(self.vertices):
+            print(f"Vertex {vertex_id} does not exist")
+            return False
         
-        Returns:
-            bool: Czy udało się postawić drogę
-        """
-        edge_key = frozenset(edge_coords)
-
-        if edge_key not in self.edges:
+        # Sprawdź czy można tam budować
+        if not BoardGeometry.can_place_settlement_here(vertex_id, self.vertices, self.edges, player, is_setup):
+            print(f"Cannot place settlement at vertex {vertex_id}")
             return False
-
-        edge = self.edges[edge_key]
-
-        if edge.road is not None:
-            return False
-            
-        # W fazie setup pomijamy sprawdzanie połączenia, w normalnej fazie sprawdzamy
-        if not free and not self._has_adjacent_building_or_road(edge_key, road.player):
-            return False
-
-        edge.road = road
+        
+        # Stwórz i postaw osadę
+        settlement = Building(BuildingType.SETTLEMENT, player)
+        self.vertices[vertex_id].building = settlement
+        
+        print(f"Placed settlement for player {player.id} at vertex {vertex_id}")
         return True
 
-    def place_building(self, building: Building, vertex_coords: set[tuple[int, int, int]], free=False):
-        """
-        Postaw budynek (osadę lub miasto) na planszy
+    def place_city(self, vertex_id: int, player: Player) -> bool:
+        """Ulepsz osadę do miasta na wierzchołku o danym ID"""
         
-        Args:
-            building: Obiekt budynku do postawienia
-            vertex_coords: Koordynaty wierzchołka
-            free: Czy budynek ma być postawiony za darmo (faza setup)
-        
-        Returns:
-            bool: Czy udało się postawić budynek
-        """
-        vertex_key = frozenset(vertex_coords)
-
-        if vertex_key not in self.vertices:
+        # Sprawdź czy wierzchołek istnieje
+        if vertex_id >= len(self.vertices):
             return False
-
-        vertex = self.vertices[vertex_key]
-
-        # to jest proba ulepsza z osady na miasto
-        if vertex.building is not None:
-            if (vertex.building.player == building.player and
-                    vertex.building.building_type.SETTLEMENT and
-                    building.building_type.CITY):
-                vertex.building = building
-                return True
-            else:
-                return False
-
-        # ato patrzy czy nie ma w poblizu czegos juz
-        for neighbor_key in self._get_neighboring_vertices(vertex_key):
-            if neighbor_key in self.vertices and self.vertices[neighbor_key].building is not None:
-                return False
-                
-        # W normalnej fazie sprawdź połączenie z drogą, w fazie setup pomijamy
-        if not free and not self._has_connected_road(vertex_key, building.player):
+        
+        vertex = self.vertices[vertex_id]
+        
+        # Sprawdź czy tam jest osada tego gracza
+        if (not vertex.has_building() or 
+            vertex.building.player != player or 
+            vertex.building.building_type != BuildingType.SETTLEMENT):
+            print(f"Cannot upgrade to city at vertex {vertex_id} - no settlement found")
             return False
-
-        vertex.building = building
-        return True
-
-    def can_place_road(self, player: Player, edge_coords: set[tuple[int, int, int]], free=False):
-        """
-        Sprawdź, czy można postawić drogę na danej krawędzi
         
-        Args:
-            player: Gracz stawiający drogę
-            edge_coords: Koordynaty krawędzi
-            free: Czy pomijamy sprawdzanie połączenia (faza setup)
+        # Ulepsz do miasta
+        city = Building(BuildingType.CITY, player)
+        vertex.building = city
         
-        Returns:
-            bool: Czy można postawić drogę
-        """
-        # edge_key = frozenset(edge_coords)
-        #
-        # # Sprawdź, czy krawędź istnieje
-        # if edge_key not in self.edges:
-        #     return False
-        #
-        # edge = self.edges[edge_key]
-        #
-        # # Sprawdź, czy krawędź jest wolna
-        # if edge.road is not None:
-        #     return False
-        #
-        # # W fazie setup pomijamy sprawdzanie połączenia
-        # if free:
-        #     return True
-        #
-        # # Sprawdź, czy istnieje połączenie z inną drogą lub budynkiem gracza
-        # return self._has_adjacent_building_or_road(edge_key, player)
+        print(f"Upgraded settlement to city for player {player.id} at vertex {vertex_id}")
         return True
 
-    def can_place_settlement(self, player, vertex_key, is_setup_phase=False):
-        """
-        Sprawdza, czy można postawić osadę na danym wierzchołku.
-
-        Zasady:
-        1. Wierzchołek musi być pusty
-        2. Żadne sąsiednie wierzchołki nie mogą mieć osad ani miast
-        3. W fazie setup nie musimy sprawdzać połączenia z drogą
-        """
-        print(f"Checking if can place settlement at {vertex_key} for player {player.id}")
-
-        # # Sprawdź, czy wierzchołek istnieje w planszy
-        # if vertex_key not in self.vertices:
-        #     print(f"Vertex {vertex_key} not found in board")
-        #     return False
-
-        # # Sprawdź, czy wierzchołek jest pusty
-        # vertex = self.vertices[vertex_key]
-        # if hasattr(vertex, 'building') and vertex.building is not None:
-        #     print(f"Vertex {vertex_key} already has a building")
-        #     return False
-
-        # # Znajdź sąsiednie wierzchołki
-        # adjacent_vertices = self.get_adjacent_vertices(vertex_key)
-
-        # # W fazie setup w pierwszej rundzie, pomijamy sprawdzanie sąsiednich wierzchołków
-        # # Warto dodać ten warunek, aby umożliwić postawienie pierwszej osady
-        # if is_setup_phase:
-        #     print(f"Setup phase: checking more relaxed rules for first settlements")
-
-        #     # Sprawdź czy to pierwsza osada gracza w fazie setup
-        #     player_has_settlements = False
-        #     for v_key, v in self.vertices.items():
-        #         if hasattr(v, 'building') and v.building is not None:
-        #             if v.building.player == player:
-        #                 player_has_settlements = True
-        #                 break
-
-        #     if not player_has_settlements:
-        #         print(f"First settlement in setup phase for player {player.id}, relaxing distance rule")
-        #         # Dla pierwszej osady w fazie setup, sprawdzaj tylko czy wierzchołek jest pusty
-        #         return True
-
-        # # Sprawdź, czy żaden sąsiedni wierzchołek nie ma budynku
-        # for adj_vertex_key in adjacent_vertices:
-        #     if adj_vertex_key in self.vertices:
-        #         adj_vertex = self.vertices[adj_vertex_key]
-        #         if hasattr(adj_vertex, 'building') and adj_vertex.building is not None:
-        #             print(f"Adjacent vertex {adj_vertex_key} already has a building")
-        #             return False
-
-        # # Dla fazy innej niż setup, sprawdź czy jest połączenie z drogą gracza
-        # if not is_setup_phase:
-        #     # Znajdź krawędzie połączone z tym wierzchołkiem
-        #     connected_edges = []
-        #     for edge_key, edge in self.edges.items():
-        #         edge_vertices = self.get_edge_vertices(edge_key)
-        #         if vertex_key in edge_vertices:
-        #             connected_edges.append(edge_key)
-
-        #     # Sprawdź, czy któraś z krawędzi należy do gracza
-        #     has_connected_road = False
-        #     for edge_key in connected_edges:
-        #         edge = self.edges[edge_key]
-        #         if hasattr(edge, 'road') and edge.road is not None:
-        #             if edge.road.player == player:
-        #                 has_connected_road = True
-        #                 break
-
-        #     if not has_connected_road:
-        #         print(f"No road connected to vertex {vertex_key} for player {player.id}")
-        #         return False
-
+    def place_road(self, edge_id: int, player: Player, is_setup: bool = False) -> bool:
+        """Postaw drogę na krawędzi o danym ID"""
+        
+        # Sprawdź czy krawędź istnieje
+        if edge_id >= len(self.edges):
+            print(f"Edge {edge_id} does not exist")
+            return False
+        
+        # Sprawdź czy można tam budować
+        if not BoardGeometry.can_place_road_here(edge_id, self.vertices, self.edges, player, is_setup):
+            print(f"Cannot place road at edge {edge_id}")
+            return False
+        
+        # Stwórz i postaw drogę
+        road = Road(player)
+        self.edges[edge_id].road = road
+        
+        print(f"Placed road for player {player.id} at edge {edge_id}")
         return True
 
-    def get_adjacent_vertices(self, vertex_key):
-        """
-        Zwraca listę wierzchołków sąsiadujących z danym wierzchołkiem.
-        Dwa wierzchołki są sąsiednie, jeśli są połączone krawędzią.
-        """
-        adjacent_vertices = []
+    # ========== METODY POMOCNICZE ==========
 
-        # Znajdź wszystkie krawędzie połączone z tym wierzchołkiem
-        for edge_key, edge in self.edges.items():
-            edge_vertices = self.get_edge_vertices(edge_key)
-            if vertex_key in edge_vertices:
-                # Dla każdej krawędzi znajdź drugi wierzchołek
-                for v_key in edge_vertices:
-                    if v_key != vertex_key:
-                        adjacent_vertices.append(v_key)
-
-        return adjacent_vertices
-
-    def get_edge_vertices(self, edge_key):
-        """
-        Zwraca listę wierzchołków połączonych z daną krawędzią.
-        """
-        connected_vertices = []
-
-        # Dla krawędzi w formacie frozenset, wierzchołki są już w strukturze
-        if isinstance(edge_key, frozenset):
-            # Sprawdź, które elementy krawędzi są wierzchołkami w planszy
-            for vertex_key in self.vertices:
-                if len(edge_key & vertex_key) > 0:  # Sprawdź część wspólną zbiorów
-                    connected_vertices.append(vertex_key)
-
-        return connected_vertices
-
-    def _get_neighboring_vertices(self, vertex_key: frozenset[tuple[int, int, int]]):
-        neighboring_vertices = []
-        vertex_coords = list(vertex_key)
-
-        for coord1 in vertex_coords:
-            for coord2 in vertex_coords:
-                if coord1 != coord2:
-                    edge_key = frozenset([coord1, coord2])
-
-                    for other_vertex_key in self.vertices:
-                        if other_vertex_key != vertex_key and len(edge_key.intersection(other_vertex_key)) == 2:
-                            neighboring_vertices.append(other_vertex_key)
-
-        return neighboring_vertices
-
-    def _has_connected_road(self, vertex_key: frozenset[tuple[int, int, int]], player: Player):
-        vertex_coords = list(vertex_key)
-
-        for i in range(len(vertex_coords)):
-            for j in range(i + 1, len(vertex_coords)):
-                edge_key = frozenset([vertex_coords[i], vertex_coords[j]])
-
-                if edge_key in self.edges and self.edges[edge_key].road is not None:
-                    if self.edges[edge_key].road.player == player:
-                        return True
-
-        return False
-
-    def _has_adjacent_building_or_road(self, edge_key: frozenset[tuple[int, int, int]], player: Player):
-        edge_coords = list(edge_key)
-
-        for vertex_key in self.vertices:
-            if len(set(edge_coords).intersection(vertex_key)) == 2:
-                vertex = self.vertices[vertex_key]
-                if vertex.building is not None and vertex.building.player == player:
-                    return True
-
-        for other_edge_key in self.edges:
-            if other_edge_key != edge_key and len(edge_key.intersection(other_edge_key)) == 1:
-                other_edge = self.edges[other_edge_key]
-                if other_edge.road is not None and other_edge.road.player == player:
-                    return True
-
-        return False
-
-    def find_vertex_key(self, coords_list: list[tuple[int, int, int]]):
-        coords_set = set(coords_list)
-        for vertex_key in self.vertices:
-            if vertex_key == frozenset(coords_set):
-                return vertex_key
+    def get_tile_by_id(self, tile_id: int) -> Optional[Tile]:
+        """Pobierz kafelek po ID"""
+        if 0 <= tile_id < len(self.tiles):
+            return self.tiles[tile_id]
         return None
 
-    def find_edge_key(self, coords_list: list[tuple[int, int, int]]):
-        coords_set = set(coords_list)
-        for edge_key in self.edges:
-            if edge_key == frozenset(coords_set):
-                return edge_key
+    def get_tile_by_coords(self, coords: Tuple[int, int, int]) -> Optional[Tuple[int, Tile]]:
+        """Pobierz kafelek i jego ID po współrzędnych"""
+        for tile_id, tile in enumerate(self.tiles):
+            if tile.get_coordinates() == coords:
+                return tile_id, tile
         return None
 
-    def serialize_board(self):
+    def get_vertices_for_tile(self, tile_id: int) -> List[int]:
+        """Pobierz IDs wierzchołków dla danego kafelka"""
+        return self.tile_to_vertices.get(tile_id, [])
+
+    def get_edges_for_tile(self, tile_id: int) -> List[int]:
+        """Pobierz IDs krawędzi dla danego kafelka"""
+        return self.tile_to_edges.get(tile_id, [])
+
+    def get_adjacent_tiles_for_vertex(self, vertex_id: int) -> List[int]:
+        """Pobierz IDs kafelków przylegających do wierzchołka"""
+        if vertex_id < len(self.vertices):
+            return self.vertices[vertex_id].adjacent_tiles
+        return []
+
+    # ========== KONWERSJA Z FRONTENDU ==========
+
+    def find_vertex_by_tile_and_corner(self, tile_id: int, corner_index: int) -> Optional[int]:
+        """
+        Znajdź ID wierzchołka na podstawie ID kafelka i indeksu narożnika (0-5)
+        Corner index: 0=N, 1=NE, 2=SE, 3=S, 4=SW, 5=NW
+        """
+        if tile_id >= len(self.tiles) or tile_id < 0:
+            print(f"Invalid tile_id: {tile_id} (max: {len(self.tiles)-1})")
+            return None
+        
+        vertex_ids = self.get_vertices_for_tile(tile_id)
+        if corner_index < 0 or corner_index >= len(vertex_ids):
+            print(f"Invalid corner_index: {corner_index} for tile {tile_id} (max: {len(vertex_ids)-1})")
+            return None
+        
+        vertex_id = vertex_ids[corner_index]
+        print(f"Mapped tile {tile_id}, corner {corner_index} -> vertex {vertex_id}")
+        return vertex_id
+    
+    def get_tile_id_by_coords(self, coords: Tuple[int, int, int]) -> Optional[int]:
+        """Znajdź tile_id na podstawie współrzędnych heksagonalnych"""
+        for tile_id, tile in enumerate(self.tiles):
+            if tile.get_coordinates() == coords:
+                print(f"Found tile_id {tile_id} for coords {coords}")
+                return tile_id
+        print(f"No tile found for coords {coords}")
+        return None
+
+    def find_edge_by_tile_and_edge(self, tile_id: int, edge_index: int) -> Optional[int]:
+        """
+        Znajdź ID krawędzi na podstawie ID kafelka i indeksu krawędzi (0-5)  
+        Edge index: 0=NE, 1=E, 2=SE, 3=SW, 4=W, 5=NW
+        """
+        if tile_id >= len(self.tiles) or tile_id < 0:
+            print(f"Invalid tile_id: {tile_id} (max: {len(self.tiles)-1})")
+            return None
+        
+        edge_ids = self.get_edges_for_tile(tile_id)
+        if edge_index < 0 or edge_index >= len(edge_ids):
+            print(f"Invalid edge_index: {edge_index} for tile {tile_id} (max: {len(edge_ids)-1})")
+            return None
+        
+        edge_id = edge_ids[edge_index]
+        print(f"Mapped tile {tile_id}, edge {edge_index} -> edge {edge_id}")
+        return edge_id
+
+    # ========== STARA KOMPATYBILNOŚĆ (do usunięcia później) ==========
+    
+    def find_vertex_key(self, coords_list: list) -> Optional[int]:
+        """Stara metoda - zwraca pierwszy pasujący vertex_id"""
+        # Tymczasowa implementacja dla kompatybilności
+        if coords_list and len(coords_list) > 0:
+            tile_coords = coords_list[0]
+            if isinstance(tile_coords, (list, tuple)) and len(tile_coords) == 3:
+                result = self.get_tile_by_coords(tuple(tile_coords))
+                if result:
+                    tile_id, _ = result
+                    vertex_ids = self.get_vertices_for_tile(tile_id)
+                    return vertex_ids[0] if vertex_ids else None
+        return None
+
+    def find_edge_key(self, coords_list: list) -> Optional[int]:
+        """Stara metoda - zwraca pierwszy pasujący edge_id"""
+        # Tymczasowa implementacja dla kompatybilności
+        if coords_list and len(coords_list) > 0:
+            tile_coords = coords_list[0]
+            if isinstance(tile_coords, (list, tuple)) and len(tile_coords) == 3:
+                result = self.get_tile_by_coords(tuple(tile_coords))
+                if result:
+                    tile_id, _ = result
+                    edge_ids = self.get_edges_for_tile(tile_id)
+                    return edge_ids[0] if edge_ids else None
+        return None
+
+    # ========== SERIALIZACJA ==========
+
+    def serialize_board(self) -> Dict:
+        """Serializuj planszę do JSON w formacie kompatybilnym z frontendem"""
+        
+        # Serializuj kafelki
         tiles_data = []
-        for tile in self.tiles:
+        for tile_id, tile in enumerate(self.tiles):
             q, r, s = tile.get_coordinates()
             tile_data = {
+                "id": tile_id,
                 "coordinates": {"q": q, "r": r, "s": s},
                 "resource": str(tile.get_resource()),
                 "number": tile.number if hasattr(tile, 'number') else None,
-                "has_robber": tile.has_robber if hasattr(tile, 'has_robber') else False
+                "has_robber": getattr(tile, 'is_robber_placed', False)
             }
             tiles_data.append(tile_data)
 
+        # ========== KOMPATYBILNY FORMAT DLA FRONTENDU ==========
+        
+        # Serializuj wierzchołki w starym formacie (coordinates zamiast adjacent_tiles)
         vertices_data = {}
-        for i, (vertex_key, vertex) in enumerate(self.vertices.items()):
-            vertex_coords = list(vertex_key)
-            key = f"vertex_{i}"
-
+        for vertex_id, vertex in enumerate(self.vertices):
             building_data = None
-            if vertex.building is not None:
+            if vertex.has_building():
+                building = vertex.building
                 building_data = {
-                    "type": vertex.building.building_type.name,
-                    "player_id": vertex.building.player.id if hasattr(vertex.building.player, 'id') else str(
-                        vertex.building.player),
-                    "player_color": vertex.building.player.color if hasattr(vertex.building.player, 'color') else None
+                    "type": building.building_type.name,
+                    "player_id": getattr(building.player, 'id', 'unknown'),
+                    "player_color": getattr(building.player.color, 'value', 'red') if hasattr(building.player, 'color') else 'red'
                 }
 
-            vertices_data[key] = {
-                "coordinates": vertex_coords,
+            # Konwertuj adjacent_tiles na coordinates (stary format)
+            coordinates = []
+            for tile_id in vertex.adjacent_tiles:
+                if tile_id < len(self.tiles):
+                    tile = self.tiles[tile_id]
+                    q, r, s = tile.get_coordinates()
+                    coordinates.append([q, r, s])
+
+            vertices_data[f"vertex_{vertex_id}"] = {
+                "coordinates": coordinates,  # Frontend oczekuje tego pola
                 "building": building_data
             }
 
-        edges_data = {}
-        for i, (edge_key, edge) in enumerate(self.edges.items()):
-            edge_coords = list(edge_key)
-            key = f"edge_{i}"
+            if vertex.has_building():
+                print(f"SERIALIZE: Vertex {vertex_id} with building:")
+                print(f"  Adjacent tiles: {vertex.adjacent_tiles}")
+                print(f"  Coordinates sent to frontend: {coordinates}")
 
+        # Serializuj krawędzie w starym formacie  
+        edges_data = {}
+        for edge_id, edge in enumerate(self.edges):
             road_data = None
-            if edge.road is not None:
+            if edge.has_road():
+                road = edge.road
                 road_data = {
-                    "player_id": edge.road.player.id if hasattr(edge.road.player, 'id') else str(edge.road.player),
-                    "player_color": edge.road.player.color if hasattr(edge.road.player, 'color') else None
+                    "player_id": getattr(road.player, 'id', 'unknown'),
+                    "player_color": getattr(road.player.color, 'value', 'red') if hasattr(road.player, 'color') else 'red'
                 }
 
-            edges_data[key] = {
-                "coordinates": edge_coords,
+            # Konwertuj adjacent_tiles na coordinates (stary format)
+            coordinates = []
+            for tile_id in edge.adjacent_tiles:
+                if tile_id < len(self.tiles):
+                    tile = self.tiles[tile_id]
+                    q, r, s = tile.get_coordinates()
+                    coordinates.append([q, r, s])
+
+            edges_data[f"edge_{edge_id}"] = {
+                "coordinates": coordinates,  # Frontend oczekuje tego pola
                 "road": road_data
             }
 
-        board_data = {
+        return {
             "tiles": tiles_data,
             "vertices": vertices_data,
             "edges": edges_data
         }
-
-        return board_data
-
-    def get_tile_by_coords(self, coords: tuple[int, int, int]) -> Tile | None:
-        """
-        Get a tile by its coordinates.
-        
-        Args:
-            coords: A tuple of (q, r, s) coordinates
-            
-        Returns:
-            The tile at the given coordinates, or None if no tile exists at those coordinates
-        """
-        for tile in self.tiles:
-            if tile.get_coordinates() == coords:
-                return tile
-        return None
-
-    # Dodaj te metody do klasy GameBoard w backend/game_engine/board/game_board.py
-
-    def get_connected_vertices(self, edge_key):
-        """Pobierz wierzchołki połączone z daną krawędzią"""
-        connected_vertices = []
-
-        # Dla krawędzi w formacie frozenset
-        if isinstance(edge_key, frozenset):
-            # Pobierz współrzędne z krawędzi
-            edge_coords = list(edge_key)
-
-            # Dla każdego wierzchołka sprawdź, czy jest połączony z krawędzią
-            for vertex_key in self.vertices.keys():
-                vertex_coords = list(vertex_key)
-
-                # Sprawdź czy wierzchołek ma wspólne współrzędne z krawędzią
-                # W typowym modelu heksagonalnym krawędź łączy dwa wierzchołki
-                common_coords = set(edge_coords).intersection(set(vertex_coords))
-                if common_coords:
-                    connected_vertices.append(vertex_key)
-
-        return connected_vertices
-
-    def find_edge_by_coords(self, coords):
-        """Znajdź krawędź na podstawie współrzędnych"""
-        if isinstance(coords, (list, tuple)) and len(coords) == 3:
-            # Jeśli przekazano pojedynczą współrzędną (x,y,z)
-            coord_tuple = tuple(coords) if isinstance(coords, list) else coords
-
-            # Szukaj krawędzi zawierającej tę współrzędną
-            for edge_key in self.edges.keys():
-                edge_coords = list(edge_key)
-                for edge_coord in edge_coords:
-                    if edge_coord == coord_tuple:
-                        return edge_key
-
-        # Jeśli przekazano zestaw współrzędnych, spróbuj utworzyć frozenset
-        try:
-            edge_key = frozenset(coords)
-            if edge_key in self.edges:
-                return edge_key
-        except:
-            pass
-
-        return None
-
-    def find_vertex_by_coords(self, coords):
-        """Znajdź wierzchołek na podstawie współrzędnych"""
-        if isinstance(coords, (list, tuple)) and len(coords) == 3:
-            # Jeśli przekazano pojedynczą współrzędną (x,y,z)
-            coord_tuple = tuple(coords) if isinstance(coords, list) else coords
-
-            # Szukaj wierzchołka zawierającego tę współrzędną
-            for vertex_key in self.vertices.keys():
-                vertex_coords = list(vertex_key)
-                for vertex_coord in vertex_coords:
-                    if vertex_coord == coord_tuple:
-                        return vertex_key
-
-        # Jeśli przekazano zestaw współrzędnych, spróbuj utworzyć frozenset
-        try:
-            vertex_key = frozenset(coords)
-            if vertex_key in self.vertices:
-                return vertex_key
-        except:
-            pass
-
-        return None
-
-    def get_adjacent_tiles(self, vertex_key):
-        """Pobierz kafelki sąsiadujące z danym wierzchołkiem"""
-        adjacent_tiles = []
-
-        # Dla wierzchołka w formacie frozenset
-        if isinstance(vertex_key, frozenset):
-            # Pobierz współrzędne z wierzchołka
-            vertex_coords = list(vertex_key)
-
-            # Dla każdego kafelka sprawdź, czy jest sąsiedni z wierzchołkiem
-            for tile in self.tiles:
-                tile_coords = tile.get_coordinates() if hasattr(tile, 'get_coordinates') else None
-                if tile_coords:
-                    # Sprawdź czy współrzędne kafelka są w wierzchołku
-                    if any(tile_coords == coord for coord in vertex_coords):
-                        adjacent_tiles.append(tile)
-
-        return adjacent_tiles
-
-if __name__ == '__main__':
-
-    from game_engine.board.temp_helpers import print_board
-
-    config = GameConfig()
-    board = GameBoard(config)
-
-    print(board.serialize_board())
-
-
-
-
-    # for q in range(-2, 3):
-    #     for r in range(-2, 3):
-    #         s = -q - r
-    #         if -2 <= s <= 2:
-    #             print(q, r, s)
-

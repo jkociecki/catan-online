@@ -20,7 +20,7 @@ import { BasicGameConfig } from "./game/config";
  */
 
 export default function App() {
-  const [board] = useState(() => new Board(2, new BasicGameConfig()));
+  const [board] = useState(() => new Board(1, new BasicGameConfig()));
 
   return (
     <BrowserRouter>

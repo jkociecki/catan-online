@@ -31,7 +31,7 @@ export class Board {
   private tiles: Tiles;
 
   constructor(public size: number, config?: BasicGameConfig) {
-    this.hexagons = GridGenerator.hexagon(size + 1); // +1 for the overflow ring
+    this.hexagons = GridGenerator.hexagon(size); // +1 for the overflow ring
     this.tiles = initTiles(this.hexagons, size, config);
 
     // Inicjalizacja wierzchołków dla narożników i krawędzi
@@ -79,155 +79,294 @@ export class Board {
     });
   }
 
+  // frontend/src/engine/board.ts - Zamień całą metodę updateVerticesFromData
+
   private updateVerticesFromData(data: BoardData): void {
     console.log("Server vertices data received:", data.vertices);
 
-    // Pomocnicza funkcja do sprawdzania współdzielonych punktów
-    const countSharedPoints = (
-      vertices1: string[],
-      vertices2: string[]
-    ): number => {
-      let sharedCount = 0;
-      for (const v1 of vertices1) {
-        for (const v2 of vertices2) {
-          const coords1 = v1.split(",").map(Number);
-          const coords2 = v2.split(",").map(Number);
-          if (
-            coords1[0] === coords2[0] &&
-            coords1[1] === coords2[1] &&
-            coords1[2] === coords2[2]
-          ) {
-            sharedCount++;
-            break;
-          }
-        }
-      }
-      return sharedCount;
-    };
-
     Object.entries(data.vertices).forEach(([key, vertexData]) => {
       if (vertexData?.building) {
-        console.log("Processing vertex with building:", {
-          key,
-          coordinates: vertexData.coordinates,
-          buildingType: vertexData.building.type,
-          playerId: vertexData.building.player_id,
-        });
+        console.log("=== PROCESSING VERTEX WITH BUILDING ===");
+        console.log("Vertex coordinates from server:", vertexData.coordinates);
+        console.log("Building type:", vertexData.building.type);
 
         // Przekształć współrzędne z tablicy liczb na tablicę stringów
         const buildingCoords = vertexData.coordinates.map((c: number[]) =>
           c.join(",")
         );
-        console.log("Building coordinates as strings:", buildingCoords);
+        console.log("Server says vertex belongs to tiles:", buildingCoords);
 
-        // Znajdź odpowiedni narożnik na planszy klienta
-        // Jawna inicjalizacja wszystkich zmiennych
-        let foundBestMatch = false;
-        let bestCorner: Corner | null = null;
-        let bestTile: BaseTile | null = null;
-        let bestTileId = "";
-        let bestCornerIndex = -1;
-        let bestSharedPoints = 0;
+        // ===== NOWA LOGIKA: PREFERUJ KLIKNIĘTY TILE =====
 
-        // Przeszukaj wszystkie narożniki, szukając najlepszego dopasowania
-        Object.entries(this.tiles).forEach(([tileId, tile]) => {
-          const corners = tile.getCorners();
+        let foundMatch = false;
+        let chosenTile: BaseTile | null = null;
+        let chosenTileId = "";
+        let chosenCornerIndex = -1;
 
-          corners.forEach((corner, cornerIndex) => {
-            // Bezpieczne sprawdzenie czy corner jest właściwego typu
-            if (corner && typeof (corner as any).getVertices === "function") {
-              // Jawne rzutowanie na typ z getVertices
-              const cornerWithVertices = corner as unknown as {
-                getVertices: () => string[];
-              };
-              const cornerVertices = cornerWithVertices.getVertices();
+        // 1. NAJPIERW SPRAWDŹ CZY MOŻEMY UŻYĆ DOKŁADNIE KLIKNIĘTEGO TILE
+        const lastClickedTile = this.getLastClickedTile(); // Pobierz z localStorage/sessionStorage
+        if (lastClickedTile && buildingCoords.includes(lastClickedTile)) {
+          console.log(
+            `🎯 PRIORITY: Trying to use clicked tile ${lastClickedTile}`
+          );
 
-              // Jeśli narożnik ma wierzchołki
-              if (cornerVertices && cornerVertices.length > 0) {
-                // Sprawdź ile punktów jest współdzielonych
-                const sharedPoints = countSharedPoints(
-                  cornerVertices,
-                  buildingCoords
+          const tile = this.tiles[lastClickedTile];
+          if (tile) {
+            const corners = tile.getCorners();
+
+            // Sprawdź wszystkie corners tego tile
+            for (
+              let cornerIndex = 0;
+              cornerIndex < corners.length;
+              cornerIndex++
+            ) {
+              const corner = corners[cornerIndex];
+
+              if (this.cornerMatchesServerVertex(corner, buildingCoords)) {
+                console.log(
+                  `✅ EXACT MATCH: Using clicked tile ${lastClickedTile}, corner ${cornerIndex}`
                 );
-
-                // Wyloguj dla celów debugowania
-                if (sharedPoints > 0) {
-                  console.log(
-                    `Corner at tile ${tileId}, index ${cornerIndex} shares ${sharedPoints} points:`,
-                    {
-                      cornerVertices,
-                      buildingCoords,
-                    }
-                  );
-                }
-
-                // Jeśli mamy lepsze dopasowanie niż dotychczas
-                if (
-                  sharedPoints > 0 &&
-                  (!foundBestMatch || sharedPoints > bestSharedPoints)
-                ) {
-                  foundBestMatch = true;
-                  bestCorner = corner;
-                  bestTile = tile;
-                  bestTileId = tileId;
-                  bestCornerIndex = cornerIndex;
-                  bestSharedPoints = sharedPoints;
-                }
+                chosenTile = tile;
+                chosenTileId = lastClickedTile;
+                chosenCornerIndex = cornerIndex;
+                foundMatch = true;
+                break;
               }
             }
-          });
-        });
-
-        // Jeśli znaleźliśmy dopasowanie
-        if (foundBestMatch && bestCorner && bestTile) {
-          // Bezpieczne wyświetlenie informacji o wierzchołkach
-          let cornerVertices: string[] = [];
-          if (typeof (bestCorner as any).getVertices === "function") {
-            const cornerWithVertices = bestCorner as unknown as {
-              getVertices: () => string[];
-            };
-            cornerVertices = cornerWithVertices.getVertices();
           }
+        }
 
-          console.log("Found best matching corner:", {
-            tileId: bestTileId,
-            cornerIndex: bestCornerIndex,
-            sharedPoints: bestSharedPoints,
-            cornerVertices: cornerVertices,
+        // 2. JEŚLI NIE ZNALEŹLIŚMY DOKŁADNEGO MATCHA, UŻYJ FALLBACK
+        if (!foundMatch) {
+          console.log("🔄 FALLBACK: Searching for best alternative match");
+
+          let bestSharedPoints = 0;
+
+          // Przeszukaj wszystkie tiles
+          Object.entries(this.tiles).forEach(([tileId, tile]) => {
+            const corners = tile.getCorners();
+
+            corners.forEach((corner, cornerIndex) => {
+              const sharedPoints = this.countSharedPoints(
+                corner,
+                buildingCoords
+              );
+
+              if (sharedPoints > 0) {
+                console.log(
+                  `Tile ${tileId}, corner ${cornerIndex}: ${sharedPoints} shared points`
+                );
+
+                // Wybierz najlepszy match
+                if (
+                  sharedPoints > bestSharedPoints ||
+                  (sharedPoints === bestSharedPoints &&
+                    this.isBetterTile(tileId, chosenTileId))
+                ) {
+                  chosenTile = tile;
+                  chosenTileId = tileId;
+                  chosenCornerIndex = cornerIndex;
+                  bestSharedPoints = sharedPoints;
+                  foundMatch = true;
+
+                  console.log(
+                    `🎯 NEW BEST: tile ${tileId}, corner ${cornerIndex}, shared: ${sharedPoints}`
+                  );
+                }
+              }
+            });
           });
+        }
+
+        // 3. ZASTOSUJ WYBRANE ROZWIĄZANIE
+        if (foundMatch && chosenTile && chosenCornerIndex >= 0) {
+          console.log(`🏆 FINAL CHOICE:`);
+          console.log(`  Tile: ${chosenTileId}`);
+          console.log(`  Corner: ${chosenCornerIndex}`);
+          console.log(`  Building type: ${vertexData.building.type}`);
 
           const player = new Player(
             vertexData.building.player_id,
             vertexData.building.player_color || ""
           );
 
-          // Określ kierunek narożnika (N lub S)
-          let cornerDir: TileCornerDir;
-          if (bestCornerIndex === 0) {
-            cornerDir = TileCornerDir.N;
-          } else {
-            cornerDir = TileCornerDir.S;
-          }
+          // Określ kierunek narożnika
+          const cornerDir =
+            chosenCornerIndex === 0 ? TileCornerDir.N : TileCornerDir.S;
 
           // Umieść budynek na planszy
           if (vertexData.building.type === "SETTLEMENT") {
-            console.log(
-              "Placing settlement at found corner using dir:",
-              cornerDir
-            );
-            this.placeSettlement(bestTileId, cornerDir, player, true);
+            this.placeSettlement(chosenTileId, cornerDir, player, true);
           } else if (vertexData.building.type === "CITY") {
-            console.log("Placing city at found corner using dir:", cornerDir);
-            this.placeCity(bestTileId, cornerDir, player, true);
+            this.placeCity(chosenTileId, cornerDir, player, true);
           }
         } else {
           console.error(
-            "Could not find a matching corner for server vertex data:",
+            "❌ Could not find matching corner for server vertex data:",
             vertexData
           );
         }
+
+        console.log("===========================================");
       }
     });
+  }
+
+  // ===== POMOCNICZE METODY =====
+
+  private getLastClickedTile(): string | null {
+    try {
+      return sessionStorage.getItem("lastClickedTile");
+    } catch (e) {
+      return localStorage.getItem("lastClickedTile") || null;
+    }
+  }
+
+  private cornerMatchesServerVertex(
+    corner: Corner,
+    serverTileCoords: string[]
+  ): boolean {
+    if (typeof (corner as any).getVertices !== "function") {
+      return false;
+    }
+
+    const cornerWithVertices = corner as unknown as {
+      getVertices: () => string[];
+    };
+    const cornerVertices = cornerWithVertices.getVertices();
+
+    if (!cornerVertices || cornerVertices.length === 0) {
+      return false;
+    }
+
+    // Sprawdź czy wszystkie server tiles są reprezentowane w corner vertices
+    let matchCount = 0;
+    for (const serverTile of serverTileCoords) {
+      if (cornerVertices.includes(serverTile)) {
+        matchCount++;
+      }
+    }
+
+    // Wymagaj pełnego match (wszystkie server tiles muszą być w corner)
+    return matchCount === serverTileCoords.length;
+  }
+
+  private countSharedPoints(
+    corner: Corner,
+    serverTileCoords: string[]
+  ): number {
+    if (typeof (corner as any).getVertices !== "function") {
+      return 0;
+    }
+
+    const cornerWithVertices = corner as unknown as {
+      getVertices: () => string[];
+    };
+    const cornerVertices = cornerWithVertices.getVertices();
+
+    if (!cornerVertices) {
+      return 0;
+    }
+
+    let sharedCount = 0;
+    for (const serverTile of serverTileCoords) {
+      if (cornerVertices.includes(serverTile)) {
+        sharedCount++;
+      }
+    }
+
+    return sharedCount;
+  }
+
+  private isBetterTile(currentTileId: string, bestTileId: string): boolean {
+    if (!bestTileId) return true;
+
+    const currentCoords = currentTileId.split(",").map(Number);
+    const bestCoords = bestTileId.split(",").map(Number);
+
+    const [currentQ, currentR] = currentCoords;
+    const [bestQ, bestR] = bestCoords;
+
+    // Preferuj tile z większymi współrzędnymi (prawdopodobnie kliknięty)
+    return currentQ > bestQ || (currentQ === bestQ && currentR > bestR);
+  }
+  // ========== FUNKCJA POMOCNICZA ==========
+
+  private isCornerPartOfServerVertex(
+    tile: BaseTile,
+    cornerIndex: number,
+    serverTileIds: string[]
+  ): boolean {
+    /**
+     * Sprawdza czy dany narożnik kafelka należy do wierzchołka opisanego przez backend
+     * poprzez sprawdzenie czy wszystkie kafelki z listy backendu rzeczywiście mają ten wierzchołek
+     */
+
+    // Pobierz współrzędne kafelka
+    const tileCoords = tile.tileId.split(",").map(Number);
+    if (tileCoords.length !== 3) return false;
+
+    const [q, r, s] = tileCoords;
+
+    // Oblicz pozycję tego narożnika w przestrzeni heksagonalnej
+    const cornerOffsets = [
+      [0, -1, 1], // 0: North
+      [1, -1, 0], // 1: North-East
+      [1, 0, -1], // 2: South-East
+      [0, 1, -1], // 3: South
+      [-1, 1, 0], // 4: South-West
+      [-1, 0, 1], // 5: North-West
+    ];
+
+    if (cornerIndex < 0 || cornerIndex >= cornerOffsets.length) return false;
+
+    const [dq, dr, ds] = cornerOffsets[cornerIndex];
+    const vertexPosition = [q + dq, r + dr, s + ds];
+
+    // Sprawdź czy wszystkie kafelki z backendu rzeczywiście mają wierzchołek na tej pozycji
+    let matchingTiles = 0;
+
+    for (const serverTileId of serverTileIds) {
+      const serverCoords = serverTileId.split(",").map(Number);
+      if (serverCoords.length !== 3) continue;
+
+      const [sq, sr, ss] = serverCoords;
+
+      // Sprawdź wszystkie 6 narożników tego kafelka z backendu
+      let hasMatchingVertex = false;
+      for (
+        let checkCornerIdx = 0;
+        checkCornerIdx < cornerOffsets.length;
+        checkCornerIdx++
+      ) {
+        const [checkDq, checkDr, checkDs] = cornerOffsets[checkCornerIdx];
+        const checkVertexPos = [sq + checkDq, sr + checkDr, ss + checkDs];
+
+        if (JSON.stringify(checkVertexPos) === JSON.stringify(vertexPosition)) {
+          hasMatchingVertex = true;
+          break;
+        }
+      }
+
+      if (hasMatchingVertex) {
+        matchingTiles++;
+      }
+    }
+
+    // Vertex jest prawidłowy tylko jeśli wszystkie kafelki z backendu go mają
+    const isValid = matchingTiles === serverTileIds.length;
+
+    if (isValid) {
+      console.log(
+        `✅ Vertex validation: corner ${cornerIndex} at position [${vertexPosition}] matches all ${serverTileIds.length} server tiles`
+      );
+    } else {
+      console.log(
+        `❌ Vertex validation failed: only ${matchingTiles}/${serverTileIds.length} server tiles match`
+      );
+    }
+
+    return isValid;
   }
 
   private updateEdgesFromData(data: BoardData): void {

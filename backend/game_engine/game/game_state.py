@@ -1,11 +1,11 @@
+# backend/game_engine/game/game_state.py
 from game_engine.common.game_config import GameConfig
 from game_engine.player.player import Player
 from game_engine.common.resources import Resource
-from typing import List, Dict
+from typing import List, Dict, Tuple, Union
 from game_engine.game.turn_manager import TurnManager
 from game_engine.board.game_board import GameBoard
 from game_engine.game.game_phase import GamePhase
-
 
 
 class GameState:
@@ -16,7 +16,6 @@ class GameState:
         self.phase = GamePhase.SETUP
         self.setup_placed = {}
         self.turn_manager = None  # Will be initialized after players are added
-        #self.turn_manager = TurnManager(self.game_board, self.game_config, self.players)
 
     def add_player(self, player: Player):
         self.players.append(player)
@@ -106,7 +105,6 @@ class GameState:
         """Check if a player has won the game"""
         return player.has_won(self.game_config.points_to_win)
 
-    # W backend/game_engine/game/game_state.py
     def check_setup_progress(self):
         """Sprawdź postęp fazy setup i odpowiednio aktualizuj stan gry"""
         # Sprawdź czy wszyscy gracze mają postawione początkowe budynki
@@ -137,426 +135,307 @@ class GameState:
                 self.phase = GamePhase.ROLL_DICE  # Zmień na ROLL_DICE zamiast MAIN
                 # Tutaj możesz dodać kod do rozdania początkowych zasobów
 
-   
-    def place_initial_settlement(self, player, vertex_coords):
-        """Postaw początkową osadę w fazie setup (bez kosztu)"""
-        print("\n----- DIAGNOSTYKA OSAD -----")
-        print(f"Gracz: {player.id}, Próbuje postawić osadę na: {vertex_coords}")
-        
-        # Sprawdźmy WSZYSTKIE budynki i ich właścicieli na planszy
-        buildings_found = 0
-        for key, vertex in self.game_board.vertices.items():
-            if hasattr(vertex, 'building') and vertex.building is not None:
-                buildings_found += 1
-                building_player_id = "BRAK" if not hasattr(vertex.building.player, 'id') else vertex.building.player.id
-                building_type = getattr(vertex.building, 'building_type', 'nieznany')
-                print(f"Budynek #{buildings_found}: {building_type} należący do gracza {building_player_id} na wierzchołku {key}")
-        
-        if buildings_found == 0:
-            print("Na planszy nie ma żadnych budynków!")
-        
-        # Sprawdźmy zawartość setup_placed
-        if hasattr(self, 'setup_placed'):
-            print(f"Zawartość setup_placed: {self.setup_placed}")
-        else:
-            print("Brak setup_placed w obiekcie!")
-        
-        # Znajdźmy istotny wierzchołek
-        problem_vertex = None
-        for key in self.game_board.vertices:
-            if frozenset({(1, -1, 0), (0, 0, 0), (1, 0, -1)}) == key:
-                problem_vertex = key
-                break
-        
-        if problem_vertex:
-            vertex = self.game_board.vertices[problem_vertex]
-            has_building = hasattr(vertex, 'building') and vertex.building is not None
-            print(f"Problematyczny wierzchołek znaleziony: {problem_vertex}")
-            print(f"Czy ma budynek? {has_building}")
-            if has_building:
-                building_player_id = getattr(vertex.building.player, 'id', 'BRAK_ID')
-                print(f"Należy do gracza: {building_player_id}")
-        else:
-            print("Problematyczny wierzchołek NIE ISTNIEJE w słowniku wierzchołków!")
-        
-        print("----- KONIEC DIAGNOSTYKI -----\n")
-        
-        # Reszta funkcji...
-        print(f"DEBUG: Initial state check for player {player.id}")
-        print(f"DEBUG: Player state: {vars(player)}")  # Wypisz wszystkie atrybuty gracza
-        print(f"DEBUG: Game state setup info: {getattr(self, 'setup_placed', 'Not found')}")
-        
-        # Znajdź istniejące osady gracza
-        existing_settlements = []
-        for vertex_key, vertex in self.game_board.vertices.items():
-            if hasattr(vertex, 'building') and vertex.building:
-                if vertex.building.player.id == player.id:
-                    existing_settlements.append(vertex_key)
-        
-        print(f"DEBUG: Actually found settlements for player: {existing_settlements}")
-        
-        # Sprawdź, czy mamy duplikat ID gracza
-        player_ids = [p.id for p in self.players]
-        print(f"DEBUG: All player IDs in game: {player_ids}")
+    # ========== NOWE METODY Z INDEKSAMI ==========
 
-        # Inicjalizacja śledzenia fazy setup
-        if not hasattr(self, 'setup_placed'):
-            self.setup_placed = {}
-        
-        # Zainicjuj śledzenie dla gracza, jeśli jeszcze nie istnieje
-        if player.id not in self.setup_placed:
-            self.setup_placed[player.id] = [0, 0]  # [osady, drogi]
-
+    def place_settlement_by_id(self, player: Player, vertex_id: int, is_setup: bool = False) -> bool:
+        """
+        Postaw osadę używając ID wierzchołka
+        """
         try:
-            print(f"Placing initial settlement for player {player.id} at {vertex_coords}")
+            print(f"Placing settlement for player {player.id} at vertex {vertex_id}")
 
-            # Sprawdź aktualny postęp w fazie setup
-            if hasattr(self, 'setup_placed'):
-                if player.id in self.setup_placed:
-                    print(f"Player {player.id} setup progress: {self.setup_placed[player.id]}")
-                else:
-                    print(f"Player {player.id} has no setup progress yet")
-            else:
-                print("Game state doesn't have setup_placed attribute")
+            # Sprawdź czy można postawić osadę
+            result = self.game_board.place_settlement(vertex_id, player, is_setup)
+            
+            if result:
+                # Aktualizuj statystyki gracza
+                player.settlements_left -= 1
+                player.victory_points += 1
 
-            # Sprawdź, czy gracz ma już jakieś osady
-            player_settlements = []
-            if hasattr(self.game_board, 'vertices'):
-                for vertex_key, vertex in self.game_board.vertices.items():
-                    if hasattr(vertex, 'building') and vertex.building is not None:
-                        if vertex.building.player == player:
-                            player_settlements.append(vertex_key)
+                # Aktualizuj licznik postawionych osad w fazie setup
+                if is_setup:
+                    if not hasattr(self, 'setup_placed'):
+                        self.setup_placed = {}
+                    if player.id not in self.setup_placed:
+                        self.setup_placed[player.id] = [0, 0]
+                    self.setup_placed[player.id][0] += 1
 
-            print(f"Player {player.id} already has settlements at: {player_settlements}")
+                    print(f"Setup progress for player {player.id}: {self.setup_placed[player.id]}")
 
-            # Sprawdź czy istnieje wierzchołek o tych koordynatach
-            if not vertex_coords:
-                print("No vertex coordinates provided")
-                return False
+                    # Sprawdź czy druga osada - przyznaj zasoby
+                    if self.setup_placed[player.id][0] == 2:
+                        print("Second settlement placed, assigning initial resources")
+                        self._assign_initial_resources_for_vertex(player, vertex_id)
 
-            # Weryfikacja, czy wierzchołek istnieje w tablicy wierzchołków planszy
-            # Sprawdź różne możliwe formaty koordynatów
-            vertex_key = None
+                # Sprawdź ogólny postęp fazy setup
+                if hasattr(self, 'check_setup_progress'):
+                    self.check_setup_progress()
 
-            # Spróbuj utworzyć frozenset z przekazanych koordynatów
-            if len(vertex_coords) == 1:
-                # Jeśli przekazano tylko jedną współrzędną, spróbuj znaleźć pasujący wierzchołek
-                single_coord = next(iter(vertex_coords))
+                return True
+            
+            return False
 
-                # Szukaj wierzchołka zawierającego tę współrzędną
-                for key in self.game_board.vertices.keys():
-                    # Sprawdź czy wierzchołek zawiera przekazaną współrzędną
-                    if isinstance(key, frozenset) and single_coord in key:
-                        vertex_key = key
-                        print(f"Found matching vertex key: {vertex_key} for coordinate {single_coord}")
-                        break
-            else:
-                # Jeśli przekazano wiele współrzędnych, spróbuj utworzyć frozenset
-                try:
-                    vertex_key = frozenset(vertex_coords)
-                    if vertex_key in self.game_board.vertices:
-                        print(f"Found exact vertex key match: {vertex_key}")
-                except Exception as e:
-                    print(f"Error creating vertex_key from {vertex_coords}: {str(e)}")
-
-            # Jeśli nadal nie znaleziono klucza, spróbuj inne podejście
-            if vertex_key is None or vertex_key not in self.game_board.vertices:
-                print(f"Vertex key {vertex_key} not found in game_board.vertices")
-
-                # Spróbuj znaleźć najbliższy wierzchołek
-                # Pokaż dostępne wierzchołki do celów debugowania
-                vertex_keys = list(self.game_board.vertices.keys())
-                for i in range(min(5, len(vertex_keys))):
-                    print(f"Available vertex: {vertex_keys[i]}")
-
-                # Przekonwertuj nazwę kafelka na wierzchołek
-                if isinstance(vertex_coords, set) and len(vertex_coords) == 1:
-                    tile_coord = tuple(next(iter(vertex_coords)))
-
-                    # Szukaj wierzchołków związanych z tym kafelkiem
-                    for key in self.game_board.vertices.keys():
-                        # Sprawdź czy wierzchołek zawiera współrzędną kafelka
-                        if any(coord == tile_coord for coord in key):
-                            vertex_key = key
-                            print(f"Found alternative vertex key: {vertex_key} for tile coordinate {tile_coord}")
-                            break
-
-                if vertex_key is None or vertex_key not in self.game_board.vertices:
-                    print(f"Could not find valid vertex for coordinates {vertex_coords}")
-                    return False
-
-            # ZMIANA KOLEJNOŚCI: Najpierw sprawdź, czy można postawić osadę
-            is_setup_phase = True
-            is_first_settlement = player.id not in self.setup_placed or self.setup_placed[player.id][0] == 0
-
-            # Sprawdź, czy wierzchołek nie jest już zajęty
-            vertex = self.game_board.vertices[vertex_key]
-            if hasattr(vertex, 'building') and vertex.building is not None:
-                print(f"Vertex {vertex_key} already has a building")
-                return False
-
-            # Sprawdź czy można tam budować (odległość od innych budynków)
-            if not self.game_board.can_place_settlement(player, vertex_key, is_setup_phase=is_setup_phase):
-                print(f"Cannot place settlement at {vertex_key} - not a valid location (distance rule violated)")
-                return False
-
-            # DOPIERO TERAZ tworzymy budynek i stawiamy go (po sprawdzeniu warunków)
-            from game_engine.board.buildings import Building, BuildingType
-            settlement = Building(BuildingType.SETTLEMENT, player)
-            result = False
-
-            try:
-                # Próba postawienia budynku z użyciem metody place_building
-                if hasattr(self.game_board, 'place_building'):
-                    result = self.game_board.place_building(settlement, vertex_key, free=True)
-                else:
-                    # Alternatywne podejście, jeśli metoda place_building nie istnieje
-                    vertex.building = settlement
-                    result = True
-            except Exception as e:
-                print(f"Error placing building: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return False
-
-            if not result:
-                print(f"Failed to place building at {vertex_key}")
-                return False
-
-            # Aktualizuj statystyki gracza
-            player.settlements_left -= 1
-            player.victory_points += 1
-
-            # Aktualizuj licznik postawionych osad w fazie setup
-            if not hasattr(self, 'setup_placed'):
-                self.setup_placed = {}
-            if player.id not in self.setup_placed:
-                self.setup_placed[player.id] = [0, 0]
-            self.setup_placed[player.id][0] += 1
-
-            print(f"Successfully placed settlement for player {player.id}, progress: {self.setup_placed[player.id]}")
-
-            # Sprawdź czy druga osada - przyznaj zasoby
-            if self.setup_placed[player.id][0] == 2:
-                print("Second settlement placed, assigning initial resources")
-                adjacent_tiles = self.game_board.get_adjacent_tiles(vertex_key)
-                for tile in adjacent_tiles:
-                    resource = tile.get_resource() if hasattr(tile, 'get_resource') else None
-                    if resource and hasattr(resource, 'DESERT') and resource != resource.DESERT:
-                        player.add_resource(resource, 1)
-
-            # Sprawdź ogólny postęp fazy setup
-            if hasattr(self, 'check_setup_progress'):
-                self.check_setup_progress()
-
-            return True
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"Error in place_initial_settlement: {str(e)}")
+            print(f"Error in place_settlement_by_id: {str(e)}")
             return False
-    
-    
-    # Poprawiona metoda place_initial_road
-    def place_initial_road(self, player, edge_coords):
-        """Postaw początkową drogę w fazie setup (bez kosztu)"""
+
+    def place_road_by_id(self, player: Player, edge_id: int, is_setup: bool = False) -> bool:
+        """
+        Postaw drogę używając ID krawędzi
+        """
         try:
-            print(f"Placing initial road for player {player.id} at {edge_coords}")
+            print(f"Placing road for player {player.id} at edge {edge_id}")
 
-            # Sprawdź aktualny postęp w fazie setup
-            if hasattr(self, 'setup_placed'):
-                if player.id in self.setup_placed:
-                    print(f"Player {player.id} setup progress: {self.setup_placed[player.id]}")
-                else:
-                    print(f"Player {player.id} has no setup progress yet")
-            else:
-                print("Game state doesn't have setup_placed attribute")
+            # Sprawdź czy można postawić drogę
+            result = self.game_board.place_road(edge_id, player, is_setup)
+            
+            if result:
+                # Aktualizuj statystyki gracza
+                player.roads_left -= 1
 
-            # Sprawdź, czy gracz ma już jakieś osady i drogi
-            player_settlements = []
-            player_roads = []
+                # Aktualizuj licznik postawionych dróg w fazie setup
+                if is_setup:
+                    if not hasattr(self, 'setup_placed'):
+                        self.setup_placed = {}
+                    if player.id not in self.setup_placed:
+                        self.setup_placed[player.id] = [0, 0]
+                    self.setup_placed[player.id][1] += 1
 
-            if hasattr(self.game_board, 'vertices'):
-                for vertex_key, vertex in self.game_board.vertices.items():
-                    if hasattr(vertex, 'building') and vertex.building is not None:
-                        if vertex.building.player == player:
-                            player_settlements.append(vertex_key)
+                    print(f"Setup progress for player {player.id}: {self.setup_placed[player.id]}")
 
-            if hasattr(self.game_board, 'edges'):
-                for edge_key, edge in self.game_board.edges.items():
-                    if hasattr(edge, 'road') and edge.road is not None:
-                        if edge.road.player == player:
-                            player_roads.append(edge_key)
+                # Sprawdź ogólny postęp fazy setup
+                if hasattr(self, 'check_setup_progress'):
+                    self.check_setup_progress()
 
-            print(f"Player {player.id} has settlements at: {player_settlements}")
-            print(f"Player {player.id} has roads at: {player_roads}")
+                return True
+            
+            return False
 
-            # Sprawdź czy gracz ma jakiekolwiek osady - w przeciwnym razie nie ma sensu stawiać drogi
-            if not player_settlements:
-                print(f"Player {player.id} doesn't have any settlements yet. Cannot place road.")
-                return False
-
-            # Sprawdź czy istnieje krawędź o tych koordynatach
-            if not edge_coords:
-                print("No edge coordinates provided")
-                return False
-
-            # Weryfikacja, czy krawędź istnieje w tablicy krawędzi planszy
-            # Sprawdź różne możliwe formaty koordynatów
-            edge_key = None
-
-            # Spróbuj utworzyć frozenset z przekazanych koordynatów
-            if len(edge_coords) == 1:
-                # Jeśli przekazano tylko jedną współrzędną, spróbuj znaleźć pasującą krawędź
-                single_coord = next(iter(edge_coords))
-
-                # Szukaj krawędzi zawierającej tę współrzędną
-                for key in self.game_board.edges.keys():
-                    # Sprawdź czy krawędź zawiera przekazaną współrzędną
-                    if isinstance(key, frozenset) and single_coord in key:
-                        edge_key = key
-                        print(f"Found matching edge key: {edge_key} for coordinate {single_coord}")
-                        break
-            else:
-                # Jeśli przekazano wiele współrzędnych, spróbuj utworzyć frozenset
-                try:
-                    edge_key = frozenset(edge_coords)
-                    if edge_key in self.game_board.edges:
-                        print(f"Found exact edge key match: {edge_key}")
-                except Exception as e:
-                    print(f"Error creating edge_key from {edge_coords}: {str(e)}")
-
-            # Jeśli nadal nie znaleziono klucza, spróbuj inne podejście
-            if edge_key is None or edge_key not in self.game_board.edges:
-                print(f"Edge key {edge_key} not found in game_board.edges")
-
-                # Spróbuj znaleźć najbliższą krawędź
-                # Pokaż dostępne krawędzie do celów debugowania
-                edge_keys = list(self.game_board.edges.keys())
-                for i in range(min(5, len(edge_keys))):
-                    print(f"Available edge: {edge_keys[i]}")
-
-                # Przekonwertuj nazwę kafelka na krawędź
-                if isinstance(edge_coords, set) and len(edge_coords) == 1:
-                    tile_coord = tuple(next(iter(edge_coords)))
-
-                    # Szukaj krawędzi związanych z tym kafelkiem
-                    for key in self.game_board.edges.keys():
-                        # Sprawdź czy krawędź zawiera współrzędną kafelka
-                        if any(coord == tile_coord for coord in key):
-                            edge_key = key
-                            print(f"Found alternative edge key: {edge_key} for tile coordinate {tile_coord}")
-                            break
-
-                if edge_key is None or edge_key not in self.game_board.edges:
-                    print(f"Could not find valid edge for coordinates {edge_coords}")
-                    return False
-
-            # Pobierz krawędź i sprawdź czy jest już zajęta
-            edge = self.game_board.edges[edge_key]
-            if hasattr(edge, 'road') and edge.road is not None:
-                print(f"Edge {edge_key} already has a road")
-                return False
-
-            # W fazie setup sprawdź, czy droga jest połączona z osadą gracza
-            connected_to_settlement = False
-
-            # Pobierz wierzchołki połączone z tą krawędzią
-            if hasattr(self.game_board, 'get_edge_vertices'):
-                connected_vertices = self.game_board.get_edge_vertices(edge_key)
-                for vertex_key in connected_vertices:
-                    if vertex_key in self.game_board.vertices:
-                        vertex = self.game_board.vertices[vertex_key]
-                        if hasattr(vertex,
-                                   'building') and vertex.building is not None and vertex.building.player == player:
-                            connected_to_settlement = True
-                            print(f"Road at {edge_key} is connected to player's settlement at {vertex_key}")
-                            break
-            else:
-                # Alternatywne podejście, jeśli metoda get_edge_vertices nie istnieje
-                for vertex_key in player_settlements:
-                    # Sprawdź czy krawędź jest połączona z osadą
-                    # Dwa elementy planszy są połączone, jeśli mają wspólną współrzędną
-                    common_coord = False
-                    for edge_coord in edge_key:
-                        if edge_coord in vertex_key:
-                            common_coord = True
-                            break
-
-                    if common_coord:
-                        connected_to_settlement = True
-                        print(f"Road at {edge_key} is connected to player's settlement at {vertex_key}")
-                        break
-
-            if not connected_to_settlement:
-                print(f"Road at {edge_key} is not connected to any of player's settlements")
-                return False
-
-            # Postaw drogę
-            from game_engine.board.buildings import Road
-            road = Road(player)
-            result = False
-
-            try:
-                # Próba postawienia drogi z użyciem metody place_road
-                if hasattr(self.game_board, 'place_road'):
-                    result = self.game_board.place_road(road, edge_key, free=True)
-                else:
-                    # Alternatywne podejście, jeśli metoda place_road nie istnieje
-                    edge.road = road
-                    result = True
-            except Exception as e:
-                print(f"Error placing road: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                return False
-
-            if not result:
-                print(f"Failed to place road at {edge_key}")
-                return False
-
-            # Aktualizuj statystyki gracza
-            player.roads_left -= 1
-
-            # Aktualizuj licznik postawionych dróg w fazie setup
-            if not hasattr(self, 'setup_placed'):
-                self.setup_placed = {}
-            if player.id not in self.setup_placed:
-                self.setup_placed[player.id] = [0, 0]
-            self.setup_placed[player.id][1] += 1
-
-            print(f"Successfully placed road for player {player.id}, progress: {self.setup_placed[player.id]}")
-
-            # Sprawdź ogólny postęp fazy setup
-            if hasattr(self, 'check_setup_progress'):
-                self.check_setup_progress()
-
-            return True
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"Error in place_initial_road: {str(e)}")
+            print(f"Error in place_road_by_id: {str(e)}")
             return False
-    def assign_initial_resources(self, player, vertex_coords):
+
+    def place_city_by_id(self, player: Player, vertex_id: int) -> bool:
+        """
+        Ulepsz osadę do miasta używając ID wierzchołka
+        """
+        try:
+            print(f"Upgrading settlement to city for player {player.id} at vertex {vertex_id}")
+
+            result = self.game_board.place_city(vertex_id, player)
+            
+            if result:
+                # Aktualizuj statystyki gracza
+                player.cities_left -= 1
+                player.settlements_left += 1  # Zwróć osadę do puli
+                player.victory_points += 1   # +1 punkt za ulepszenie
+
+                return True
+            
+            return False
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Error in place_city_by_id: {str(e)}")
+            return False
+
+    # ========== KONWERSJE Z FRONTENDU ==========
+
+# backend/game_engine/game/game_state.py - DODAJ DEBUG do place_settlement_by_tile_coords
+
+    def place_settlement_by_tile_coords(self, player: Player, tile_coords: Tuple[int, int, int], 
+                                    corner_index: int, is_setup: bool = False) -> bool:
+        """
+        Postaw osadę na podstawie współrzędnych kafelka i indeksu narożnika
+        """
+        print(f"=== BACKEND COMPREHENSIVE DEBUG ===")
+        print(f"Player: {player.id}")
+        print(f"Tile coords: {tile_coords}")
+        print(f"Corner index: {corner_index}")
+        
+        # ========== SPRAWDŹ BACKEND GEOMETRY ==========
+        
+        q, r, s = tile_coords
+        print(f"Tile coordinates: q={q}, r={r}, s={s}")
+        
+        # Backend corner offsets (MUSZĄ być identyczne z frontendem!)
+        backend_corner_offsets = [
+            # (0, -1, 1),   # 0: North
+            # (1, -1, 0),   # 1: North-East  
+            # (1, 0, -1),   # 2: South-East
+            # (0, 1, -1),   # 3: South
+            # (-1, 1, 0),   # 4: South-West
+            # (-1, 0, 1),   # 5: North-West
+
+            (0, -1, 1),   # 0: North (30°)
+    (1, -1, 0),   # 1: North-East (90°) 
+    (1, 0, -1),   # 2: South-East (150°)
+    (0, 1, -1),   # 3: South (210°)
+    (-1, 1, 0),   # 4: South-West (270°)
+    (-1, 0, 1),   # 5: North-West (330°)
+        ]
+        
+        if corner_index < len(backend_corner_offsets):
+            dq, dr, ds = backend_corner_offsets[corner_index]
+            expected_vertex_pos = (q + dq, r + dr, s + ds)
+            print(f"BACKEND EXPECTS vertex at position: {expected_vertex_pos}")
+            
+            # Sprawdź które kafelki POWINNY mieć ten wierzchołek (według backendu)
+            backend_expected_tiles = []
+            
+            for tile_id, tile in enumerate(self.game_board.tiles):
+                tile_q, tile_r, tile_s = tile.get_coordinates()
+                
+                # Sprawdź wszystkie 6 narożników tego kafelka
+                for check_corner_idx, (check_dq, check_dr, check_ds) in enumerate(backend_corner_offsets):
+                    check_vertex_pos = (tile_q + check_dq, tile_r + check_dr, tile_s + check_ds)
+                    
+                    if check_vertex_pos == expected_vertex_pos:
+                        backend_expected_tiles.append({
+                            'tile_id': tile_id,
+                            'tile_coords': (tile_q, tile_r, tile_s),
+                            'corner_index': check_corner_idx
+                        })
+            
+            print(f"BACKEND THEORY: This vertex should belong to tiles:")
+            for tile_info in backend_expected_tiles:
+                print(f"  Tile {tile_info['tile_id']} {tile_info['tile_coords']}, corner {tile_info['corner_index']}")
+        
+        # ========== SPRAWDŹ CO BACKEND FAKTYCZNIE MA ==========
+        
+        tile_id = self.game_board.get_tile_id_by_coords(tile_coords)
+        if tile_id is None:
+            print(f"❌ Tile not found at coordinates {tile_coords}")
+            return False
+        
+        print(f"✅ Found tile_id: {tile_id}")
+        
+        vertex_id = self.game_board.find_vertex_by_tile_and_corner(tile_id, corner_index)
+        if vertex_id is None:
+            print(f"❌ Vertex not found for tile {tile_id}, corner {corner_index}")
+            
+            # Debug: pokaż jakie vertex_ids są dostępne dla tego kafelka
+            available_vertices = self.game_board.get_vertices_for_tile(tile_id)
+            print(f"Available vertices for tile {tile_id}: {available_vertices}")
+            
+            return False
+        
+        print(f"✅ Found vertex_id: {vertex_id}")
+        
+        # Sprawdź co vertex faktycznie zawiera
+        if vertex_id < len(self.game_board.vertices):
+            vertex = self.game_board.vertices[vertex_id]
+            print(f"BACKEND ACTUAL vertex {vertex_id} adjacent tiles: {vertex.adjacent_tiles}")
+            
+            print(f"BACKEND ACTUAL adjacent tile coordinates:")
+            for adj_tile_id in vertex.adjacent_tiles:
+                if adj_tile_id < len(self.game_board.tiles):
+                    adj_tile = self.game_board.tiles[adj_tile_id]
+                    adj_coords = adj_tile.get_coordinates()
+                    print(f"  Tile {adj_tile_id}: {adj_coords}")
+        
+        # ========== PORÓWNAJ BACKEND Z OCZEKIWANIAMI ==========
+        
+        print(f"COMPARISON:")
+        print(f"  Frontend sent: tile {tile_coords}, corner {corner_index}")
+        print(f"  Backend found: vertex_id {vertex_id}")
+        print(f"  Backend maps this vertex to tiles: {[self.game_board.tiles[t].get_coordinates() for t in vertex.adjacent_tiles if t < len(self.game_board.tiles)]}")
+        
+        # Postaw osadę
+        result = self.place_settlement_by_id(player, vertex_id, is_setup)
+        print(f"Settlement placement result: {result}")
+        print("=== END BACKEND DEBUG ===")
+        return result
+
+    def place_road_by_tile_coords(self, player: Player, tile_coords: Tuple[int, int, int], 
+                                  edge_index: int, is_setup: bool = False) -> bool:
+        """
+        Postaw drogę na podstawie współrzędnych kafelka i indeksu krawędzi
+        """
+        print(f"=== PLACE ROAD ===")
+        print(f"Player: {player.id}")
+        print(f"Tile coords: {tile_coords}")
+        print(f"Edge index: {edge_index}")
+        print(f"Is setup: {is_setup}")
+        
+        # Znajdź tile_id na podstawie współrzędnych
+        tile_id = self.game_board.get_tile_id_by_coords(tile_coords)
+        if tile_id is None:
+            print(f"Tile not found at coordinates {tile_coords}")
+            return False
+        
+        print(f"Found tile_id: {tile_id}")
+        
+        # Znajdź edge_id na podstawie tile_id i edge_index
+        edge_id = self.game_board.find_edge_by_tile_and_edge(tile_id, edge_index)
+        if edge_id is None:
+            print(f"Edge not found for tile {tile_id}, edge {edge_index}")
+            return False
+        
+        print(f"Found edge_id: {edge_id}")
+        
+        # Postaw drogę
+        result = self.place_road_by_id(player, edge_id, is_setup)
+        print(f"Road placement result: {result}")
+        print("==================")
+        return result
+
+    def _assign_initial_resources_for_vertex(self, player: Player, vertex_id: int):
         """Przyznaj początkowe zasoby za drugą osadę"""
-        # Logika przyznawania zasobów za drugą osadę w fazie setup
-        # Zazwyczaj gracz otrzymuje po 1 zasobie z każdego pola sąsiadującego z osadą
-        adjacent_tiles = self.game_board.get_adjacent_tiles(vertex_coords)
-        for tile in adjacent_tiles:
-            resource = tile.resource
-            if resource is not None:  # Nie dodawaj zasobów z pustyni
-                player.add_resource(resource, 1)
+        try:
+            # Pobierz kafelki przylegające do tego wierzchołka
+            adjacent_tile_ids = self.game_board.get_adjacent_tiles_for_vertex(vertex_id)
+            
+            for tile_id in adjacent_tile_ids:
+                tile = self.game_board.get_tile_by_id(tile_id)
+                if tile:
+                    resource = tile.get_resource()
+                    if resource and resource != Resource.DESERT:
+                        player.add_resource(resource, 1)
+                        print(f"Player {player.id} received 1 {resource} from tile {tile_id}")
+        except Exception as e:
+            print(f"Error assigning initial resources: {str(e)}")
 
-    # W game_state.py lub innej odpowiedniej lokalizacji
+    # ========== KOMPATYBILNOŚĆ ZE STARYMI METODAMI ==========
+
+    def place_initial_settlement(self, player, vertex_coords):
+        """Stara metoda - konwertuje na nowy system"""
+        print(f"Legacy place_initial_settlement called with coords: {vertex_coords}")
+        
+        # Próbuj przekonwertować stare współrzędne na vertex_id
+        if isinstance(vertex_coords, (list, set)) and len(vertex_coords) > 0:
+            first_coord = next(iter(vertex_coords))
+            if isinstance(first_coord, (tuple, list)) and len(first_coord) == 3:
+                # Używamy pierwszej współrzędnej jako tile_coords i zakładamy corner_index = 0
+                return self.place_settlement_by_tile_coords(player, tuple(first_coord), 0, is_setup=True)
+        
+        return False
+
+    def place_initial_road(self, player, edge_coords):
+        """Stara metoda - konwertuje na nowy system"""
+        print(f"Legacy place_initial_road called with coords: {edge_coords}")
+        
+        # Próbuj przekonwertować stare współrzędne na edge_id
+        if isinstance(edge_coords, (list, set)) and len(edge_coords) > 0:
+            first_coord = next(iter(edge_coords))
+            if isinstance(first_coord, (tuple, list)) and len(first_coord) == 3:
+                # Używamy pierwszej współrzędnej jako tile_coords i zakładamy edge_index = 0
+                return self.place_road_by_tile_coords(player, tuple(first_coord), 0, is_setup=True)
+        
+        return False
+
     def reset_game(self):
         """Reset całego stanu gry do początkowego"""
         # Wyczyść stan planszy
-        for vertex_key in self.game_board.vertices:
-            vertex = self.game_board.vertices[vertex_key]
+        for vertex in self.game_board.vertices:
             vertex.building = None
 
-        for edge_key in self.game_board.edges:
-            edge = self.game_board.edges[edge_key]
+        for edge in self.game_board.edges:
             edge.road = None
 
         # Zresetuj stan graczy

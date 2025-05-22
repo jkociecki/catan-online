@@ -1,3 +1,4 @@
+// frontend/src/view/game/OnlineGame.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import GameService from "../../engine/board/GameService";
@@ -11,6 +12,7 @@ import GameActions from "./GameActions";
 import { Corner } from "../../engine/corner";
 import { Edge } from "../../engine/edge";
 import { BaseTile } from "../../engine/tile";
+const BOARD_SIZE = 2; // Na początku OnlineGame
 
 const GameContainer = styled.div`
   display: flex;
@@ -98,7 +100,6 @@ const ErrorMessage = styled.div`
   border: 1px solid #ffcccc;
 `;
 
-// Komponent animowanego wskaźnika sukcesu akcji
 const SuccessIndicator = styled.div<{ show: boolean }>`
   position: fixed;
   top: 50%;
@@ -122,7 +123,6 @@ export default function OnlineGame() {
   const navigate = useNavigate();
   const { roomId: urlRoomId } = useParams();
 
-  // Use roomId from URL params if available, otherwise from location state
   const roomId = urlRoomId || location.state?.roomId;
   const initialGameState = location.state?.gameState;
 
@@ -139,12 +139,34 @@ export default function OnlineGame() {
   const [gamePhase, setGamePhase] = useState<string>("setup");
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
-  const [pendingBuilds, setPendingBuilds] = useState<any[]>([]);
 
-  // Znajdź kolor mojego gracza (użytkownika)
   const myColor = players.find((p) => p.id === myPlayerId)?.color || "red";
 
-  // Funkcja pomocnicza do wyświetlania wskaźnika sukcesu
+  // DODAJ TO NA POCZĄTKU OnlineGame():
+  useEffect(() => {
+    if (board) {
+      console.log("=== FRONTEND BOARD DEBUG ===");
+      console.log(
+        "Frontend tiles count:",
+        Object.keys(board.getTiles()).length
+      );
+      console.log("Frontend tiles:", Object.keys(board.getTiles()));
+      console.log(
+        "Frontend has tile 0,-2,2:",
+        board.getTiles()["0,-2,2"] !== undefined
+      );
+      console.log(
+        "Frontend has tile 1,-2,1:",
+        board.getTiles()["1,-2,1"] !== undefined
+      );
+      console.log("Frontend board size:", board.size);
+      console.log("============================");
+
+      // Zapisz board w window dla debugowania
+      (window as any).debugBoard = board;
+    }
+  }, [board]);
+
   const showSuccessIndicator = useCallback((message: string) => {
     setSuccessMessage(message);
     setShowSuccess(true);
@@ -153,10 +175,8 @@ export default function OnlineGame() {
     }, 2000);
   }, []);
 
-  // Use useMemo to create gameDirector once
   const gameDirector = React.useMemo(() => new GameDirector(), []);
 
-  // Sprawdź czy roomId istnieje
   useEffect(() => {
     if (!roomId) {
       console.error("Missing roomId in OnlineGame");
@@ -164,13 +184,12 @@ export default function OnlineGame() {
     }
   }, [roomId, navigate]);
 
-  // Funkcja do pobierania planszy
   const fetchRandomBoardIfNeeded = useCallback(async () => {
     if (!initialGameState) {
       try {
         console.log("Fetching random board data");
         const boardData = await BoardService.getRandomBoard();
-        const newBoard = new Board(2, gameDirector.getConfig());
+        const newBoard = new Board(BOARD_SIZE, gameDirector.getConfig());
         newBoard.loadFromData(boardData);
         setBoard(newBoard);
         setGameState({ board: boardData, players: [] });
@@ -183,12 +202,11 @@ export default function OnlineGame() {
     } else {
       try {
         console.log("Loading board from initialGameState");
-        const newBoard = new Board(2, gameDirector.getConfig());
+        const newBoard = new Board(BOARD_SIZE, gameDirector.getConfig());
         newBoard.loadFromData(initialGameState.board);
         setBoard(newBoard);
         setGameState(initialGameState);
 
-        // Set players and current player
         if (initialGameState.players) {
           setPlayers(initialGameState.players);
           const currentPlayerIndex = initialGameState.current_player_index || 0;
@@ -197,7 +215,6 @@ export default function OnlineGame() {
           }
         }
 
-        // Set game phase
         if (initialGameState.phase) {
           setGamePhase(initialGameState.phase);
         }
@@ -211,7 +228,6 @@ export default function OnlineGame() {
     }
   }, [initialGameState, gameDirector]);
 
-  // Nawiązanie połączenia WebSocket
   useEffect(() => {
     if (!roomId) {
       navigate("/");
@@ -223,7 +239,6 @@ export default function OnlineGame() {
       setError(null);
 
       try {
-        // Connect to WebSocket if not already connected
         if (!GameService.isConnected()) {
           console.log(`Connecting to room: ${roomId}`);
           await GameService.connectToRoom(roomId);
@@ -232,13 +247,9 @@ export default function OnlineGame() {
           setIsConnected(true);
         }
 
-        // Fetch board data if needed
         await fetchRandomBoardIfNeeded();
-
-        // Request game state once connected
         GameService.getGameState();
 
-        // Próba pobrania ID klienta
         try {
           const clientId = await GameService.getClientId();
           console.log("Got client ID:", clientId);
@@ -263,30 +274,10 @@ export default function OnlineGame() {
     setupConnection();
   }, [roomId, fetchRandomBoardIfNeeded, navigate]);
 
-  // Obsługa zdarzeń WebSocket
   useEffect(() => {
-    // Obsługa aktualizacji stanu gry
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
 
-      // Log detailed vertex data if available
-      if (data.game_state?.board?.vertices) {
-        console.log("Vertices from server:", data.game_state.board.vertices);
-
-        // Log specific details of each vertex that has a building
-        Object.entries(data.game_state.board.vertices).forEach(
-          ([key, vertexData]: [string, any]) => {
-            if (vertexData?.building) {
-              console.log(`Vertex ${key} with building:`, {
-                coordinates: vertexData.coordinates,
-                building: vertexData.building,
-              });
-            }
-          }
-        );
-      }
-
-      // Pokaż powiadomienie o sukcesie
       if (data.action) {
         const actionMessages: { [key: string]: string } = {
           build_settlement: "Osada zbudowana!",
@@ -297,48 +288,28 @@ export default function OnlineGame() {
 
         if (actionMessages[data.action] && data.player_id === myPlayerId) {
           showSuccessIndicator(actionMessages[data.action]);
-
-          // Usuń z listy oczekujących budowli tę, którą potwierdzono
-          if (data.action.startsWith("build_") && data.coords) {
-            setPendingBuilds((prev) =>
-              prev.filter(
-                (item) =>
-                  !(
-                    item.action === data.action &&
-                    JSON.stringify(item.coords) === JSON.stringify(data.coords)
-                  )
-              )
-            );
-          }
         }
       }
 
-      // Update game state
       if (data.game_state) {
         console.log(
           "Game state received in handleGameUpdate:",
           data.game_state
         );
-        console.log("Vertices data in game_state:", data.game_state.vertices);
         setGameState(data.game_state);
 
-        // Update game phase
         if (data.game_state.phase) {
           setGamePhase(data.game_state.phase);
         }
 
-        // Update board
         if (data.game_state.board && board) {
-          const updatedBoard = new Board(2, gameDirector.getConfig());
+          const updatedBoard = new Board(BOARD_SIZE, gameDirector.getConfig());
           updatedBoard.loadFromData(data.game_state.board);
           setBoard(updatedBoard);
         }
 
-        // Update players
         if (data.game_state.players) {
           setPlayers(data.game_state.players);
-
-          // Update current player
           const currentPlayerIndex = data.game_state.current_player_index || 0;
           if (data.game_state.players.length > 0) {
             setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
@@ -346,7 +317,6 @@ export default function OnlineGame() {
         }
       }
 
-      // Clear build mode when game state updates
       if (data.action === "end_turn") {
         setBuildMode(null);
       }
@@ -361,10 +331,12 @@ export default function OnlineGame() {
           setGamePhase(data.game_state.phase);
         }
 
-        // Update board
         if (data.game_state.board) {
           try {
-            const updatedBoard = new Board(2, gameDirector.getConfig());
+            const updatedBoard = new Board(
+              BOARD_SIZE,
+              gameDirector.getConfig()
+            );
             updatedBoard.loadFromData(data.game_state.board);
             setBoard(updatedBoard);
           } catch (err) {
@@ -372,11 +344,8 @@ export default function OnlineGame() {
           }
         }
 
-        // Update players
         if (data.game_state.players) {
           setPlayers(data.game_state.players);
-
-          // Update current player
           const currentPlayerIndex = data.game_state.current_player_index || 0;
           if (data.game_state.players.length > 0) {
             setCurrentPlayerId(data.game_state.players[currentPlayerIndex].id);
@@ -390,7 +359,6 @@ export default function OnlineGame() {
       if (data.phase) {
         setGamePhase(data.phase);
 
-        // Pokaż powiadomienie o zmianie fazy
         if (data.phase === "setup") {
           showSuccessIndicator("Faza przygotowania rozpoczęta!");
         } else if (data.phase === "main" || data.phase === "MAIN") {
@@ -410,7 +378,6 @@ export default function OnlineGame() {
 
     const handlePlayerJoined = (data: any) => {
       console.log("Player joined:", data);
-      // Request updated game state when a player joins
       GameService.getGameState();
     };
 
@@ -418,20 +385,16 @@ export default function OnlineGame() {
       console.log("Dice roll:", data);
       if (data.dice_result) {
         setDiceResult(data.dice_result.total);
-
-        // Pokaż powiadomienie o rzucie kośćmi
         if (data.player_id === myPlayerId) {
           showSuccessIndicator(`Wyrzucono ${data.dice_result.total}!`);
         }
       } else if (data.result) {
         setDiceResult(data.result.total);
-
         if (data.player_id === myPlayerId) {
           showSuccessIndicator(`Wyrzucono ${data.result.total}!`);
         }
       }
 
-      // Hide dice result after 3 seconds
       setTimeout(() => {
         setDiceResult(null);
       }, 3000);
@@ -454,7 +417,6 @@ export default function OnlineGame() {
       setError("Disconnected from game server. Try refreshing the page.");
     };
 
-    // Register event handlers
     if (isConnected) {
       GameService.addEventHandler("game_update", handleGameUpdate);
       GameService.addEventHandler("game_state", handleGameState);
@@ -467,7 +429,6 @@ export default function OnlineGame() {
       GameService.addEventHandler("disconnect", handleDisconnect);
     }
 
-    // Cleanup event handlers
     return () => {
       if (isConnected) {
         GameService.removeEventHandler("game_update", handleGameUpdate);
@@ -483,7 +444,6 @@ export default function OnlineGame() {
     };
   }, [isConnected, board, gameDirector, myPlayerId, showSuccessIndicator]);
 
-  // Player-related helper functions
   const getMyResources = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
     return myPlayer ? myPlayer.resources : {};
@@ -498,7 +458,7 @@ export default function OnlineGame() {
     if (!myPlayer) return false;
 
     if (gamePhase === "setup") {
-      return true; // W fazie setup można budować za darmo
+      return true;
     }
 
     const resources = myPlayer.resources || {};
@@ -516,7 +476,7 @@ export default function OnlineGame() {
     if (!myPlayer) return false;
 
     if (gamePhase === "setup") {
-      return false; // W fazie setup nie można budować miast
+      return false;
     }
 
     const resources = myPlayer.resources || {};
@@ -530,7 +490,7 @@ export default function OnlineGame() {
     if (!myPlayer) return false;
 
     if (gamePhase === "setup") {
-      return true; // W fazie setup można budować za darmo
+      return true;
     }
 
     const resources = myPlayer.resources || {};
@@ -539,197 +499,120 @@ export default function OnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
-  // Zmodyfikowana funkcja handleCornerClick z prostszym przesunięciem w prawo
-  // Wersja bazująca bardziej na twoim oryginalnym kodzie
+  // ========== NOWE FUNKCJE OBSŁUGI Z INDEKSAMI ==========
 
-  // const handleCornerClick = (corner: Corner, tile: BaseTile) => {
-  //   if (!isMyTurn() || !buildMode || !board) return;
+  // frontend/src/view/game/OnlineGame.tsx - DODAJ DEBUG w handleCornerClick
 
-  //   console.log("clicked corner!", corner, tile);
-
-  //   if (buildMode === "settlement" || buildMode === "city") {
-  //     try {
-  //       // Sprawdź warunki budowania
-  //       let canBuild = true;
-
-  //       // Dla osady: sprawdź czy róg jest pusty
-  //       if (buildMode === "settlement" && corner.getOwner()) {
-  //         setError("Ten róg jest już zajęty!");
-  //         canBuild = false;
-  //       }
-
-  //       // Dla miasta: sprawdź czy jest tam już nasza osada
-  //       if (buildMode === "city") {
-  //         const owner = corner.getOwner();
-  //         if (!owner) {
-  //           setError("Możesz ulepszać tylko własne osady!");
-  //           canBuild = false;
-  //         } else if (corner.hasCity()) {
-  //           setError("Ta osada jest już ulepszona do miasta!");
-  //           canBuild = false;
-  //         }
-  //       }
-
-  //       if (!canBuild) {
-  //         return;
-  //       }
-
-  //       // Pobierz wszystkie wierzchołki rogu
-  //       const vertices =
-  //         typeof corner.getVertices === "function" ? corner.getVertices() : [];
-  //       console.log("Raw vertex data:", vertices);
-
-  //       // Sprawdź, czy mamy wystarczającą liczbę wierzchołków (powinny być 3 dla narożnika)
-  //       if (vertices.length < 3) {
-  //         console.warn(
-  //           "Incomplete vertex data, corner should have 3 vertices but has:",
-  //           vertices.length
-  //         );
-
-  //         // Pobierz istniejące współrzędne
-  //         const coords = vertices.map((v) => v.split(",").map(Number));
-
-  //         // Pobierz dane o kafelku
-  //         const tileCoords = tile.tileId.split(",").map(Number);
-  //         const cornerIndex = tile.getCorners().indexOf(corner);
-
-  //         console.log(
-  //           "Using coordinates from tile:",
-  //           tileCoords,
-  //           "corner index:",
-  //           cornerIndex
-  //         );
-
-  //         // Używamy informacji o kafelku i indeksie narożnika do generowania prawidłowych koordynatów
-  //         const [q, r, s] = tileCoords;
-
-  //         // TWÓJ ORYGINALNY KOD Z PRZESUNIĘCIEM W PRAWO (+1 do q, -1 do s)
-  //         let vertexCoords: number[][] = [];
-
-  //         // if (cornerIndex === 0) {
-  //         //   // North corner
-  //         //   vertexCoords = [
-  //         //     [q + 2, r, s - 2], // Przesunięcie w prawo
-  //         //     [q + 2, r - 1, s - 1], // Przesunięcie w prawo
-  //         //     [q + 2, r, s - 2], // Przesunięcie w prawo
-  //         //   ];
-  //         // } else if (cornerIndex === 1) {
-  //         //   // South corner
-  //         //   vertexCoords = [
-  //         //     [q + 2, r, s - 2], // Przesunięcie w prawo
-  //         //     [q + 2, r + 1, s - 3], // Przesunięcie w prawo
-  //         //     [q, r + 1, s - 1], // Przesunięcie w prawo
-  //         //   ];
-
-  //         if (cornerIndex === 0) {
-  //           // North-East corner
-  //           vertexCoords = [
-  //             [q + 1, r - 1, s], // punkt A
-  //             [q + 2, r - 1, s - 1], // punkt B
-  //             [q + 2, r, s - 2], // punkt C
-  //           ];
-  //         } else if (cornerIndex === 1) {
-  //           // South-East corner
-  //           vertexCoords = [
-  //             [q + 1, r - 1, s], // punkt A
-  //             [q + 1, r, s - 1], // punkt B
-  //             [q, r, s], // (środek heksa, dla stabilizacji/wycentrowania)
-  //           ];
-  //         } else {
-  //           setError("Nieznany indeks narożnika");
-  //           return;
-  //         }
-
-  //         console.log("Generated vertex coordinates:", vertexCoords);
-
-  //         // Wyślij wygenerowane koordynaty
-  //         GameService.sendMessage({
-  //           type: "game_action",
-  //           action: `build_${buildMode}`,
-  //           coords: vertexCoords,
-  //         });
-  //       } else {
-  //         // Przetwórz wierzchołki na tablicę koordynatów
-  //         const vertexCoords = vertices.map((vertex) => {
-  //           const coords = vertex.split(",").map(Number);
-  //           // PRZESUNIĘCIE W PRAWO: +1 do q, -1 do s (aby zachować sumę q+r+s=0)
-  //           return [coords[0] + 1, coords[1], coords[2] - 1];
-  //         });
-
-  //         console.log("Shifted vertex coordinates:", vertexCoords);
-
-  //         // Wyślij koordynaty
-  //         GameService.sendMessage({
-  //           type: "game_action",
-  //           action: `build_${buildMode}`,
-  //           coords: vertexCoords,
-  //         });
-  //       }
-
-  //       // Dodaj budowlę do listy oczekujących (symulacja natychmiastowej odpowiedzi)
-  //       const newPendingBuild = {
-  //         action: `build_${buildMode}`,
-  //         tileId: tile.tileId,
-  //         cornerIndex: tile.getCorners().indexOf(corner),
-  //       };
-
-  //       // Zapobieganie duplikatom
-  //       // const existingBuildIndex = pendingBuildsList.findIndex(
-  //       //   (item) =>
-  //       //     item.action === newPendingBuild.action &&
-  //       //     item.tileId === newPendingBuild.tileId &&
-  //       //     item.cornerIndex === newPendingBuild.cornerIndex
-  //       // );
-
-  //       // if (existingBuildIndex === -1) {
-  //       //   setPendingBuildsList((prev) => [...prev, newPendingBuild]);
-  //       // }
-
-  //       // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
-  //       showSuccessIndicator(
-  //         `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
-  //       );
-
-  //       // Jeśli jesteśmy w fazie setup, zmień tryb budowania na drogę po postawieniu osady
-  //       if (gamePhase === "setup" && buildMode === "settlement") {
-  //         setTimeout(() => {
-  //           setBuildMode("road");
-  //         }, 500);
-  //       }
-  //     } catch (err) {
-  //       console.error("Error processing corner click:", err);
-  //       setError(
-  //         `Error processing click: ${
-  //           err instanceof Error ? err.message : String(err)
-  //         }`
-  //       );
-  //     }
-  //   }
-  // };
   const handleCornerClick = (corner: Corner, tile: BaseTile) => {
+    try {
+      sessionStorage.setItem("lastClickedTile", tile.tileId);
+      console.log(`📝 SAVED clicked tile: ${tile.tileId}`);
+    } catch (e) {
+      try {
+        localStorage.setItem("lastClickedTile", tile.tileId);
+      } catch (e2) {
+        // Ignore if storage unavailable
+      }
+    }
     if (!isMyTurn() || !buildMode || !board) return;
 
-    // Dodaj szczegółowe logi z informacją o kafelku i rogu
-    console.log("Clicked corner details:", {
-      tileId: tile.tileId,
-      cornerIndex: tile.getCorners().indexOf(corner),
-      cornerVertices:
-        typeof corner.getVertices === "function" ? corner.getVertices() : [],
-      hasOwner: corner.getOwner() !== null,
-    });
+    // ========== COMPREHENSIVE DEBUG ==========
+    console.log("=== COMPREHENSIVE CORNER CLICK DEBUG ===");
 
+    // 1. Co kliknęłaś
+    const cornerIndex = tile.getCorners().indexOf(corner);
+    console.log("CLICKED:");
+    console.log(`  Tile: ${tile.tileId}`);
+    console.log(`  Corner index: ${cornerIndex}`);
+
+    // 2. Gdzie ten narożnik POWINIEN być w przestrzeni (według frontendu)
+    const tileCoords = tile.tileId.split(",").map(Number);
+    const [q, r, s] = tileCoords;
+
+    // Pozycje narożników względem centrum kafelka (zgodnie z frontendem)
+    const frontendCornerOffsets = [
+      [0, -1, 1], // 0: North
+      [1, -1, 0], // 1: North-East
+      [1, 0, -1], // 2: South-East
+      [0, 1, -1], // 3: South
+      [-1, 1, 0], // 4: South-West
+      [-1, 0, 1], // 5: North-West
+    ];
+
+    if (cornerIndex >= 0 && cornerIndex < frontendCornerOffsets.length) {
+      const [dq, dr, ds] = frontendCornerOffsets[cornerIndex];
+      const expectedVertexPos = [q + dq, r + dr, s + ds];
+      console.log(
+        `FRONTEND EXPECTS vertex at position: [${expectedVertexPos.join(",")}]`
+      );
+
+      // 3. Które kafelki POWINNY mieć ten wierzchołek (według teorii)
+      const expectedTiles = [];
+
+      // Sprawdź wszystkie kafelki w pobliżu
+      for (let checkQ = q - 2; checkQ <= q + 2; checkQ++) {
+        for (let checkR = r - 2; checkR <= r + 2; checkR++) {
+          const checkS = -checkQ - checkR;
+          if (Math.abs(checkS) <= 2) {
+            // Tylko kafelki w rozumnym zasięgu
+            const checkTileId = `${checkQ},${checkR},${checkS}`;
+
+            // Sprawdź czy ten kafelek istnieje w frontendzie
+            if (board.getTiles()[checkTileId]) {
+              // Sprawdź wszystkie 6 narożników tego kafelka
+              for (
+                let checkCornerIdx = 0;
+                checkCornerIdx < 6;
+                checkCornerIdx++
+              ) {
+                const [checkDq, checkDr, checkDs] =
+                  frontendCornerOffsets[checkCornerIdx];
+                const checkVertexPos = [
+                  checkQ + checkDq,
+                  checkR + checkDr,
+                  checkS + checkDs,
+                ];
+
+                // Czy ten narożnik ma taką samą pozycję jak kliknięty?
+                if (
+                  JSON.stringify(checkVertexPos) ===
+                  JSON.stringify(expectedVertexPos)
+                ) {
+                  expectedTiles.push({
+                    tileId: checkTileId,
+                    cornerIndex: checkCornerIdx,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+
+      console.log("FRONTEND THEORY: This vertex should belong to tiles:");
+      expectedTiles.forEach(({ tileId, cornerIndex }) => {
+        console.log(`  ${tileId}, corner ${cornerIndex}`);
+      });
+    }
+
+    // 4. Co frontend faktycznie ma w corner.getVertices()
+    if (typeof corner.getVertices === "function") {
+      const actualVertices = corner.getVertices();
+      console.log("FRONTEND ACTUAL corner vertices:", actualVertices);
+    }
+
+    console.log("===========================================");
+
+    // Reszta kodu pozostaje bez zmian...
     if (buildMode === "settlement" || buildMode === "city") {
       try {
-        // Sprawdź warunki budowania
         let canBuild = true;
 
-        // Dla osady: sprawdź czy róg jest pusty
         if (buildMode === "settlement" && corner.getOwner()) {
           setError("Ten róg jest już zajęty!");
           canBuild = false;
         }
 
-        // Dla miasta: sprawdź czy jest tam już nasza osada
         if (buildMode === "city") {
           const owner = corner.getOwner();
           if (!owner) {
@@ -745,55 +628,22 @@ export default function OnlineGame() {
           return;
         }
 
-        // Pobierz wszystkie wierzchołki rogu
-        const vertices =
-          typeof corner.getVertices === "function" ? corner.getVertices() : [];
-        console.log("Raw vertex data:", vertices);
+        console.log("Sending settlement/city with new format:", {
+          tileId: tile.tileId,
+          cornerIndex: cornerIndex,
+        });
 
-        // Sprawdź, czy mamy wystarczającą liczbę wierzchołków
-        let vertexCoords: number[][] = [];
-
-        if (vertices.length < 3) {
-          console.warn("Incomplete vertex data, using tile coordinates");
-
-          // Używamy bezpośrednio współrzędnych kafelka jako podstawy
-          const tileCoords = tile.tileId.split(",").map(Number);
-          const cornerIndex = tile.getCorners().indexOf(corner);
-
-          // Stwórz minimalny zestaw współrzędnych wymagany przez serwer
-          vertexCoords = [tileCoords];
-        } else {
-          // Mamy komplet wierzchołków
-          vertexCoords = vertices.map((vertex) =>
-            vertex.split(",").map(Number)
-          );
-        }
-
-        console.log("Original coordinates before adjustment:", vertexCoords);
-
-        // Przesunięcie o 3 jednostki w kierunku q i -3 w kierunku s
-        // Używamy stałego przesunięcia, ponieważ zrozumieliśmy, że problem jest konsekwentny
-        const adjustedCoords = vertexCoords.map((coords) => [
-          coords[0] + 1, // +3q
-          coords[1], // r bez zmian
-          coords[2] - 1, // -3s (aby zachować q+r+s=0)
-        ]);
-
-        console.log("Adjusted coordinates with +3q,-3s shift:", adjustedCoords);
-
-        // Wyślij SKORYGOWANE koordynaty
         GameService.sendMessage({
           type: "game_action",
           action: `build_${buildMode}`,
-          coords: adjustedCoords,
+          tileId: tile.tileId,
+          cornerIndex: cornerIndex,
         });
 
-        // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
         showSuccessIndicator(
           `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
         );
 
-        // Jeśli jesteśmy w fazie setup, zmień tryb budowania na drogę po postawieniu osady
         if (gamePhase === "setup" && buildMode === "settlement") {
           setTimeout(() => {
             setBuildMode("road");
@@ -810,107 +660,6 @@ export default function OnlineGame() {
     }
   };
 
-  // const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
-  //   if (!isMyTurn() || buildMode !== "road" || !board) return;
-
-  //   try {
-  //     // Sprawdź czy krawędź jest już zajęta
-  //     if (edge.getOwner()) {
-  //       setError("Ta krawędź jest już zajęta!");
-  //       return;
-  //     }
-
-  //     console.log("clicked edge!", edge, tile);
-
-  //     // 1. Pobierz wierzchołki krawędzi
-  //     const vertices = edge.getVertices ? edge.getVertices() : [];
-  //     console.log("Raw edge vertices:", vertices);
-
-  //     // 2. Ustal współrzędne dla krawędzi
-  //     let coords: number[][] = [];
-
-  //     // Pobierz dane o kafelku i indeksie krawędzi
-  //     const tileCoords = tile.tileId.split(",").map(Number);
-  //     const edgeIndex = tile.getEdges().indexOf(edge);
-  //     console.log("Edge index in tile:", edgeIndex);
-
-  //     if (vertices.length >= 2) {
-  //       // Mamy wierzchołki - zastosuj przesunięcie jak dla domków
-  //       coords = vertices.map((vertex) => {
-  //         const points = vertex.split(",").map(Number);
-  //         // Zastosuj DOKŁADNIE TAKIE SAMO przesunięcie jak dla domków
-  //         return [points[0] + 1, points[1], points[2] - 1];
-  //       });
-  //       console.log("Coordinates from vertices with shift:", coords);
-  //     } else {
-  //       // Brak wierzchołków - wygeneruj je ręcznie
-  //       // Użyj konkretnych wartości dla poszczególnych typów krawędzi
-  //       const [q, r, s] = tileCoords;
-
-  //       // switch (edgeIndex) {
-  //       //   case 0: // NE edge
-  //       //     coords = [
-  //       //       [q + 1, r, s - 1],
-  //       //       [q + 2, r - 1, s - 1],
-  //       //     ];
-  //       //     break;
-  //       //   case 1: // NW edge
-  //       //     coords = [
-  //       //       [q + 1, r, s - 1],
-  //       //       [q + 1, r - 1, s],
-  //       //     ];
-  //       //     break;
-  //       //   case 2: // W edge
-  //       //     coords = [
-  //       //       [q + 1, r, s - 1],
-  //       //       [q + 1 - 1, r, s - 1 + 1], // czyli też przesunięcie
-  //       //     ];
-  //       //     break;
-  //       //   default:
-  //       //     setError("Nieznany indeks krawędzi");
-  //       //     return;
-  //       // }
-
-  //       coords = [
-  //         [q + 1, r, s - 1],
-  //         [q + 1, r - 1, s],
-  //       ];
-
-  //       console.log("Manually generated road coordinates:", coords);
-  //     }
-
-  //     if (coords.length < 2) {
-  //       setError("Nie można określić pozycji dla drogi. Spróbuj ponownie.");
-  //       return;
-  //     }
-
-  //     // 3. Wyślij akcję do serwera
-  //     GameService.sendMessage({
-  //       type: "game_action",
-  //       action: "build_road",
-  //       coords: coords,
-  //     });
-
-  //     // 4. Pokaż komunikat o oczekiwaniu na odpowiedź serwera
-  //     showSuccessIndicator("Budowanie drogi...");
-
-  //     // 5. W fazie setup po postawieniu drogi automatycznie zakończ turę
-  //     if (gamePhase === "setup") {
-  //       setTimeout(() => {
-  //         GameService.endTurn();
-  //         setBuildMode(null);
-  //       }, 1000);
-  //     }
-  //   } catch (err) {
-  //     console.error("Error processing edge click:", err);
-  //     setError(
-  //       `Error processing click: ${
-  //         err instanceof Error ? err.message : String(err)
-  //       }`
-  //     );
-  //   }
-  // };
-
   const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
 
@@ -921,16 +670,27 @@ export default function OnlineGame() {
         return;
       }
 
+      console.log("Edge clicked:", {
+        tileId: tile.tileId,
+        hasOwner: edge.getOwner() !== null,
+      });
+
+      // ========== NOWY SYSTEM: tileId + edgeIndex ==========
+
       // Pobierz indeks krawędzi w kafelku
       const edgeIndex = tile.getEdges().indexOf(edge);
 
-      console.log("Edge click details:", {
+      if (edgeIndex === -1) {
+        setError("Nie można znaleźć indeksu krawędzi!");
+        return;
+      }
+
+      console.log("Sending road with new format:", {
         tileId: tile.tileId,
         edgeIndex: edgeIndex,
       });
 
-      // Wyślij tileId i edgeIndex zamiast koordynatów
-      // Backend powinien być w stanie poprawnie zidentyfikować krawędź na podstawie tych informacji
+      // Wyślij dane w nowym formacie
       GameService.sendMessage({
         type: "game_action",
         action: "build_road",
@@ -976,7 +736,6 @@ export default function OnlineGame() {
   }
 
   const handleTestEndTurn = () => {
-    // Sprawdź jeszcze raz, czy to faktycznie Twoja tura
     if (isMyTurn()) {
       console.log("Testowanie funkcji końca tury");
       GameService.endTurn();
@@ -1000,7 +759,6 @@ export default function OnlineGame() {
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
 
-      {/* Dodaj prosty wskaźnik tury */}
       <div
         style={{
           backgroundColor: "#f5f5f5",
@@ -1016,7 +774,6 @@ export default function OnlineGame() {
           : `Tura innego gracza - poczekaj na swoją kolej`}
       </div>
 
-      {/* Wskaźnik sukcesu akcji */}
       <SuccessIndicator show={showSuccess}>{successMessage}</SuccessIndicator>
 
       {diceResult && (
