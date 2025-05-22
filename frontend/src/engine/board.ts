@@ -79,178 +79,431 @@ export class Board {
     });
   }
 
-  // frontend/src/engine/board.ts - Zamień całą metodę updateVerticesFromData
-
   private updateVerticesFromData(data: BoardData): void {
-    console.log("Server vertices data received:", data.vertices);
+  console.log("Server vertices data received:", data.vertices);
 
-    Object.entries(data.vertices).forEach(([key, vertexData]) => {
-      if (vertexData?.building) {
-        console.log("=== PROCESSING VERTEX WITH BUILDING ===");
-        console.log("Vertex coordinates from server:", vertexData.coordinates);
-        console.log("Building type:", vertexData.building.type);
+  // Pomocnicza funkcja do sprawdzania współdzielonych punktów
+  const countSharedPoints = (
+    vertices1: string[],
+    vertices2: string[]
+  ): number => {
+    let sharedCount = 0;
+    for (const v1 of vertices1) {
+      for (const v2 of vertices2) {
+        const coords1 = v1.split(",").map(Number);
+        const coords2 = v2.split(",").map(Number);
+        if (
+          coords1[0] === coords2[0] &&
+          coords1[1] === coords2[1] &&
+          coords1[2] === coords2[2]
+        ) {
+          sharedCount++;
+          break;
+        }
+      }
+    }
+    return sharedCount;
+  };
+
+  Object.entries(data.vertices).forEach(([key, vertexData]) => {
+    if (vertexData?.building) {
+      console.log("=== PROCESSING VERTEX WITH BUILDING ===");
+      console.log("Building type:", vertexData.building.type);
+      console.log("Player ID:", vertexData.building.player_id);
+
+      // NOWY KOD: Sprawdź czy mamy tile_id i corner_index z serwera
+      const serverTileId = vertexData.building.tile_id;
+      const serverCornerIndex = vertexData.building.corner_index;
+
+      console.log("Server provided tile_id:", serverTileId);
+      console.log("Server provided corner_index:", serverCornerIndex);
+
+      let finalCorner: Corner | null = null;
+      let finalTile: BaseTile | null = null;
+      let finalTileId = "";
+      let finalCornerIndex = -1;
+      let method = "UNKNOWN";
+
+      // Jeśli serwer podał dokładne dane, użyj ich
+      if (serverTileId && serverCornerIndex !== null && serverCornerIndex !== undefined) {
+        if (this.tiles[serverTileId]) {
+          const tile = this.tiles[serverTileId];
+          const corners = tile.getCorners();
+          
+          if (corners[serverCornerIndex]) {
+            finalCorner = corners[serverCornerIndex];
+            finalTile = tile;
+            finalTileId = serverTileId;
+            finalCornerIndex = serverCornerIndex;
+            method = "SERVER_PROVIDED";
+            
+            console.log("✅ USING SERVER DATA: Success!");
+          } else {
+            console.warn("❌ SERVER DATA: Invalid corner index", serverCornerIndex);
+          }
+        } else {
+          console.warn("❌ SERVER DATA: Invalid tile ID", serverTileId);
+        }
+      }
+
+      // Fallback do starego algorytmu jeśli serwer nie podał danych
+      if (!finalCorner) {
+        console.log("🔄 FALLBACK: Using coordinate matching");
+        method = "FALLBACK";
 
         // Przekształć współrzędne z tablicy liczb na tablicę stringów
         const buildingCoords = vertexData.coordinates.map((c: number[]) =>
           c.join(",")
         );
-        console.log("Server says vertex belongs to tiles:", buildingCoords);
 
-        // ===== NOWA LOGIKA: PREFERUJ KLIKNIĘTY TILE =====
+        console.log("Building coordinates as strings:", buildingCoords);
 
-        let foundMatch = false;
-        let chosenTile: BaseTile | null = null;
-        let chosenTileId = "";
-        let chosenCornerIndex = -1;
+        // Sprawdź najpierw czy mamy zapisany ostatnio kliknięty kafelek
+        const lastClickedTile = (window as any).lastClickedTile;
+        let foundExactMatch = false;
+        let exactMatchCorner: Corner | null = null;
+        let exactMatchTile: BaseTile | null = null;
+        let exactMatchTileId = "";
+        let exactMatchCornerIndex = -1;
 
-        // 1. NAJPIERW SPRAWDŹ CZY MOŻEMY UŻYĆ DOKŁADNIE KLIKNIĘTEGO TILE
-        const lastClickedTile = this.getLastClickedTile(); // Pobierz z localStorage/sessionStorage
-        if (lastClickedTile && buildingCoords.includes(lastClickedTile)) {
-          console.log(
-            `🎯 PRIORITY: Trying to use clicked tile ${lastClickedTile}`
-          );
+        console.log("🎯 PRIORITY: Trying to use clicked tile", lastClickedTile);
 
+        // Najpierw sprawdź dokładnie ten kafelek, na który kliknął użytkownik
+        if (lastClickedTile && this.tiles[lastClickedTile]) {
           const tile = this.tiles[lastClickedTile];
-          if (tile) {
-            const corners = tile.getCorners();
+          const corners = tile.getCorners();
 
-            // Sprawdź wszystkie corners tego tile
-            for (
-              let cornerIndex = 0;
-              cornerIndex < corners.length;
-              cornerIndex++
-            ) {
-              const corner = corners[cornerIndex];
+          // Sprawdź czy ten kafelek jest w liście współrzędnych z serwera
+          const tileIsInServerCoords = buildingCoords.includes(lastClickedTile);
+          console.log(`Clicked tile ${lastClickedTile} is in server coords:`, tileIsInServerCoords);
 
-              if (this.cornerMatchesServerVertex(corner, buildingCoords)) {
-                console.log(
-                  `✅ EXACT MATCH: Using clicked tile ${lastClickedTile}, corner ${cornerIndex}`
-                );
-                chosenTile = tile;
-                chosenTileId = lastClickedTile;
-                chosenCornerIndex = cornerIndex;
-                foundMatch = true;
-                break;
+          if (tileIsInServerCoords) {
+            corners.forEach((corner, cornerIndex) => {
+              if (corner && typeof (corner as any).getVertices === "function" && !foundExactMatch) {
+                const cornerWithVertices = corner as unknown as {
+                  getVertices: () => string[];
+                };
+                const cornerVertices = cornerWithVertices.getVertices();
+
+                if (cornerVertices && cornerVertices.length > 0) {
+                  const sharedPoints = countSharedPoints(cornerVertices, buildingCoords);
+
+                  if (sharedPoints > 0) {
+                    console.log(`✅ EXACT MATCH: tile ${lastClickedTile}, corner ${cornerIndex}, shared: ${sharedPoints}`);
+                    foundExactMatch = true;
+                    exactMatchCorner = corner;
+                    exactMatchTile = tile;
+                    exactMatchTileId = lastClickedTile;
+                    exactMatchCornerIndex = cornerIndex;
+                    return;
+                  }
+                }
               }
-            }
+            });
           }
         }
 
-        // 2. JEŚLI NIE ZNALEŹLIŚMY DOKŁADNEGO MATCHA, UŻYJ FALLBACK
-        if (!foundMatch) {
+        // Jeśli nie znaleźliśmy dokładnego dopasowania, użyj standardowego algorytmu
+        let fallbackCorner: Corner | null = null;
+        let fallbackTile: BaseTile | null = null;
+        let fallbackTileId = "";
+        let fallbackCornerIndex = -1;
+        let bestSharedPoints = 0;
+
+        if (!foundExactMatch) {
           console.log("🔄 FALLBACK: Searching for best alternative match");
 
-          let bestSharedPoints = 0;
-
-          // Przeszukaj wszystkie tiles
           Object.entries(this.tiles).forEach(([tileId, tile]) => {
             const corners = tile.getCorners();
 
             corners.forEach((corner, cornerIndex) => {
-              const sharedPoints = this.countSharedPoints(
-                corner,
-                buildingCoords
-              );
+              if (corner && typeof (corner as any).getVertices === "function") {
+                const cornerWithVertices = corner as unknown as {
+                  getVertices: () => string[];
+                };
+                const cornerVertices = cornerWithVertices.getVertices();
 
-              if (sharedPoints > 0) {
-                console.log(
-                  `Tile ${tileId}, corner ${cornerIndex}: ${sharedPoints} shared points`
-                );
+                if (cornerVertices && cornerVertices.length > 0) {
+                  const sharedPoints = countSharedPoints(cornerVertices, buildingCoords);
 
-                // Wybierz najlepszy match
-                if (
-                  sharedPoints > bestSharedPoints ||
-                  (sharedPoints === bestSharedPoints &&
-                    this.isBetterTile(tileId, chosenTileId))
-                ) {
-                  chosenTile = tile;
-                  chosenTileId = tileId;
-                  chosenCornerIndex = cornerIndex;
-                  bestSharedPoints = sharedPoints;
-                  foundMatch = true;
+                  if (sharedPoints > 0) {
+                    console.log(`Tile ${tileId}, corner ${cornerIndex}: ${sharedPoints} shared points`);
 
-                  console.log(
-                    `🎯 NEW BEST: tile ${tileId}, corner ${cornerIndex}, shared: ${sharedPoints}`
-                  );
+                    if (sharedPoints > bestSharedPoints) {
+                      console.log(`🎯 NEW BEST: tile ${tileId}, corner ${cornerIndex}, shared: ${sharedPoints}`);
+                      fallbackCorner = corner;
+                      fallbackTile = tile;
+                      fallbackTileId = tileId;
+                      fallbackCornerIndex = cornerIndex;
+                      bestSharedPoints = sharedPoints;
+                    }
+                  }
                 }
               }
             });
           });
         }
 
-        // 3. ZASTOSUJ WYBRANE ROZWIĄZANIE
-        if (foundMatch && chosenTile && chosenCornerIndex >= 0) {
-          console.log(`🏆 FINAL CHOICE:`);
-          console.log(`  Tile: ${chosenTileId}`);
-          console.log(`  Corner: ${chosenCornerIndex}`);
-          console.log(`  Building type: ${vertexData.building.type}`);
+        // Wybierz odpowiedni corner (exact match ma priorytet)
+        finalCorner = foundExactMatch ? exactMatchCorner : fallbackCorner;
+        finalTile = foundExactMatch ? exactMatchTile : fallbackTile;
+        finalTileId = foundExactMatch ? exactMatchTileId : fallbackTileId;
+        finalCornerIndex = foundExactMatch ? exactMatchCornerIndex : fallbackCornerIndex;
 
-          const player = new Player(
-            vertexData.building.player_id,
-            vertexData.building.player_color || ""
-          );
-
-          // Określ kierunek narożnika
-          const cornerDir =
-            chosenCornerIndex === 0 ? TileCornerDir.N : TileCornerDir.S;
-
-          // Umieść budynek na planszy
-          if (vertexData.building.type === "SETTLEMENT") {
-            this.placeSettlement(chosenTileId, cornerDir, player, true);
-          } else if (vertexData.building.type === "CITY") {
-            this.placeCity(chosenTileId, cornerDir, player, true);
-          }
+        if (foundExactMatch) {
+          method = "EXACT_MATCH";
         } else {
-          console.error(
-            "❌ Could not find matching corner for server vertex data:",
-            vertexData
-          );
+          method = "COORDINATE_FALLBACK";
+        }
+      }
+
+      if (finalCorner && finalTile) {
+        console.log("🏆 FINAL CHOICE:");
+        console.log(`  Method: ${method}`);
+        console.log(`  Tile: ${finalTileId}`);
+        console.log(`  Corner: ${finalCornerIndex}`);
+        console.log(`  Building type: ${vertexData.building.type}`);
+        console.log("===========================================");
+
+        const player = new Player(
+          vertexData.building.player_id,
+          vertexData.building.player_color || ""
+        );
+
+        // Określ kierunek narożnika (N lub S)
+        let cornerDir: TileCornerDir;
+        if (finalCornerIndex === 0) {
+          cornerDir = TileCornerDir.N;
+        } else {
+          cornerDir = TileCornerDir.S;
         }
 
+        // Umieść budynek na planszy
+        if (vertexData.building.type === "SETTLEMENT") {
+          console.log("Placing settlement at found corner using dir:", cornerDir);
+          this.placeSettlement(finalTileId, cornerDir, player, true);
+        } else if (vertexData.building.type === "CITY") {
+          console.log("Placing city at found corner using dir:", cornerDir);
+          this.placeCity(finalTileId, cornerDir, player, true);
+        }
+      } else {
+        console.error("Could not find any matching corner for server vertex data:", vertexData);
+      }
+    }
+  });
+}
+
+private updateEdgesFromData(data: BoardData): void {
+  console.log("Server edge data received:", data.edges);
+
+  // Pomocnicza funkcja do sprawdzania współdzielonych punktów
+  const countSharedPoints = (
+    vertices1: string[],
+    vertices2: string[]
+  ): number => {
+    let sharedCount = 0;
+    for (const v1 of vertices1) {
+      for (const v2 of vertices2) {
+        const coords1 = v1.split(",").map(Number);
+        const coords2 = v2.split(",").map(Number);
+        if (
+          coords1[0] === coords2[0] &&
+          coords1[1] === coords2[1] &&
+          coords1[2] === coords2[2]
+        ) {
+          sharedCount++;
+          break;
+        }
+      }
+    }
+    return sharedCount;
+  };
+
+  Object.entries(data.edges).forEach(([key, edgeData]) => {
+    if (edgeData?.road) {
+      console.log("=== PROCESSING EDGE WITH ROAD ===");
+      console.log("Road player ID:", edgeData.road.player_id);
+
+      // NOWY KOD: Sprawdź czy mamy tile_id i edge_index z serwera
+      const serverTileId = edgeData.road.tile_id;
+      const serverEdgeIndex = edgeData.road.edge_index;
+
+      console.log("Server provided tile_id:", serverTileId);
+      console.log("Server provided edge_index:", serverEdgeIndex);
+
+      let finalEdge: Edge | null = null;
+      let finalTile: BaseTile | null = null;
+      let finalTileId = "";
+      let finalEdgeIndex = -1;
+      let method = "UNKNOWN";
+
+      // Jeśli serwer podał dokładne dane, użyj ich
+      if (serverTileId && serverEdgeIndex !== null && serverEdgeIndex !== undefined) {
+        if (this.tiles[serverTileId]) {
+          const tile = this.tiles[serverTileId];
+          const edges = tile.getEdges();
+          
+          if (edges[serverEdgeIndex]) {
+            finalEdge = edges[serverEdgeIndex];
+            finalTile = tile;
+            finalTileId = serverTileId;
+            finalEdgeIndex = serverEdgeIndex;
+            method = "SERVER_PROVIDED";
+            
+            console.log("✅ USING SERVER DATA FOR ROAD: Success!");
+          } else {
+            console.warn("❌ SERVER DATA: Invalid edge index", serverEdgeIndex);
+          }
+        } else {
+          console.warn("❌ SERVER DATA: Invalid tile ID", serverTileId);
+        }
+      }
+
+      // Fallback do starego algorytmu jeśli serwer nie podał danych
+      if (!finalEdge) {
+        console.log("🔄 FALLBACK: Using coordinate matching for road");
+        method = "FALLBACK";
+
+        // Przekształć współrzędne z tablicy liczb na tablicę stringów
+        const roadCoords = edgeData.coordinates.map((c: number[]) =>
+          c.join(",")
+        );
+
+        console.log("Road coordinates as strings:", roadCoords);
+
+        // Sprawdź najpierw czy mamy zapisany ostatnio kliknięty kafelek dla drogi
+        const lastClickedTile = (window as any).lastClickedTile;
+        let foundExactMatch = false;
+        let exactMatchEdge: Edge | null = null;
+        let exactMatchTile: BaseTile | null = null;
+        let exactMatchTileId = "";
+        let exactMatchEdgeIndex = -1;
+
+        console.log("🎯 PRIORITY: Trying to use clicked tile for road", lastClickedTile);
+
+        // Najpierw sprawdź dokładnie ten kafelek, na który kliknął użytkownik
+        if (lastClickedTile && this.tiles[lastClickedTile]) {
+          const tile = this.tiles[lastClickedTile];
+          const edges = tile.getEdges();
+
+          // Sprawdź czy ten kafelek jest w liście współrzędnych z serwera
+          const tileIsInServerCoords = roadCoords.includes(lastClickedTile);
+          console.log(`Clicked tile ${lastClickedTile} is in server coords:`, tileIsInServerCoords);
+
+          if (tileIsInServerCoords) {
+            edges.forEach((edge, edgeIndex) => {
+              if (edge && typeof (edge as any).getVertices === "function" && !foundExactMatch) {
+                const edgeWithVertices = edge as unknown as {
+                  getVertices: () => string[];
+                };
+                const edgeVertices = edgeWithVertices.getVertices();
+
+                if (edgeVertices && edgeVertices.length > 0) {
+                  const sharedPoints = countSharedPoints(edgeVertices, roadCoords);
+
+                  if (sharedPoints > 0) {
+                    console.log(`✅ EXACT MATCH FOR ROAD: tile ${lastClickedTile}, edge ${edgeIndex}, shared: ${sharedPoints}`);
+                    foundExactMatch = true;
+                    exactMatchEdge = edge;
+                    exactMatchTile = tile;
+                    exactMatchTileId = lastClickedTile;
+                    exactMatchEdgeIndex = edgeIndex;
+                    return;
+                  }
+                }
+              }
+            });
+          }
+        }
+
+        // Jeśli nie znaleźliśmy dokładnego dopasowania, użyj standardowego algorytmu
+        let fallbackEdge: Edge | null = null;
+        let fallbackTile: BaseTile | null = null;
+        let fallbackTileId = "";
+        let fallbackEdgeIndex = -1;
+        let bestSharedPoints = 0;
+
+        if (!foundExactMatch) {
+          console.log("🔄 FALLBACK: Searching for best alternative match for road");
+
+          Object.entries(this.tiles).forEach(([tileId, tile]) => {
+            const edges = tile.getEdges();
+
+            edges.forEach((edge, edgeIndex) => {
+              if (edge && typeof (edge as any).getVertices === "function") {
+                const edgeWithVertices = edge as unknown as {
+                  getVertices: () => string[];
+                };
+                const edgeVertices = edgeWithVertices.getVertices();
+
+                if (edgeVertices && edgeVertices.length > 0) {
+                  const sharedPoints = countSharedPoints(edgeVertices, roadCoords);
+
+                  if (sharedPoints > 0) {
+                    console.log(`Edge at tile ${tileId}, index ${edgeIndex} shares ${sharedPoints} points:`, {
+                      edgeVertices,
+                      roadCoords,
+                    });
+
+                    if (sharedPoints > bestSharedPoints) {
+                      console.log(`🎯 NEW BEST ROAD: tile ${tileId}, edge ${edgeIndex}, shared: ${sharedPoints}`);
+                      fallbackEdge = edge;
+                      fallbackTile = tile;
+                      fallbackTileId = tileId;
+                      fallbackEdgeIndex = edgeIndex;
+                      bestSharedPoints = sharedPoints;
+                    }
+                  }
+                }
+              }
+            });
+          });
+        }
+
+        // Wybierz odpowiednią edge (exact match ma priorytet)
+        finalEdge = foundExactMatch ? exactMatchEdge : fallbackEdge;
+        finalTile = foundExactMatch ? exactMatchTile : fallbackTile;
+        finalTileId = foundExactMatch ? exactMatchTileId : fallbackTileId;
+        finalEdgeIndex = foundExactMatch ? exactMatchEdgeIndex : fallbackEdgeIndex;
+
+        if (foundExactMatch) {
+          method = "EXACT_MATCH";
+        } else {
+          method = "COORDINATE_FALLBACK";
+        }
+      }
+
+      if (finalEdge && finalTile) {
+        console.log("🏆 FINAL CHOICE FOR ROAD:");
+        console.log(`  Method: ${method}`);
+        console.log(`  Tile: ${finalTileId}`);
+        console.log(`  Edge: ${finalEdgeIndex}`);
         console.log("===========================================");
-      }
-    });
-  }
 
-  // ===== POMOCNICZE METODY =====
+        const player = new Player(
+          edgeData.road.player_id,
+          edgeData.road.player_color || ""
+        );
 
-  private getLastClickedTile(): string | null {
-    try {
-      return sessionStorage.getItem("lastClickedTile");
-    } catch (e) {
-      return localStorage.getItem("lastClickedTile") || null;
-    }
-  }
+        // Określ kierunek krawędzi (NE, NW lub W)
+        let edgeDir: TileEdgeDir;
+        if (finalEdgeIndex === 0) {
+          edgeDir = TileEdgeDir.NE;
+        } else if (finalEdgeIndex === 1) {
+          edgeDir = TileEdgeDir.NW;
+        } else {
+          edgeDir = TileEdgeDir.W;
+        }
 
-  private cornerMatchesServerVertex(
-    corner: Corner,
-    serverTileCoords: string[]
-  ): boolean {
-    if (typeof (corner as any).getVertices !== "function") {
-      return false;
-    }
-
-    const cornerWithVertices = corner as unknown as {
-      getVertices: () => string[];
-    };
-    const cornerVertices = cornerWithVertices.getVertices();
-
-    if (!cornerVertices || cornerVertices.length === 0) {
-      return false;
-    }
-
-    // Sprawdź czy wszystkie server tiles są reprezentowane w corner vertices
-    let matchCount = 0;
-    for (const serverTile of serverTileCoords) {
-      if (cornerVertices.includes(serverTile)) {
-        matchCount++;
+        // Umieść drogę na planszy
+        console.log("Placing road at found edge using dir:", edgeDir);
+        this.placeRoad(finalTileId, edgeDir, player, true);
+      } else {
+        console.error("Could not find any matching edge for server edge data:", edgeData);
       }
     }
-
-    // Wymagaj pełnego match (wszystkie server tiles muszą być w corner)
-    return matchCount === serverTileCoords.length;
-  }
-
+  });
+}
   private countSharedPoints(
     corner: Corner,
     serverTileCoords: string[]
@@ -369,144 +622,7 @@ export class Board {
     return isValid;
   }
 
-  private updateEdgesFromData(data: BoardData): void {
-    console.log("Server edge data received:", data.edges);
-
-    // Pomocnicza funkcja do sprawdzania współdzielonych punktów
-    const countSharedPoints = (
-      vertices1: string[],
-      vertices2: string[]
-    ): number => {
-      let sharedCount = 0;
-      for (const v1 of vertices1) {
-        for (const v2 of vertices2) {
-          const coords1 = v1.split(",").map(Number);
-          const coords2 = v2.split(",").map(Number);
-          if (
-            coords1[0] === coords2[0] &&
-            coords1[1] === coords2[1] &&
-            coords1[2] === coords2[2]
-          ) {
-            sharedCount++;
-            break;
-          }
-        }
-      }
-      return sharedCount;
-    };
-
-    Object.entries(data.edges).forEach(([key, edgeData]) => {
-      if (edgeData?.road) {
-        console.log("Processing edge with road:", edgeData);
-
-        // Przekształć współrzędne z tablicy liczb na tablicę stringów
-        const roadCoords = edgeData.coordinates.map((c: number[]) =>
-          c.join(",")
-        );
-        console.log("Road coordinates as strings:", roadCoords);
-
-        // Znajdź odpowiednią krawędź na planszy klienta
-        let foundBestMatch = false;
-        let bestEdge: Edge | null = null;
-        let bestTile: BaseTile | null = null;
-        let bestTileId = "";
-        let bestEdgeIndex = -1;
-        let bestSharedPoints = 0;
-
-        // Przeszukaj wszystkie krawędzie, szukając najlepszego dopasowania
-        Object.entries(this.tiles).forEach(([tileId, tile]) => {
-          const edges = tile.getEdges();
-
-          edges.forEach((edge, edgeIndex) => {
-            // Bezpieczne sprawdzenie czy edge jest właściwego typu
-            if (edge && typeof (edge as any).getVertices === "function") {
-              // Jawne rzutowanie na typ z getVertices
-              const edgeWithVertices = edge as unknown as {
-                getVertices: () => string[];
-              };
-              const edgeVertices = edgeWithVertices.getVertices();
-
-              // Jeśli krawędź ma wierzchołki
-              if (edgeVertices && edgeVertices.length > 0) {
-                // Sprawdź ile punktów jest współdzielonych
-                const sharedPoints = countSharedPoints(
-                  edgeVertices,
-                  roadCoords
-                );
-
-                // Wyloguj dla celów debugowania
-                if (sharedPoints > 0) {
-                  console.log(
-                    `Edge at tile ${tileId}, index ${edgeIndex} shares ${sharedPoints} points:`,
-                    {
-                      edgeVertices,
-                      roadCoords,
-                    }
-                  );
-                }
-
-                // Jeśli mamy lepsze dopasowanie niż dotychczas
-                if (
-                  sharedPoints > 0 &&
-                  (!foundBestMatch || sharedPoints > bestSharedPoints)
-                ) {
-                  foundBestMatch = true;
-                  bestEdge = edge;
-                  bestTile = tile;
-                  bestTileId = tileId;
-                  bestEdgeIndex = edgeIndex;
-                  bestSharedPoints = sharedPoints;
-                }
-              }
-            }
-          });
-        });
-
-        // Jeśli znaleźliśmy dopasowanie
-        if (foundBestMatch && bestEdge && bestTile) {
-          // Bezpieczne wyświetlenie informacji o wierzchołkach
-          let edgeVertices: string[] = [];
-          if (typeof (bestEdge as any).getVertices === "function") {
-            const edgeWithVertices = bestEdge as unknown as {
-              getVertices: () => string[];
-            };
-            edgeVertices = edgeWithVertices.getVertices();
-          }
-
-          console.log("Found best matching edge:", {
-            tileId: bestTileId,
-            edgeIndex: bestEdgeIndex,
-            sharedPoints: bestSharedPoints,
-            edgeVertices: edgeVertices,
-          });
-
-          const player = new Player(
-            edgeData.road.player_id,
-            edgeData.road.player_color || ""
-          );
-
-          // Określ kierunek krawędzi (NE, NW lub W)
-          let edgeDir: TileEdgeDir;
-          if (bestEdgeIndex === 0) {
-            edgeDir = TileEdgeDir.NE;
-          } else if (bestEdgeIndex === 1) {
-            edgeDir = TileEdgeDir.NW;
-          } else {
-            edgeDir = TileEdgeDir.W;
-          }
-
-          // Umieść drogę na planszy
-          console.log("Placing road at found edge using dir:", edgeDir);
-          this.placeRoad(bestTileId, edgeDir, player, true);
-        } else {
-          console.error(
-            "Could not find a matching edge for server edge data:",
-            edgeData
-          );
-        }
-      }
-    });
-  }
+  
 
   /**
    *

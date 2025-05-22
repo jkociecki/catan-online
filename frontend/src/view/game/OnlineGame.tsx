@@ -1,4 +1,3 @@
-// frontend/src/view/game/OnlineGame.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import GameService from "../../engine/board/GameService";
@@ -12,6 +11,7 @@ import GameActions from "./GameActions";
 import { Corner } from "../../engine/corner";
 import { Edge } from "../../engine/edge";
 import { BaseTile } from "../../engine/tile";
+
 const BOARD_SIZE = 2; // Na początku OnlineGame
 
 const GameContainer = styled.div`
@@ -142,7 +142,7 @@ export default function OnlineGame() {
 
   const myColor = players.find((p) => p.id === myPlayerId)?.color || "red";
 
-  // DODAJ TO NA POCZĄTKU OnlineGame():
+  // Debug board information
   useEffect(() => {
     if (board) {
       console.log("=== FRONTEND BOARD DEBUG ===");
@@ -444,6 +444,7 @@ export default function OnlineGame() {
     };
   }, [isConnected, board, gameDirector, myPlayerId, showSuccessIndicator]);
 
+  // Player helper functions
   const getMyResources = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
     return myPlayer ? myPlayer.resources : {};
@@ -499,120 +500,81 @@ export default function OnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
-  // ========== NOWE FUNKCJE OBSŁUGI Z INDEKSAMI ==========
-
-  // frontend/src/view/game/OnlineGame.tsx - DODAJ DEBUG w handleCornerClick
+  // ========== HANDLERS WITH NEW TILE+INDEX SYSTEM ==========
 
   const handleCornerClick = (corner: Corner, tile: BaseTile) => {
-    try {
-      sessionStorage.setItem("lastClickedTile", tile.tileId);
-      console.log(`📝 SAVED clicked tile: ${tile.tileId}`);
-    } catch (e) {
-      try {
-        localStorage.setItem("lastClickedTile", tile.tileId);
-      } catch (e2) {
-        // Ignore if storage unavailable
-      }
-    }
     if (!isMyTurn() || !buildMode || !board) return;
 
-    // ========== COMPREHENSIVE DEBUG ==========
-    console.log("=== COMPREHENSIVE CORNER CLICK DEBUG ===");
-
-    // 1. Co kliknęłaś
-    const cornerIndex = tile.getCorners().indexOf(corner);
-    console.log("CLICKED:");
-    console.log(`  Tile: ${tile.tileId}`);
-    console.log(`  Corner index: ${cornerIndex}`);
-
-    // 2. Gdzie ten narożnik POWINIEN być w przestrzeni (według frontendu)
-    const tileCoords = tile.tileId.split(",").map(Number);
-    const [q, r, s] = tileCoords;
-
-    // Pozycje narożników względem centrum kafelka (zgodnie z frontendem)
-    const frontendCornerOffsets = [
-      [0, -1, 1], // 0: North
-      [1, -1, 0], // 1: North-East
-      [1, 0, -1], // 2: South-East
-      [0, 1, -1], // 3: South
-      [-1, 1, 0], // 4: South-West
-      [-1, 0, 1], // 5: North-West
-    ];
-
-    if (cornerIndex >= 0 && cornerIndex < frontendCornerOffsets.length) {
-      const [dq, dr, ds] = frontendCornerOffsets[cornerIndex];
-      const expectedVertexPos = [q + dq, r + dr, s + ds];
-      console.log(
-        `FRONTEND EXPECTS vertex at position: [${expectedVertexPos.join(",")}]`
-      );
-
-      // 3. Które kafelki POWINNY mieć ten wierzchołek (według teorii)
-      const expectedTiles = [];
-
-      // Sprawdź wszystkie kafelki w pobliżu
-      for (let checkQ = q - 2; checkQ <= q + 2; checkQ++) {
-        for (let checkR = r - 2; checkR <= r + 2; checkR++) {
-          const checkS = -checkQ - checkR;
-          if (Math.abs(checkS) <= 2) {
-            // Tylko kafelki w rozumnym zasięgu
-            const checkTileId = `${checkQ},${checkR},${checkS}`;
-
-            // Sprawdź czy ten kafelek istnieje w frontendzie
-            if (board.getTiles()[checkTileId]) {
-              // Sprawdź wszystkie 6 narożników tego kafelka
-              for (
-                let checkCornerIdx = 0;
-                checkCornerIdx < 6;
-                checkCornerIdx++
-              ) {
-                const [checkDq, checkDr, checkDs] =
-                  frontendCornerOffsets[checkCornerIdx];
-                const checkVertexPos = [
-                  checkQ + checkDq,
-                  checkR + checkDr,
-                  checkS + checkDs,
-                ];
-
-                // Czy ten narożnik ma taką samą pozycję jak kliknięty?
-                if (
-                  JSON.stringify(checkVertexPos) ===
-                  JSON.stringify(expectedVertexPos)
-                ) {
-                  expectedTiles.push({
-                    tileId: checkTileId,
-                    cornerIndex: checkCornerIdx,
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-
-      console.log("FRONTEND THEORY: This vertex should belong to tiles:");
-      expectedTiles.forEach(({ tileId, cornerIndex }) => {
-        console.log(`  ${tileId}, corner ${cornerIndex}`);
-      });
+    // Clean up old lastClickedTile if more than 10 seconds have passed
+    const lastClickTime = (window as any).lastClickedTileTime || 0;
+    if (Date.now() - lastClickTime > 10000) {
+      delete (window as any).lastClickedTile;
+      delete (window as any).lastClickedTileTime;
+      console.log("🧹 Cleared old lastClickedTile due to timeout");
     }
 
-    // 4. Co frontend faktycznie ma w corner.getVertices()
+    // SAVE clicked tile ID for use by updateVerticesFromData
+    (window as any).lastClickedTile = tile.tileId;
+    (window as any).lastClickedTileTime = Date.now();
+    console.log("📝 SAVED clicked tile:", tile.tileId);
+    console.log(
+      "📝 Verification - window.lastClickedTile:",
+      (window as any).lastClickedTile
+    );
+
+    // Add detailed logs with tile and corner information
+    console.log("=== COMPREHENSIVE CORNER CLICK DEBUG ===");
+    console.log("CLICKED:");
+    console.log(`  Tile: ${tile.tileId}`);
+    console.log(`  Corner index: ${tile.getCorners().indexOf(corner)}`);
+
+    // Calculate theoretical vertex position
+    const tileCoords = tile.tileId.split(",").map(Number);
+    const cornerIndex = tile.getCorners().indexOf(corner);
+    const [q, r, s] = tileCoords;
+
+    let expectedVertex: number[] = [];
+    if (cornerIndex === 0) {
+      // North corner - theoretical coordinates
+      expectedVertex = [q, r - 1, s + 1];
+    } else {
+      // South corner - theoretical coordinates
+      expectedVertex = [q, r + 1, s - 1];
+    }
+
+    console.log(
+      `FRONTEND EXPECTS vertex at position: [${expectedVertex.join(",")}]`
+    );
+    console.log("FRONTEND THEORY: This vertex should belong to tiles:");
+
+    if (cornerIndex === 0) {
+      console.log(`  ${q},${r - 1},${s + 1}, corner 1`);
+      console.log(`  ${q},${r},${s}, corner 0`);
+    } else {
+      console.log(`  ${q},${r},${s}, corner 1`);
+      console.log(`  ${q},${r + 1},${s - 1}, corner 0`);
+    }
+
+    // Check actual corner vertices
     if (typeof corner.getVertices === "function") {
-      const actualVertices = corner.getVertices();
-      console.log("FRONTEND ACTUAL corner vertices:", actualVertices);
+      const cornerVertices = corner.getVertices();
+      console.log("FRONTEND ACTUAL corner vertices:", cornerVertices);
     }
 
     console.log("===========================================");
 
-    // Reszta kodu pozostaje bez zmian...
     if (buildMode === "settlement" || buildMode === "city") {
       try {
+        // Check building conditions
         let canBuild = true;
 
+        // For settlement: check if corner is empty
         if (buildMode === "settlement" && corner.getOwner()) {
           setError("Ten róg jest już zajęty!");
           canBuild = false;
         }
 
+        // For city: check if there's already our settlement
         if (buildMode === "city") {
           const owner = corner.getOwner();
           if (!owner) {
@@ -628,22 +590,29 @@ export default function OnlineGame() {
           return;
         }
 
-        console.log("Sending settlement/city with new format:", {
-          tileId: tile.tileId,
-          cornerIndex: cornerIndex,
-        });
-
-        GameService.sendMessage({
+        // New format - send tileId and cornerIndex
+        const buildData = {
           type: "game_action",
           action: `build_${buildMode}`,
           tileId: tile.tileId,
           cornerIndex: cornerIndex,
-        });
+        };
 
+        console.log("📤 SENDING to backend:", buildData);
+        console.log(
+          "📤 lastClickedTile before send:",
+          (window as any).lastClickedTile
+        );
+
+        // Send to server
+        GameService.sendMessage(buildData);
+
+        // Show waiting message
         showSuccessIndicator(
           `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
         );
 
+        // If in setup phase, change build mode to road after placing settlement
         if (gamePhase === "setup" && buildMode === "settlement") {
           setTimeout(() => {
             setBuildMode("road");
@@ -664,7 +633,7 @@ export default function OnlineGame() {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
 
     try {
-      // Sprawdź czy krawędź jest już zajęta
+      // Check if edge is already occupied
       if (edge.getOwner()) {
         setError("Ta krawędź jest już zajęta!");
         return;
@@ -675,9 +644,9 @@ export default function OnlineGame() {
         hasOwner: edge.getOwner() !== null,
       });
 
-      // ========== NOWY SYSTEM: tileId + edgeIndex ==========
+      // ========== NEW SYSTEM: tileId + edgeIndex ==========
 
-      // Pobierz indeks krawędzi w kafelku
+      // Get edge index in tile
       const edgeIndex = tile.getEdges().indexOf(edge);
 
       if (edgeIndex === -1) {
@@ -690,7 +659,7 @@ export default function OnlineGame() {
         edgeIndex: edgeIndex,
       });
 
-      // Wyślij dane w nowym formacie
+      // Send data in new format
       GameService.sendMessage({
         type: "game_action",
         action: "build_road",
@@ -698,10 +667,10 @@ export default function OnlineGame() {
         edgeIndex: edgeIndex,
       });
 
-      // Pokaż komunikat o oczekiwaniu na odpowiedź serwera
+      // Show waiting message
       showSuccessIndicator("Budowanie drogi...");
 
-      // W fazie setup po postawieniu drogi automatycznie zakończ turę
+      // In setup phase, automatically end turn after placing road
       if (gamePhase === "setup") {
         setTimeout(() => {
           GameService.endTurn();
@@ -723,6 +692,16 @@ export default function OnlineGame() {
     navigate("/");
   };
 
+  const handleTestEndTurn = () => {
+    if (isMyTurn()) {
+      console.log("Testing end turn function");
+      GameService.endTurn();
+      setBuildMode(null);
+    } else {
+      console.warn("You cannot end another player's turn!");
+    }
+  };
+
   if (loading) {
     return <LoadingMessage>Wczytywanie gry...</LoadingMessage>;
   }
@@ -734,16 +713,6 @@ export default function OnlineGame() {
       </ErrorMessage>
     );
   }
-
-  const handleTestEndTurn = () => {
-    if (isMyTurn()) {
-      console.log("Testowanie funkcji końca tury");
-      GameService.endTurn();
-      setBuildMode(null);
-    } else {
-      console.warn("Nie możesz zakończyć tury innego gracza!");
-    }
-  };
 
   return (
     <GameContainer>

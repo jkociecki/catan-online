@@ -6,6 +6,8 @@ from typing import List, Dict, Tuple, Union
 from game_engine.game.turn_manager import TurnManager
 from game_engine.board.game_board import GameBoard
 from game_engine.game.game_phase import GamePhase
+# DODAJ:
+from game_engine.board.vertex import BoardGeometry
 
 
 class GameState:
@@ -247,7 +249,7 @@ class GameState:
     # ========== KONWERSJE Z FRONTENDU ==========
 
 # backend/game_engine/game/game_state.py - DODAJ DEBUG do place_settlement_by_tile_coords
-
+    # tu
     def place_settlement_by_tile_coords(self, player: Player, tile_coords: Tuple[int, int, int], 
                                     corner_index: int, is_setup: bool = False) -> bool:
         """
@@ -348,9 +350,25 @@ class GameState:
         
         # Postaw osadę
         result = self.place_settlement_by_id(player, vertex_id, is_setup)
+
+        if result and vertex_id < len(self.game_board.vertices):
+            vertex = self.game_board.vertices[vertex_id]
+            if vertex.building:
+                # Zapisz informacje dla frontendu
+                if not hasattr(vertex.building, 'frontend_info'):
+                    vertex.building.frontend_info = {}
+                
+                vertex.building.frontend_info = {
+                    'tile_id': f"{tile_coords[0]},{tile_coords[1]},{tile_coords[2]}",
+                    'corner_index': corner_index,
+                    'vertex_id': vertex_id
+                }
+                print(f"✅ SAVED frontend_info for settlement: {vertex.building.frontend_info}")
+        
         print(f"Settlement placement result: {result}")
         print("=== END BACKEND DEBUG ===")
         return result
+   
 
     def place_road_by_tile_coords(self, player: Player, tile_coords: Tuple[int, int, int], 
                                   edge_index: int, is_setup: bool = False) -> bool:
@@ -381,9 +399,25 @@ class GameState:
         
         # Postaw drogę
         result = self.place_road_by_id(player, edge_id, is_setup)
+
+        if result and edge_id < len(self.game_board.edges):
+            edge = self.game_board.edges[edge_id]
+            if edge.road:
+                # Zapisz informacje dla frontendu
+                if not hasattr(edge.road, 'frontend_info'):
+                    edge.road.frontend_info = {}
+                
+                edge.road.frontend_info = {
+                    'tile_id': f"{tile_coords[0]},{tile_coords[1]},{tile_coords[2]}",
+                    'edge_index': edge_index,
+                    'edge_id': edge_id
+                }
+                print(f"✅ SAVED frontend_info for road: {edge.road.frontend_info}")
+    
         print(f"Road placement result: {result}")
         print("==================")
         return result
+        
 
     def _assign_initial_resources_for_vertex(self, player: Player, vertex_id: int):
         """Przyznaj początkowe zasoby za drugą osadę"""
