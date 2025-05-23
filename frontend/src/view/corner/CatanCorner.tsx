@@ -1,10 +1,106 @@
-// Poprawiony komponent CatanCorner.tsx
+// frontend/src/view/corner/CatanCorner.tsx
+// Dodaj tę funkcję NA POCZĄTKU pliku, PRZED komponentem Corner
 
 import { Corner as CornerData } from "../../engine/corner";
 import styled from "styled-components";
 import { BaseTile } from "../../engine/tile";
 import { useState, useEffect, useRef } from "react";
 
+// ========== FUNKCJA DEBUGOWANIA - DODAJ TUTAJ ==========
+function debugCornerGeometry(tile: BaseTile, cornerIndex: number) {
+  const tileCoords = tile.tileId.split(",").map(Number);
+  const [q, r, s] = tileCoords;
+
+  console.log(`\n=== CORNER GEOMETRY DEBUG ===`);
+  console.log(`Tile: ${tile.tileId} (${q}, ${r}, ${s})`);
+  console.log(`Corner Index: ${cornerIndex}`);
+
+  // Definicja narożników według frontendu
+  const cornerNames = ["N", "NE", "SE", "S", "SW", "NW"];
+  console.log(`Corner Name: ${cornerNames[cornerIndex]}`);
+
+  // Oblicz teoretyczną pozycję wierzchołka
+  const cornerOffsets = [
+    [0, -1, 1], // 0: North - GÓRA
+    [1, -1, 0], // 1: North-East
+    [1, 0, -1], // 2: South-East
+    [0, 1, -1], // 3: South - DÓŁ
+    [-1, 1, 0], // 4: South-West
+    [-1, 0, 1], // 5: North-West
+  ];
+
+  if (cornerIndex < cornerOffsets.length) {
+    const [dq, dr, ds] = cornerOffsets[cornerIndex];
+    const vertexPos = [q + dq, r + dr, s + ds];
+
+    console.log(`Theoretical vertex position: [${vertexPos.join(", ")}]`);
+
+    // Sprawdź które kafelki powinny dzielić ten wierzchołek
+    console.log(`\nTiles that should share this vertex:`);
+
+    // Dla każdego możliwego sąsiedniego kafelka
+    const neighborOffsets = [
+      [0, 0, 0], // Sam kafelek
+      [1, -1, 0], // NE
+      [1, 0, -1], // E
+      [0, 1, -1], // SE
+      [-1, 1, 0], // SW
+      [-1, 0, 1], // W
+      [0, -1, 1], // NW
+    ];
+
+    let sharedTiles = [];
+
+    for (const [nq, nr, ns] of neighborOffsets) {
+      const neighborCoords = [q + nq, r + nr, s + ns];
+      const neighborId = neighborCoords.join(",");
+
+      // Sprawdź każdy narożnik sąsiada
+      for (let checkCorner = 0; checkCorner < 6; checkCorner++) {
+        const [cdq, cdr, cds] = cornerOffsets[checkCorner];
+        const checkVertexPos = [
+          neighborCoords[0] + cdq,
+          neighborCoords[1] + cdr,
+          neighborCoords[2] + cds,
+        ];
+
+        // Jeśli pozycja wierzchołka się zgadza
+        if (
+          checkVertexPos[0] === vertexPos[0] &&
+          checkVertexPos[1] === vertexPos[1] &&
+          checkVertexPos[2] === vertexPos[2]
+        ) {
+          sharedTiles.push({
+            tileId: neighborId,
+            cornerIndex: checkCorner,
+            cornerName: cornerNames[checkCorner],
+          });
+        }
+      }
+    }
+
+    console.log(`Found ${sharedTiles.length} tiles sharing this vertex:`);
+    sharedTiles.forEach((st) => {
+      console.log(
+        `  - Tile ${st.tileId}, corner ${st.cornerIndex} (${st.cornerName})`
+      );
+    });
+
+    // Specjalna analiza dla narożników brzegowych
+    if (sharedTiles.length === 1) {
+      console.log(`\n⚠️ This is an EDGE vertex - only belongs to one tile!`);
+      console.log(`This should be a "peak" or isolated corner.`);
+    } else if (sharedTiles.length === 2) {
+      console.log(`\n✓ This is a BORDER vertex - shared by 2 tiles`);
+    } else if (sharedTiles.length === 3) {
+      console.log(`\n✓ This is an INTERNAL vertex - shared by 3 tiles`);
+    }
+  }
+
+  console.log(`=========================\n`);
+}
+
+// Reszta kodu pozostaje bez zmian...
 interface Props {
   onClick?: (corner: CornerData, tile: BaseTile) => void;
   corner: CornerData;
@@ -252,17 +348,21 @@ export function Corner({
 
     clickedRef.current = true;
 
+    // NAJPIERW oblicz cornerIndex
+    const cornerIndex = tile.getCorners().indexOf(corner);
+
     console.log(
       `Clicked corner at coords x:${coords.x.toFixed(2)}, y:${coords.y.toFixed(
         2
       )}`
     );
     console.log(
-      `On tile: ${tile.tileId}, corner index in tile: ${tile
-        .getCorners()
-        .indexOf(corner)}`
+      `On tile: ${tile.tileId}, corner index in tile: ${cornerIndex}`
     );
     console.log("Clicked corner object:", corner);
+
+    // TERAZ możesz wywołać debugowanie
+    debugCornerGeometry(tile, cornerIndex);
 
     if (onClick) {
       onClick(corner, tile);

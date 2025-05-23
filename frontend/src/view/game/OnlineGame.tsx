@@ -505,125 +505,24 @@ export default function OnlineGame() {
   const handleCornerClick = (corner: Corner, tile: BaseTile) => {
     if (!isMyTurn() || !buildMode || !board) return;
 
-    // Clean up old lastClickedTile if more than 10 seconds have passed
-    const lastClickTime = (window as any).lastClickedTileTime || 0;
-    if (Date.now() - lastClickTime > 10000) {
-      delete (window as any).lastClickedTile;
-      delete (window as any).lastClickedTileTime;
-      console.log("🧹 Cleared old lastClickedTile due to timeout");
-    }
-
-    // SAVE clicked tile ID for use by updateVerticesFromData
-    (window as any).lastClickedTile = tile.tileId;
-    (window as any).lastClickedTileTime = Date.now();
-    console.log("📝 SAVED clicked tile:", tile.tileId);
-    console.log(
-      "📝 Verification - window.lastClickedTile:",
-      (window as any).lastClickedTile
-    );
-
-    // Add detailed logs with tile and corner information
-    console.log("=== COMPREHENSIVE CORNER CLICK DEBUG ===");
-    console.log("CLICKED:");
-    console.log(`  Tile: ${tile.tileId}`);
-    console.log(`  Corner index: ${tile.getCorners().indexOf(corner)}`);
-
-    // Calculate theoretical vertex position
-    const tileCoords = tile.tileId.split(",").map(Number);
-    const cornerIndex = tile.getCorners().indexOf(corner);
-    const [q, r, s] = tileCoords;
-
-    let expectedVertex: number[] = [];
-    if (cornerIndex === 0) {
-      // North corner - theoretical coordinates
-      expectedVertex = [q, r - 1, s + 1];
-    } else {
-      // South corner - theoretical coordinates
-      expectedVertex = [q, r + 1, s - 1];
-    }
-
-    console.log(
-      `FRONTEND EXPECTS vertex at position: [${expectedVertex.join(",")}]`
-    );
-    console.log("FRONTEND THEORY: This vertex should belong to tiles:");
-
-    if (cornerIndex === 0) {
-      console.log(`  ${q},${r - 1},${s + 1}, corner 1`);
-      console.log(`  ${q},${r},${s}, corner 0`);
-    } else {
-      console.log(`  ${q},${r},${s}, corner 1`);
-      console.log(`  ${q},${r + 1},${s - 1}, corner 0`);
-    }
-
-    // Check actual corner vertices
-    if (typeof corner.getVertices === "function") {
-      const cornerVertices = corner.getVertices();
-      console.log("FRONTEND ACTUAL corner vertices:", cornerVertices);
-    }
-
-    console.log("===========================================");
-
     if (buildMode === "settlement" || buildMode === "city") {
-      try {
-        // Check building conditions
-        let canBuild = true;
+      const cornerIndex = tile.getCorners().indexOf(corner);
+      const vertex_id = board.getVertexIdForTileCorner(
+        tile.tileId,
+        cornerIndex
+      );
 
-        // For settlement: check if corner is empty
-        if (buildMode === "settlement" && corner.getOwner()) {
-          setError("Ten róg jest już zajęty!");
-          canBuild = false;
-        }
+      if (vertex_id !== null) {
+        console.log(`Sending build action with vertex_id: ${vertex_id}`);
 
-        // For city: check if there's already our settlement
-        if (buildMode === "city") {
-          const owner = corner.getOwner();
-          if (!owner) {
-            setError("Możesz ulepszać tylko własne osady!");
-            canBuild = false;
-          } else if (corner.hasCity()) {
-            setError("Ta osada jest już ulepszona do miasta!");
-            canBuild = false;
-          }
-        }
-
-        if (!canBuild) {
-          return;
-        }
-
-        // New format - send tileId and cornerIndex
-        const buildData = {
+        GameService.sendMessage({
           type: "game_action",
           action: `build_${buildMode}`,
-          tileId: tile.tileId,
-          cornerIndex: cornerIndex,
-        };
+          vertex_id: vertex_id,
+        });
 
-        console.log("📤 SENDING to backend:", buildData);
-        console.log(
-          "📤 lastClickedTile before send:",
-          (window as any).lastClickedTile
-        );
-
-        // Send to server
-        GameService.sendMessage(buildData);
-
-        // Show waiting message
         showSuccessIndicator(
           `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
-        );
-
-        // If in setup phase, change build mode to road after placing settlement
-        if (gamePhase === "setup" && buildMode === "settlement") {
-          setTimeout(() => {
-            setBuildMode("road");
-          }, 500);
-        }
-      } catch (err) {
-        console.error("Error processing corner click:", err);
-        setError(
-          `Error processing click: ${
-            err instanceof Error ? err.message : String(err)
-          }`
         );
       }
     }
@@ -632,58 +531,19 @@ export default function OnlineGame() {
   const handleEdgeClick = (edge: Edge, tile: BaseTile) => {
     if (!isMyTurn() || buildMode !== "road" || !board) return;
 
-    try {
-      // Check if edge is already occupied
-      if (edge.getOwner()) {
-        setError("Ta krawędź jest już zajęta!");
-        return;
-      }
+    const edgeIndex = tile.getEdges().indexOf(edge);
+    const edge_id = board.getEdgeIdForTileEdge(tile.tileId, edgeIndex);
 
-      console.log("Edge clicked:", {
-        tileId: tile.tileId,
-        hasOwner: edge.getOwner() !== null,
-      });
+    if (edge_id !== null) {
+      console.log(`Sending build road with edge_id: ${edge_id}`);
 
-      // ========== NEW SYSTEM: tileId + edgeIndex ==========
-
-      // Get edge index in tile
-      const edgeIndex = tile.getEdges().indexOf(edge);
-
-      if (edgeIndex === -1) {
-        setError("Nie można znaleźć indeksu krawędzi!");
-        return;
-      }
-
-      console.log("Sending road with new format:", {
-        tileId: tile.tileId,
-        edgeIndex: edgeIndex,
-      });
-
-      // Send data in new format
       GameService.sendMessage({
         type: "game_action",
         action: "build_road",
-        tileId: tile.tileId,
-        edgeIndex: edgeIndex,
+        edge_id: edge_id,
       });
 
-      // Show waiting message
       showSuccessIndicator("Budowanie drogi...");
-
-      // In setup phase, automatically end turn after placing road
-      if (gamePhase === "setup") {
-        setTimeout(() => {
-          GameService.endTurn();
-          setBuildMode(null);
-        }, 1000);
-      }
-    } catch (err) {
-      console.error("Error processing edge click:", err);
-      setError(
-        `Error processing click: ${
-          err instanceof Error ? err.message : String(err)
-        }`
-      );
     }
   };
 

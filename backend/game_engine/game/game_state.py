@@ -267,24 +267,18 @@ class GameState:
         
         # Backend corner offsets (MUSZĄ być identyczne z frontendem!)
         backend_corner_offsets = [
-            # (0, -1, 1),   # 0: North
-            # (1, -1, 0),   # 1: North-East  
-            # (1, 0, -1),   # 2: South-East
-            # (0, 1, -1),   # 3: South
-            # (-1, 1, 0),   # 4: South-West
-            # (-1, 0, 1),   # 5: North-West
-
-            (0, -1, 1),   # 0: North (30°)
-    (1, -1, 0),   # 1: North-East (90°) 
-    (1, 0, -1),   # 2: South-East (150°)
-    (0, 1, -1),   # 3: South (210°)
-    (-1, 1, 0),   # 4: South-West (270°)
-    (-1, 0, 1),   # 5: North-West (330°)
+            (0, -1, 1),    # 0: Top
+            (1, -1, 0),    # 1: Top-right
+            (1, 0, -1),    # 2: Bottom-right
+            (0, 1, -1),    # 3: Bottom
+            (-1, 1, 0),    # 4: Bottom-left
+            (-1, 0, 1),    # 5: Top-left
         ]
-        
+
         if corner_index < len(backend_corner_offsets):
             dq, dr, ds = backend_corner_offsets[corner_index]
             expected_vertex_pos = (q + dq, r + dr, s + ds)
+
             print(f"BACKEND EXPECTS vertex at position: {expected_vertex_pos}")
             
             # Sprawdź które kafelki POWINNY mieć ten wierzchołek (według backendu)

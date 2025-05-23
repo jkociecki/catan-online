@@ -248,142 +248,195 @@ class GameConsumer(AsyncWebsocketConsumer):
                             'message': 'Cannot roll dice in the setup phase'
                         }))
                         return
-
+                    #tu
                     elif action == 'build_settlement':
-                        # ZAPISZ informacje o kliknięciu dla frontendu
-                        tile_id = data.get('tileId')
-                        corner_index = data.get('cornerIndex')
+                        # NOWY SYSTEM: Użyj vertex_id jeśli jest dostępne
+                        vertex_id = data.get('vertex_id')
                         
-                        if tile_id is not None and corner_index is not None:
-                            # Zapisz w game_state informacje o ostatnim kliknięciu
-                            if not hasattr(game_state, 'last_click_info'):
-                                game_state.last_click_info = {}
+                        if vertex_id is not None:
+                            backend_vertex_id = vertex_id % 37  # Proste mapowanie modulo
                             
-                            game_state.last_click_info = {
-                                'tile_id': tile_id,
-                                'corner_index': corner_index,
-                                'player_id': player_id
-                            }
-                            print(f"Saved click info: tile={tile_id}, corner={corner_index}")
-
-                        # Obsługa budowania osady
-                        coords = data.get('coords')
-
-                        # Obsługa budowania na podstawie tileId i cornerIndex
-                        if tile_id is not None and corner_index is not None:
-                            print(f"Building settlement using tileId={tile_id} and cornerIndex={corner_index}")
-
-                            # Konwertuj tile_id na współrzędne
-                            try:
-                                tile_coords = tuple(map(int, tile_id.split(',')))
-
-                                # Użyj współrzędnych kafelka jako koordynatów
-                                coords = [list(tile_coords)]
-                                print(f"Converted tileId to coords: {coords}")
-                            except Exception as e:
-                                print(f"Error converting tileId to coordinates: {str(e)}")
+                            print(f"Converting frontend vertex_id {vertex_id} -> backend vertex_id {backend_vertex_id}")
+                            
+                            result = await self.process_build_settlement_by_id(game_state, player_id, backend_vertex_id, is_setup=is_setup_phase)
+                            if result:
+                                # Notify all players about the build
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'game_update',
+                                        'action': 'build_settlement',
+                                        'player_id': player_id,
+                                        'vertex_id': vertex_id,
+                                        'game_state': self.serialize_game_state(game_state)
+                                    }
+                                )
+                            else:
                                 await self.send(text_data=json.dumps({
                                     'type': 'error',
-                                    'message': f'Invalid tileId format: {str(e)}'
+                                    'message': 'Cannot build settlement at this location'
+                                }))
+                        else:
+                            
+                            tile_id = data.get('tileId')
+                            corner_index = data.get('cornerIndex')
+                            
+                            if tile_id is not None and corner_index is not None:
+                                # Zapisz w game_state informacje o ostatnim kliknięciu
+                                if not hasattr(game_state, 'last_click_info'):
+                                    game_state.last_click_info = {}
+                                
+                                game_state.last_click_info = {
+                                    'tile_id': tile_id,
+                                    'corner_index': corner_index,
+                                    'player_id': player_id
+                                }
+                                print(f"Saved click info: tile={tile_id}, corner={corner_index}")
+
+                            # Obsługa budowania osady
+                            coords = data.get('coords')
+
+                            # Obsługa budowania na podstawie tileId i cornerIndex
+                            if tile_id is not None and corner_index is not None:
+                                print(f"Building settlement using tileId={tile_id} and cornerIndex={corner_index}")
+
+                                # Konwertuj tile_id na współrzędne
+                                try:
+                                    tile_coords = tuple(map(int, tile_id.split(',')))
+
+                                    # Użyj współrzędnych kafelka jako koordynatów
+                                    coords = [list(tile_coords)]
+                                    print(f"Converted tileId to coords: {coords}")
+                                except Exception as e:
+                                    print(f"Error converting tileId to coordinates: {str(e)}")
+                                    await self.send(text_data=json.dumps({
+                                        'type': 'error',
+                                        'message': f'Invalid tileId format: {str(e)}'
+                                    }))
+                                    return
+
+                            # Kontynuuj standardową obsługę budowania osady
+                            if not coords:
+                                await self.send(text_data=json.dumps({
+                                    'type': 'error',
+                                    'message': 'Missing coordinates for settlement'
                                 }))
                                 return
 
-                        # Kontynuuj standardową obsługę budowania osady
-                        if not coords:
-                            await self.send(text_data=json.dumps({
-                                'type': 'error',
-                                'message': 'Missing coordinates for settlement'
-                            }))
-                            return
+                            print(f"Building settlement with coords: {coords}")
+                            result = await self.process_build_settlement(game_state, player_id, coords,
+                                                                            is_setup=is_setup_phase)
 
-                        print(f"Building settlement with coords: {coords}")
-                        result = await self.process_build_settlement(game_state, player_id, coords,
-                                                                     is_setup=is_setup_phase)
-
-                        if result:
-                            # Notify all players about the build
-                            await self.channel_layer.group_send(
-                                self.room_group_name,
-                                {
-                                    'type': 'game_update',
-                                    'action': 'build_settlement',
-                                    'player_id': player_id,
-                                    'coords': coords,
-                                    'game_state': self.serialize_game_state(game_state)
-                                }
-                            )
-                        else:
-                            await self.send(text_data=json.dumps({
-                                'type': 'error',
-                                'message': 'Cannot build settlement at this location'
-                            }))
-
+                            if result:
+                                # Notify all players about the build
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'game_update',
+                                        'action': 'build_settlement',
+                                        'player_id': player_id,
+                                        'coords': coords,
+                                        'game_state': self.serialize_game_state(game_state)
+                                    }
+                                )
+                            else:
+                                await self.send(text_data=json.dumps({
+                                    'type': 'error',
+                                    'message': 'Cannot build settlement at this location'
+                                }))
+                    #tu
                     elif action == 'build_road':
-                        # ZAPISZ informacje o kliknięciu dla frontendu (dla dróg)
-                        tile_id = data.get('tileId')
-                        edge_index = data.get('edgeIndex')
+                        # NOWY SYSTEM: Użyj edge_id jeśli jest dostępne
+                        edge_id = data.get('edge_id')
                         
-                        if tile_id is not None and edge_index is not None:
-                            # Zapisz w game_state informacje o ostatnim kliknięciu drogi
-                            if not hasattr(game_state, 'last_road_click_info'):
-                                game_state.last_road_click_info = {}
+                        if edge_id is not None:
+                            print(f"Building road using edge_id={edge_id}")
+                            result = await self.process_build_road_by_id(game_state, player_id, edge_id, is_setup=is_setup_phase)
                             
-                            game_state.last_road_click_info = {
-                                'tile_id': tile_id,
-                                'edge_index': edge_index,
-                                'player_id': player_id
-                            }
-                            print(f"Saved road click info: tile={tile_id}, edge={edge_index}")
-
-                        coords = data.get('coords')
-
-                        # Obsługa budowania na podstawie tileId i edgeIndex
-                        if tile_id is not None and edge_index is not None:
-                            print(f"Building road using tileId={tile_id} and edgeIndex={edge_index}")
-
-                            # Konwertuj tile_id na współrzędne
-                            try:
-                                tile_coords = tuple(map(int, tile_id.split(',')))
-
-                                # Użyj współrzędnych kafelka jako koordynatów
-                                coords = [list(tile_coords)]
-                                print(f"Converted tileId to coords: {coords}")
-                            except Exception as e:
-                                print(f"Error converting tileId to coordinates: {str(e)}")
+                            if result:
+                                # Notify all players about the build
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'game_update',
+                                        'action': 'build_road',
+                                        'player_id': player_id,
+                                        'edge_id': edge_id,
+                                        'game_state': self.serialize_game_state(game_state)
+                                    }
+                                )
+                            else:
                                 await self.send(text_data=json.dumps({
                                     'type': 'error',
-                                    'message': f'Invalid tileId format: {str(e)}'
+                                    'message': 'Cannot build road at this location'
+                                }))
+                        else:
+                            # FALLBACK: Stary system z tileId i edgeIndex
+                            # ZAPISZ informacje o kliknięciu dla frontendu (dla dróg)
+                            tile_id = data.get('tileId')
+                            edge_index = data.get('edgeIndex')
+                            
+                            if tile_id is not None and edge_index is not None:
+                                # Zapisz w game_state informacje o ostatnim kliknięciu drogi
+                                if not hasattr(game_state, 'last_road_click_info'):
+                                    game_state.last_road_click_info = {}
+                                
+                                game_state.last_road_click_info = {
+                                    'tile_id': tile_id,
+                                    'edge_index': edge_index,
+                                    'player_id': player_id
+                                }
+                                print(f"Saved road click info: tile={tile_id}, edge={edge_index}")
+
+                            coords = data.get('coords')
+
+                            # Obsługa budowania na podstawie tileId i edgeIndex
+                            if tile_id is not None and edge_index is not None:
+                                print(f"Building road using tileId={tile_id} and edgeIndex={edge_index}")
+
+                                # Konwertuj tile_id na współrzędne
+                                try:
+                                    tile_coords = tuple(map(int, tile_id.split(',')))
+
+                                    # Użyj współrzędnych kafelka jako koordynatów
+                                    coords = [list(tile_coords)]
+                                    print(f"Converted tileId to coords: {coords}")
+                                except Exception as e:
+                                    print(f"Error converting tileId to coordinates: {str(e)}")
+                                    await self.send(text_data=json.dumps({
+                                        'type': 'error',
+                                        'message': f'Invalid tileId format: {str(e)}'
+                                    }))
+                                    return
+
+                            # Kontynuuj standardową obsługę budowania drogi
+                            if not coords:
+                                await self.send(text_data=json.dumps({
+                                    'type': 'error',
+                                    'message': 'Missing coordinates for road'
                                 }))
                                 return
 
-                        # Kontynuuj standardową obsługę budowania drogi
-                        if not coords:
-                            await self.send(text_data=json.dumps({
-                                'type': 'error',
-                                'message': 'Missing coordinates for road'
-                            }))
-                            return
+                            print(f"Building road with coords: {coords} by player {player_id}")
+                            result = await self.process_build_road(game_state, player_id, coords, is_setup=is_setup_phase)
 
-                        print(f"Building road with coords: {coords} by player {player_id}")
-                        result = await self.process_build_road(game_state, player_id, coords, is_setup=is_setup_phase)
-
-                        if result:
-                            # Notify all players about the build
-                            await self.channel_layer.group_send(
-                                self.room_group_name,
-                                {
-                                    'type': 'game_update',
-                                    'action': 'build_road',
-                                    'player_id': player_id,
-                                    'coords': coords,
-                                    'game_state': self.serialize_game_state(game_state)
-                                }
-                            )
-                        else:
-                            await self.send(text_data=json.dumps({
-                                'type': 'error',
-                                'message': 'Cannot build road at this location'
-                            }))
+                            if result:
+                                # Notify all players about the build
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'game_update',
+                                        'action': 'build_road',
+                                        'player_id': player_id,
+                                        'coords': coords,
+                                        'game_state': self.serialize_game_state(game_state)
+                                    }
+                                )
+                            else:
+                                await self.send(text_data=json.dumps({
+                                    'type': 'error',
+                                    'message': 'Cannot build road at this location'
+                                }))
 
                     elif action == 'end_turn':
                         # End turn in setup phase
@@ -935,3 +988,47 @@ class GameConsumer(AsyncWebsocketConsumer):
             'phase': event['phase'],
             'game_state': event.get('game_state')
         }))
+
+    # DODAJ TE METODY na końcu klasy GameConsumer:
+
+    @database_sync_to_async
+    def process_build_settlement_by_id(self, game_state, player_id, vertex_id, is_setup=False):
+        """Prosty handler używający vertex_id"""
+        player = None
+        for p in game_state.players:
+            if p.id == player_id:
+                player = p
+                break
+
+        if not player:
+            print(f"Player with ID {player_id} not found")
+            return False
+
+        try:
+            print(f"Building settlement at vertex_id: {vertex_id}")
+            result = game_state.place_settlement_by_id(player, vertex_id, is_setup)
+            return result
+        except Exception as e:
+            print(f"Error building settlement: {str(e)}")
+            return False
+
+    @database_sync_to_async
+    def process_build_road_by_id(self, game_state, player_id, edge_id, is_setup=False):
+        """Prosty handler używający edge_id"""
+        player = None
+        for p in game_state.players:
+            if p.id == player_id:
+                player = p
+                break
+
+        if not player:
+            print(f"Player with ID {player_id} not found")
+            return False
+
+        try:
+            print(f"Building road at edge_id: {edge_id}")
+            result = game_state.place_road_by_id(player, edge_id, is_setup)
+            return result
+        except Exception as e:
+            print(f"Error building road: {str(e)}")
+            return False

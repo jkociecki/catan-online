@@ -29,6 +29,7 @@ class GameBoard:
         
         # Wygeneruj planszę
         self._generate_board()
+        self.debug_board_geometry()
 
     def _generate_board(self):
         """Wygeneruj całą planszę - kafelki, wierzchołki i krawędzie"""
@@ -270,6 +271,52 @@ class GameBoard:
 
     # backend/game_engine/board/game_board.py - fragment serialize_board
 
+    # Dodaj tę metodę do klasy GameBoard w backend/game_engine/board/game_board.py
+
+    def debug_board_geometry(self):
+        """Debug - wypisz całą geometrię planszy"""
+        print("\n=== BOARD GEOMETRY DEBUG ===")
+        print(f"Total tiles: {len(self.tiles)}")
+        print(f"Total vertices: {len(self.vertices)}")
+        print(f"Total edges: {len(self.edges)}")
+        
+        # Dla każdego kafelka pokaż jego wierzchołki
+        print("\n--- TILE TO VERTICES MAPPING ---")
+        for tile_id in range(min(5, len(self.tiles))):  # Pierwsze 5 kafelków
+            tile = self.tiles[tile_id]
+            coords = tile.get_coordinates()
+            vertex_ids = self.tile_to_vertices.get(tile_id, [])
+            print(f"Tile {tile_id} at {coords}: vertices {vertex_ids}")
+        
+        # Sprawdź konkretnie kafelki 7 i 12
+        print("\n--- SPECIFIC TILES ---")
+        if 7 < len(self.tiles):
+            tile7 = self.tiles[7]
+            print(f"Tile 7 coords: {tile7.get_coordinates()}")
+            print(f"Tile 7 vertices: {self.tile_to_vertices.get(7, [])}")
+        
+        if 12 < len(self.tiles):
+            tile12 = self.tiles[12]
+            print(f"Tile 12 coords: {tile12.get_coordinates()}")
+            print(f"Tile 12 vertices: {self.tile_to_vertices.get(12, [])}")
+        
+        # Sprawdź vertex 21
+        print("\n--- VERTEX 21 DEBUG ---")
+        if 21 < len(self.vertices):
+            vertex21 = self.vertices[21]
+            print(f"Vertex 21 adjacent tiles: {vertex21.adjacent_tiles}")
+            
+            # Sprawdź które kafelki mają vertex 21
+            for tile_id, vertex_list in self.tile_to_vertices.items():
+                if 21 in vertex_list:
+                    position = vertex_list.index(21)
+                    print(f"  Tile {tile_id} has vertex 21 at position {position}")
+        
+        print("=============================\n")
+
+# Wywołaj to w __init__ po wygenerowaniu planszy:
+# self.debug_board_geometry()
+
     def serialize_board(self) -> Dict:
         """Serializuj planszę do JSON w formacie kompatybilnym z frontendem"""
         
@@ -296,8 +343,7 @@ class GameBoard:
                     "type": building.building_type.name,
                     "player_id": getattr(building.player, 'id', 'unknown'),
                     "player_color": getattr(building.player.color, 'value', 'red') if hasattr(building.player, 'color') else 'red',
-                    # KLUCZOWE: Dodaj vertex_id dla jednoznacznej identyfikacji
-                    "vertex_id": vertex_id
+                    "vertex_id": vertex_id  # DODAJ vertex_id
                 }
 
             # Konwertuj adjacent_tiles na coordinates (dla kompatybilności)
@@ -309,13 +355,15 @@ class GameBoard:
                     coordinates.append([q, r, s])
 
             vertices_data[f"vertex_{vertex_id}"] = {
-                "vertex_id": vertex_id,  # DODAJ UNIKALNY ID
+                "vertex_id": vertex_id,  # DODAJ vertex_id
                 "coordinates": coordinates,
                 "building": building_data
             }
 
             if vertex.has_building():
                 print(f"SERIALIZE: Vertex {vertex_id} with building at tiles: {vertex.adjacent_tiles}")
+
+        print(f"TOTAL vertices with buildings: {sum(1 for v in self.vertices if v.has_building())}")
 
         # ========== POPRAWIONA SERIALIZACJA KRAWĘDZI ==========  
         edges_data = {}
@@ -326,8 +374,7 @@ class GameBoard:
                 road_data = {
                     "player_id": getattr(road.player, 'id', 'unknown'),
                     "player_color": getattr(road.player.color, 'value', 'red') if hasattr(road.player, 'color') else 'red',
-                    # KLUCZOWE: Dodaj edge_id dla jednoznacznej identyfikacji
-                    "edge_id": edge_id
+                    "edge_id": edge_id  # DODAJ edge_id
                 }
 
             # Konwertuj adjacent_tiles na coordinates (dla kompatybilności)
@@ -339,10 +386,12 @@ class GameBoard:
                     coordinates.append([q, r, s])
 
             edges_data[f"edge_{edge_id}"] = {
-                "edge_id": edge_id,  # DODAJ UNIKALNY ID
+                "edge_id": edge_id,  # DODAJ edge_id
                 "coordinates": coordinates,
                 "road": road_data
             }
+
+        print(f"TOTAL edges with roads: {sum(1 for e in self.edges if e.has_road())}")
 
         return {
             "tiles": tiles_data,

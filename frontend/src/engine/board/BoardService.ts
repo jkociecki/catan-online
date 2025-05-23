@@ -8,25 +8,25 @@ export interface BoardData {
   vertices: Record<
     string,
     {
+      vertex_id: number;
       coordinates: Array<[number, number, number]>;
       building: {
         type: string;
         player_id: string;
         player_color: string | null;
-        tile_id?: string; // Dodane
-        corner_index?: number; // Dodane
+        vertex_id: number;
       } | null;
     }
   >;
   edges: Record<
     string,
     {
+      edge_id: number;
       coordinates: Array<[number, number, number]>;
       road: {
         player_id: string;
         player_color: string | null;
-        tile_id?: string; // Dodane
-        edge_index?: number; // Dodane
+        edge_id: number;
       } | null;
     }
   >;

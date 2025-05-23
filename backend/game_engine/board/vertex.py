@@ -342,12 +342,12 @@ class BoardGeometry:
         for tile_id, q, r, s in tile_positions:
             # 6 narożników dla każdego kafelka
             corner_offsets = [
-                (0, -1, 1),   # 0: North
-                (1, -1, 0),   # 1: North-East  
-                (1, 0, -1),   # 2: South-East
-                (0, 1, -1),   # 3: South
-                (-1, 1, 0),   # 4: South-West
-                (-1, 0, 1),   # 5: North-West
+            (0, -1, 1),    # 0: Top
+            (1, -1, 0),    # 1: Top-right
+            (1, 0, -1),    # 2: Bottom-right
+            (0, 1, -1),    # 3: Bottom
+            (-1, 1, 0),    # 4: Bottom-left
+            (-1, 0, 1),    # 5: Top-left
             ]
             
             for dq, dr, ds in corner_offsets:
