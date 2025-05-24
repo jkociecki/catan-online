@@ -1,5 +1,5 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import "./styles.css";
 import { CatanBoard } from "./view/CatanBoard";
 import { Game } from "./game/Game";
@@ -14,7 +14,9 @@ import { BasicGameConfig } from "./game/config";
 import Login from "./view/auth/Login";
 import AuthCallback from "./view/auth/AuthCallback";
 import GoogleLogin from "./view/auth/GoogleLogin";
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider } from "./context/AuthContext";
+import CatanSVGBoard from "./view/board/CatanSVGBoard";
+import TestPage from "./view/TestPage";
 
 /**
  * What's next?
@@ -36,18 +38,23 @@ const App: React.FC = () => {
             <Route path="/auth-callback" element={<AuthCallback />} />
             <Route path="/google-login" element={<GoogleLogin />} />
             <Route path="/room/new" element={<RoomJoin />} />
-            <Route path="/room/:roomId" element={
-              <RoomLobby
-                roomId={window.location.pathname.split("/").pop() || ""}
-              />
-            } />
+            <Route
+              path="/room/:roomId"
+              element={
+                <RoomLobby
+                  roomId={window.location.pathname.split("/").pop() || ""}
+                />
+              }
+            />
             <Route path="/game/:roomId" element={<OnlineGame />} />
             <Route
               path="/local-game"
               element={
                 <div>
                   <h1>Catan - Local Game</h1>
-                  <div style={{ display: "flex", gap: "20px", padding: "20px" }}>
+                  <div
+                    style={{ display: "flex", gap: "20px", padding: "20px" }}
+                  >
                     <div style={{ flex: 1 }}>
                       <Game director={new GameDirector()}>
                         <CatanBoard board={board} />
@@ -60,6 +67,7 @@ const App: React.FC = () => {
                 </div>
               }
             />
+            <Route path="/test-svg" element={<TestPage />} />
           </Routes>
         </div>
       </Router>

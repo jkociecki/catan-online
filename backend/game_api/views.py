@@ -11,6 +11,15 @@ from game_engine.board.buildings import Building, BuildingType, Road
 from django.views.decorators.csrf import csrf_exempt
 import json
 
+
+###
+from .models import Vertex, Edge, BoardState  # ← DODAJ TO
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from .models import Vertex, Edge, BoardState
+import json
+
 # Global game state
 current_player = None
 game_board = None
@@ -246,3 +255,154 @@ def build_settlement(request):
 def create_game_room(request):
     room_id = str(uuid.uuid4())[:8]  # Generate a short unique ID
     return JsonResponse({'room_id': room_id})
+
+
+
+############
+# Dodaj to do backend/game_api/views.py (na koniec pliku)
+
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def place_settlement(request, vertex_id):
+    """Postaw domek na wierzchołku"""
+    try:
+        vertex_id = int(vertex_id)
+        
+        # Sprawdź czy wierzchołek już istnieje
+        vertex, created = Vertex.objects.get_or_create(
+            vertex_id=vertex_id,
+            defaults={'has_settlement': False}
+        )
+        
+        if vertex.has_settlement:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Settlement already exists at vertex {vertex_id}'
+            }, status=400)
+        
+        # Postaw domek
+        vertex.has_settlement = True
+        vertex.player_color = 'green'  # Domyślny kolor, można zmienić
+        vertex.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Settlement placed at vertex {vertex_id}',
+            'vertex_id': vertex_id,
+            'player_color': vertex.player_color
+        })
+        
+    except ValueError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid vertex_id'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def place_road(request, edge_id):
+    """Postaw drogę na krawędzi"""
+    try:
+        edge_id = int(edge_id)
+        
+        # Sprawdź czy krawędź już istnieje
+        edge, created = Edge.objects.get_or_create(
+            edge_id=edge_id,
+            defaults={'has_road': False}
+        )
+        
+        if edge.has_road:
+            return JsonResponse({
+                'status': 'error',
+                'message': f'Road already exists at edge {edge_id}'
+            }, status=400)
+        
+        # Postaw drogę
+        edge.has_road = True
+        edge.player_color = 'blue'  # Domyślny kolor, można zmienić
+        edge.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Road placed at edge {edge_id}',
+            'edge_id': edge_id,
+            'player_color': edge.player_color
+        })
+        
+    except ValueError:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Invalid edge_id'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_board_state(request):
+    """Pobierz aktualny stan planszy"""
+    try:
+        # Pobierz wszystkie osady
+        settlements = {}
+        for vertex in Vertex.objects.filter(has_settlement=True):
+            settlements[vertex.vertex_id] = {
+                'player_color': vertex.player_color,
+                'created_at': vertex.created_at.isoformat()
+            }
+        
+        # Pobierz wszystkie drogi
+        roads = {}
+        for edge in Edge.objects.filter(has_road=True):
+            roads[edge.edge_id] = {
+                'player_color': edge.player_color,
+                'created_at': edge.created_at.isoformat()
+            }
+        
+        # Statystyki
+        board_state, created = BoardState.objects.get_or_create(
+            name="Main Board"
+        )
+        stats = board_state.get_stats()
+        
+        return JsonResponse({
+            'status': 'success',
+            'settlements': settlements,
+            'roads': roads,
+            'stats': stats,
+            'board_updated_at': board_state.updated_at.isoformat()
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def clear_board(request):
+    """Wyczyść całą planszę"""
+    try:
+        vertices_deleted = Vertex.objects.all().delete()[0]
+        edges_deleted = Edge.objects.all().delete()[0]
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Board cleared: {vertices_deleted} vertices, {edges_deleted} edges deleted'
+        })
+        
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)
