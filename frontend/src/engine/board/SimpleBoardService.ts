@@ -7,7 +7,7 @@ class SimpleGameService {
 
   // NOWY URL - simple-game zamiast game
   private static readonly API_URL = "http://localhost:8000/api";
-  private static readonly WS_URL = "ws://localhost:8000/ws/simple-game";
+  private static readonly WS_URL = "ws://localhost:8000/ws/game";
   private constructor() {
     console.log("SimpleGameService instance created");
   }

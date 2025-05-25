@@ -1,5 +1,5 @@
-import React from 'react';
-import styled from 'styled-components';
+import React from "react";
+import styled from "styled-components";
 
 interface PlayerListProps {
   players: Array<{
@@ -26,8 +26,9 @@ const PlayerCard = styled.div<{ isActive: boolean; playerColor: string }>`
   align-items: center;
   padding: 10px 15px;
   margin-bottom: 5px;
-  background-color: ${(props) => props.isActive ? props.playerColor : '#f5f5f5'};
-  color: ${(props) => props.isActive ? 'white' : 'black'};
+  background-color: ${(props) =>
+    props.isActive ? props.playerColor : "#f5f5f5"};
+  color: ${(props) => (props.isActive ? "white" : "black")};
   border-left: 5px solid ${(props) => props.playerColor};
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 `;
@@ -64,7 +65,11 @@ const CurrentTurnIndicator = styled.div`
   margin-right: 10px;
 `;
 
-export default function PlayersList({ players, currentPlayerId, isMyTurn }: PlayerListProps) {
+export default function PlayersList({
+  players,
+  currentPlayerId,
+  isMyTurn,
+}: PlayerListProps) {
   return (
     <PlayerContainer>
       <h3>Players</h3>
@@ -72,15 +77,17 @@ export default function PlayersList({ players, currentPlayerId, isMyTurn }: Play
         const isCurrentPlayer = player.id === currentPlayerId;
         // Display only first 8 characters of ID for readability
         const displayName = `Player ${player.id.substring(0, 8)}`;
-        
+
         return (
-          <PlayerCard 
+          <PlayerCard
             key={player.id}
             isActive={isCurrentPlayer}
             playerColor={player.color}
           >
             <PlayerName>
-              {isCurrentPlayer && <CurrentTurnIndicator>→</CurrentTurnIndicator>}
+              {isCurrentPlayer && (
+                <CurrentTurnIndicator>→</CurrentTurnIndicator>
+              )}
               {displayName}
               {isMyTurn && isCurrentPlayer && " (Your Turn)"}
             </PlayerName>
@@ -88,7 +95,10 @@ export default function PlayersList({ players, currentPlayerId, isMyTurn }: Play
               <ResourceCount>
                 <>
                   <ResourceIcon>🎲</ResourceIcon>
-                  {Object.values(player.resources || {}).reduce((a, b) => a + b, 0)}
+                  {Object.values(player.resources || {}).reduce(
+                    (a, b) => a + b,
+                    0
+                  )}
                 </>
               </ResourceCount>
               <VictoryPoints>{player.victory_points} VP</VictoryPoints>

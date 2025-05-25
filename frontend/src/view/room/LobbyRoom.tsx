@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import GameService from "../../engine/board/GameService";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
+import SimpleGameService from "../../view/board/SimpleGameService";
 
 const LobbyContainer = styled.div`
   max-width: 600px;
@@ -87,14 +87,22 @@ const StartButton = styled.button`
 
 interface RoomLobbyProps {
   roomId: string;
+  useSimpleService?: boolean; // NOWY PROP
 }
 
 interface Player {
   id: string;
   color: string;
 }
+export default function RoomLobby({
+  roomId,
+  useSimpleService = false,
+}: RoomLobbyProps) {
+  // Wybierz odpowiedni service
+  const gameService = SimpleGameService;
+  // export default function RoomLobby({ roomId }: RoomLobbyProps) {
+  //   const gameService = useSimpleService ? SimpleGameService : GameService;
 
-export default function RoomLobby({ roomId }: RoomLobbyProps) {
   const [players, setPlayers] = useState<Player[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [status, setStatus] = useState<string | null>(null);
@@ -107,15 +115,15 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
       try {
         setStatus(`Connecting to room ${roomId}...`);
         // Check if already connected
-        if (!GameService.isConnected()) {
-          await GameService.connectToRoom(roomId);
+        if (!gameService.isConnected()) {
+          await gameService.connectToRoom(roomId);
         }
         setStatus(`Connected to room ${roomId}. Waiting for players...`);
         setIsLoading(false);
 
         // Request client ID
         try {
-          const id = await GameService.getClientId();
+          const id = await gameService.getClientId();
           setMyPlayerId(id);
           console.log("My player ID:", id);
         } catch (idErr) {
@@ -123,7 +131,7 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
         }
 
         // Request game state to ensure we have the latest info
-        GameService.getGameState();
+        gameService.getGameState();
       } catch (err) {
         console.error("Room connection error:", err);
         setError(
@@ -203,12 +211,34 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
       }
     };
     const handleGameState = (data: any) => {
-      console.log("Game state update:", data);
+      console.log("🎮 Game state update:", data);
       if (data.game_state && data.game_state.players) {
-        const playersList = data.game_state.players.map((p: any) => ({
-          id: p.id,
-          color: p.color || "#333333",
-        }));
+        // Sprawdź czy players to tablica czy obiekt
+        let playersList = [];
+
+        if (Array.isArray(data.game_state.players)) {
+          // Jeśli to tablica
+          playersList = data.game_state.players.map((p: any) => ({
+            id: p.id || p.player_id,
+            color: p.color || "#333333",
+          }));
+        } else {
+          // Jeśli to obiekt
+          playersList = Object.values(data.game_state.players).map(
+            (p: any) => ({
+              id: p.id || p.player_id,
+              color: p.color || "#333333",
+            })
+          );
+        }
+
+        console.log("👥 Setting players:", playersList);
+        console.log(
+          "👑 Current player index:",
+          data.game_state.current_player_index
+        );
+        console.log("📋 Player order:", data.game_state.player_order);
+
         setPlayers(playersList);
       }
     };
@@ -225,32 +255,32 @@ export default function RoomLobby({ roomId }: RoomLobbyProps) {
       }
     };
 
-    GameService.addEventHandler("player_joined", handlePlayerJoined);
-    GameService.addEventHandler("player_left", handlePlayerLeft);
-    GameService.addEventHandler("game_start", handleGameStart);
-    GameService.addEventHandler("game_state", handleGameState);
-    GameService.addEventHandler("error", handleError);
-    GameService.addEventHandler("client_id", handleClientId);
+    gameService.addEventHandler("player_joined", handlePlayerJoined);
+    gameService.addEventHandler("player_left", handlePlayerLeft);
+    gameService.addEventHandler("game_start", handleGameStart);
+    gameService.addEventHandler("game_state", handleGameState);
+    gameService.addEventHandler("error", handleError);
+    gameService.addEventHandler("client_id", handleClientId);
 
     // Cleanup
     return () => {
-      GameService.removeEventHandler("player_joined", handlePlayerJoined);
-      GameService.removeEventHandler("player_left", handlePlayerLeft);
-      GameService.removeEventHandler("game_start", handleGameStart);
-      GameService.removeEventHandler("game_state", handleGameState);
-      GameService.removeEventHandler("error", handleError);
-      GameService.removeEventHandler("client_id", handleClientId);
+      gameService.removeEventHandler("player_joined", handlePlayerJoined);
+      gameService.removeEventHandler("player_left", handlePlayerLeft);
+      gameService.removeEventHandler("game_start", handleGameStart);
+      gameService.removeEventHandler("game_state", handleGameState);
+      gameService.removeEventHandler("error", handleError);
+      gameService.removeEventHandler("client_id", handleClientId);
     };
   }, [roomId, navigate]);
 
   const handleLeaveRoom = () => {
-    GameService.disconnectFromRoom();
+    gameService.disconnectFromRoom();
     navigate("/");
   };
 
   const handleStartGame = () => {
     // Send message to start the game with fewer than 4 players
-    GameService.sendMessage({
+    gameService.sendMessage({
       type: "game_action",
       action: "roll_dice", // This triggers the game to start in the backend
     });

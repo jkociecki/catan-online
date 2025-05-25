@@ -123,6 +123,7 @@ export default function SimpleOnlineGame() {
 
   const roomId = urlRoomId || location.state?.roomId;
   const initialGameState = location.state?.gameState;
+  const useSimpleService = location.state?.useSimpleService || true;
 
   // POPRAWKA: Zmieniony typ buildMode, aby uwzględnić "city"
   const [gameState, setGameState] = useState<any>(initialGameState);
@@ -258,37 +259,64 @@ export default function SimpleOnlineGame() {
         if (data.game_state.players) {
           console.log("Raw players data from server:", data.game_state.players);
 
-          const playersList = Object.values(data.game_state.players).map(
-            (p: any) => {
-              console.log("Processing player:", p);
+          // Sprawdź czy players to obiekt czy tablica
+          let playersData;
+          if (Array.isArray(data.game_state.players)) {
+            console.log("Players data is array");
+            playersData = data.game_state.players;
+          } else {
+            console.log("Players data is object");
+            playersData = Object.values(data.game_state.players);
+          }
 
-              return {
-                id: p.player_id,
-                color: p.color,
-                resources: p.resources || {},
-                victory_points: p.victory_points || 0,
-                settlements_left: p.settlements_left || 5,
-                cities_left: p.cities_left || 4,
-                roads_left: p.roads_left || 15,
-              };
-            }
-          );
+          const playersList = playersData.map((p: any) => {
+            console.log("Processing player:", p);
+
+            return {
+              id: p.player_id, // ✅ Zawsze używaj player_id
+              color: p.color,
+              resources: p.resources || {},
+              victory_points: p.victory_points || 0,
+              settlements_left: p.settlements_left || 5,
+              cities_left: p.cities_left || 4,
+              roads_left: p.roads_left || 15,
+            };
+          });
 
           console.log("Processed players list:", playersList);
           setPlayers(playersList);
 
-          // Ustaw aktualnego gracza
+          // ✅ USTAW AKTUALNEGO GRACZA
           if (
             data.game_state.current_player_index !== undefined &&
-            data.game_state.player_order
+            data.game_state.player_order &&
+            data.game_state.player_order.length > 0
           ) {
             const currentPlayerIndex = data.game_state.current_player_index;
             const playerOrder = data.game_state.player_order;
+
+            console.log("Player order from server:", playerOrder);
+            console.log(
+              "Current player index from server:",
+              currentPlayerIndex
+            );
+
             if (playerOrder[currentPlayerIndex]) {
               const newCurrentPlayerId = playerOrder[currentPlayerIndex];
               console.log("Setting current player ID:", newCurrentPlayerId);
               setCurrentPlayerId(newCurrentPlayerId);
+            } else {
+              console.warn(
+                "Invalid current player index:",
+                currentPlayerIndex,
+                "for order:",
+                playerOrder
+              );
             }
+          } else {
+            console.warn(
+              "Missing current_player_index or player_order in game state"
+            );
           }
         }
       }
@@ -535,6 +563,85 @@ export default function SimpleOnlineGame() {
         >
           🔍 Debug State
         </TestButton>
+        <TestButton
+          onClick={() => {
+            console.log("🔍 CURRENT STATE DEBUG:");
+            console.log("   myPlayerId:", myPlayerId);
+            console.log("   currentPlayerId:", currentPlayerId);
+            console.log("   isMyTurn():", isMyTurn());
+            console.log(
+              "   gameState.current_player_index:",
+              gameState?.current_player_index
+            );
+            console.log("   gameState.player_order:", gameState?.player_order);
+            console.log("   players array:", players);
+
+            // Sprawdź czy może problem jest w stanie React
+            if (
+              gameState?.player_order &&
+              gameState?.current_player_index !== undefined
+            ) {
+              const expectedCurrentPlayer =
+                gameState.player_order[gameState.current_player_index];
+              console.log(
+                "   Expected current player from gameState:",
+                expectedCurrentPlayer
+              );
+              console.log(
+                "   Does it match myPlayerId?",
+                expectedCurrentPlayer === myPlayerId
+              );
+
+              // Ręcznie ustaw currentPlayerId dla testu
+              console.log("   Setting currentPlayerId manually for test...");
+              setCurrentPlayerId(expectedCurrentPlayer);
+            }
+          }}
+        >
+          🔍 Debug Current Player
+        </TestButton>
+
+        <TestButton
+          onClick={async () => {
+            console.log("🔍 WebSocket Connection Debug:");
+            console.log("   Is connected:", SimpleGameService.isConnected());
+            console.log("   Current room ID:", roomId);
+
+            try {
+              if (!SimpleGameService.isConnected()) {
+                console.log("🔄 Attempting to reconnect...");
+                await SimpleGameService.forceReconnect();
+                console.log("✅ Reconnected successfully");
+              } else {
+                console.log("✅ Already connected");
+              }
+
+              // Test wysłania wiadomości
+              console.log("🧪 Testing message send...");
+              SimpleGameService.getGameState();
+            } catch (error) {
+              console.error("❌ Connection test failed:", error);
+            }
+          }}
+        >
+          🔧 Test WebSocket
+        </TestButton>
+        <TestButton
+          onClick={() => {
+            console.log("🎲 Manual Dice Roll Test");
+            console.log("   Connected:", SimpleGameService.isConnected());
+            console.log("   Is my turn:", isMyTurn());
+            console.log("   Game phase:", gamePhase);
+
+            if (SimpleGameService.isConnected()) {
+              SimpleGameService.rollDice();
+            } else {
+              console.error("❌ WebSocket not connected for dice roll");
+            }
+          }}
+        >
+          🎲 Test Dice Roll
+        </TestButton>
       </TestButtons>
 
       <div
@@ -563,10 +670,16 @@ export default function SimpleOnlineGame() {
             )}
           </div>
         ) : (
+          // ✅ UPROSZCZONE WYŚWIETLANIE GRY GŁÓWNEJ
           <div>
-            {isMyTurn()
-              ? "Twoja tura - wykonaj akcję"
-              : `Tura gracza - poczekaj na swoją kolej`}
+            <div style={{ fontWeight: "bold", marginBottom: "5px" }}>
+              🎲 Gra główna
+            </div>
+            {isMyTurn() ? (
+              <div>Twoja tura - rzuć kośćmi, handluj, buduj, zakończ turę</div>
+            ) : (
+              <div>Tura gracza - poczekaj na swoją kolej</div>
+            )}
           </div>
         )}
       </div>

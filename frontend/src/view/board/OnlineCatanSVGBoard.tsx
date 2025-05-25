@@ -426,12 +426,12 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                 const road = builtRoads.get(globalEdgeId);
                 const hasRoad = !!road;
                 // W OnlineCatanSVGBoard, dodaj to PRZED return:
-                console.log("Frontend hexData order:");
-                hexData.forEach((hex, i) => {
-                  console.log(
-                    `${i}: (${hex.q}, ${hex.r}, ${hex.s}) - ${hex.resource}`
-                  );
-                });
+                // console.log("Frontend hexData order:");
+                // hexData.forEach((hex, i) => {
+                //   console.log(
+                //     `${i}: (${hex.q}, ${hex.r}, ${hex.s}) - ${hex.resource}`
+                //   );
+                // });
 
                 return (
                   <g key={`edge-${globalEdgeId}`}>

@@ -1,13 +1,15 @@
-// frontend/src/engine/board/SimpleGameService.ts
+// frontend/src/engine/board/SimpleGameService.ts - POPRAWIONA WERSJA
+
 class SimpleGameService {
   private static instance: SimpleGameService;
   private socket: WebSocket | null = null;
   private callbacks: { [key: string]: ((data: any) => void)[] } = {};
   private clientId: string | null = null;
+  private currentRoomId: string | null = null; // ✅ DODAJ TO
 
   // NOWY URL - simple-game zamiast game
   private static readonly API_URL = "http://localhost:8000/api";
-  private static readonly WS_URL = "ws://localhost:8000/ws/simple-game";
+  private static readonly WS_URL = "ws://localhost:8000/ws";
 
   private constructor() {
     console.log("SimpleGameService instance created");
@@ -49,9 +51,10 @@ class SimpleGameService {
   public connectToRoom(roomId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.disconnectFromRoom();
+      this.currentRoomId = roomId; // ✅ DODAJ TO
 
       try {
-        const wsUrl = `${SimpleGameService.WS_URL}/${roomId}/`;
+        const wsUrl = `${SimpleGameService.WS_URL}/game/${roomId}/`;
         console.log(`Connecting to WebSocket: ${wsUrl}`);
         this.socket = new WebSocket(wsUrl);
 
@@ -107,15 +110,38 @@ class SimpleGameService {
       this.socket.close();
       this.socket = null;
     }
+    this.currentRoomId = null; // ✅ DODAJ TO
   }
 
   public sendMessage(message: any): void {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+    console.log("🚀 Attempting to send message:", message);
+    console.log("   WebSocket state:", this.socket?.readyState);
+    console.log("   Connected:", this.isConnected());
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      console.error("❌ WebSocket not connected, message not sent:", message);
+
+      // ✅ SPRÓBUJ PONOWNIE POŁĄCZYĆ
+      if (this.currentRoomId) {
+        console.log("🔄 Attempting to reconnect...");
+        this.connectToRoom(this.currentRoomId)
+          .then(() => {
+            console.log("✅ Reconnected, retrying message send");
+            this.sendMessage(message); // Retry
+          })
+          .catch((err: any) => {
+            console.error("❌ Reconnection failed:", err);
+          });
+      }
+      return;
+    }
+
+    try {
       const messageStr = JSON.stringify(message);
-      console.log("Sending WebSocket message:", message);
       this.socket.send(messageStr);
-    } else {
-      console.error("WebSocket not connected, message not sent:", message);
+      console.log("✅ Message sent successfully");
+    } catch (error) {
+      console.error("❌ Error sending message:", error);
     }
   }
 
@@ -147,7 +173,26 @@ class SimpleGameService {
   }
 
   public isConnected(): boolean {
-    return this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+    const connected =
+      this.socket !== null && this.socket.readyState === WebSocket.OPEN;
+    console.log("🔍 Connection check:", {
+      hasWebSocket: !!this.socket,
+      readyState: this.socket?.readyState,
+      connected: connected,
+    });
+    return connected;
+  }
+
+  // ✅ DODAJ METODĘ DO FORCE RECONNECT
+  public async forceReconnect(): Promise<void> {
+    if (this.currentRoomId) {
+      console.log("🔄 Force reconnecting to room:", this.currentRoomId);
+      this.disconnectFromRoom();
+      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1s
+      await this.connectToRoom(this.currentRoomId);
+    } else {
+      throw new Error("No current room to reconnect to");
+    }
   }
 
   public async getClientId(): Promise<string> {
@@ -181,7 +226,7 @@ class SimpleGameService {
     });
   }
 
-  // NOWE METODY - proste ID zamiast współrzędnych
+  // METODY GRY
   public buildSettlement(vertexId: number): void {
     console.log("Building settlement at vertex:", vertexId);
     this.sendMessage({

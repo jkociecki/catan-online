@@ -218,7 +218,7 @@ export default function GameActions({
 
   // Reset hasRolled when game phase changes
   useEffect(() => {
-    if (gamePhase === "ROLL_DICE" || gamePhase === "roll_dice") {
+    if (gamePhase === "PLAYING" || gamePhase === "playing") {
       setHasRolled(false);
     }
   }, [gamePhase]);
@@ -244,7 +244,7 @@ export default function GameActions({
       gamePhase
     );
 
-    const canRoll = gamePhase === "ROLL_DICE" || gamePhase === "roll_dice";
+    const canRoll = gamePhase === "PLAYING" || gamePhase === "PLAYING";
 
     if (!isMyTurn || hasRolled || isSetupPhase || !canRoll) {
       console.log("Nie można rzucić kośćmi w tej fazie gry");
@@ -335,8 +335,7 @@ export default function GameActions({
 
   // Funkcja określająca, co można robić w normalnej fazie gry
   const getNormalGameActions = () => {
-    const isRollDicePhase =
-      gamePhase === "ROLL_DICE" || gamePhase === "roll_dice";
+    const isRollDicePhase = gamePhase === "PLAYING" || gamePhase === "playing";
     const isMainPhase = gamePhase === "MAIN" || gamePhase === "main";
 
     return (
@@ -402,7 +401,7 @@ export default function GameActions({
       <PhaseIndicator isSetup={isSetupPhase}>
         {isSetupPhase
           ? "Faza przygotowania"
-          : gamePhase === "ROLL_DICE" || gamePhase === "roll_dice"
+          : gamePhase === "PLAYING" || gamePhase === "playing"
           ? "Rzut kośćmi"
           : gamePhase === "MAIN" || gamePhase === "main"
           ? "Faza główna gry"
@@ -483,7 +482,7 @@ export default function GameActions({
         <BuildInstructions>{getSetupInstructionText()}</BuildInstructions>
       )}
 
-      {isMyTurn && !isSetupPhase && gamePhase === "ROLL_DICE" && !hasRolled && (
+      {isMyTurn && !isSetupPhase && gamePhase === "PLAYING" && !hasRolled && (
         <BuildInstructions>
           Rzuć kośćmi, aby rozpocząć swoją turę!
         </BuildInstructions>

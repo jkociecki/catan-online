@@ -41,8 +41,16 @@ const App: React.FC = () => {
                 />
               }
             />
-            <Route path="/game/:roomId" element={<SimpleOnlineGame />} />{" "}
-            {/* ZMIENIONE */}
+            <Route
+              path="/room/:roomId"
+              element={
+                <RoomLobby
+                  roomId={window.location.pathname.split("/").pop() || ""}
+                  useSimpleService={true} // NOWY PROP
+                />
+              }
+            />
+            <Route path="/game/:roomId" element={<SimpleOnlineGame />} />
             <Route
               path="/local-game"
               element={
