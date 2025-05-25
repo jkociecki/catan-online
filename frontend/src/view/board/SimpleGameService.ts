@@ -121,16 +121,21 @@ class SimpleGameService {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       console.error("❌ WebSocket not connected, message not sent:", message);
 
-      // ✅ SPRÓBUJ PONOWNIE POŁĄCZYĆ
-      if (this.currentRoomId) {
-        console.log("🔄 Attempting to reconnect...");
+      // ✅ AUTOMATYCZNY RECONNECT
+      if (this.currentRoomId && message.type !== "get_client_id") {
+        console.log("🔄 Attempting auto-reconnect...");
         this.connectToRoom(this.currentRoomId)
           .then(() => {
-            console.log("✅ Reconnected, retrying message send");
-            this.sendMessage(message); // Retry
+            console.log("✅ Auto-reconnected, retrying message send");
+            // Retry after short delay
+            setTimeout(() => {
+              if (this.isConnected()) {
+                this.socket?.send(JSON.stringify(message));
+              }
+            }, 500);
           })
           .catch((err: any) => {
-            console.error("❌ Reconnection failed:", err);
+            console.error("❌ Auto-reconnection failed:", err);
           });
       }
       return;
@@ -226,8 +231,29 @@ class SimpleGameService {
     });
   }
 
+  public healthCheck(): boolean {
+    const isHealthy =
+      this.socket !== null &&
+      this.socket.readyState === WebSocket.OPEN &&
+      this.clientId !== null;
+
+    console.log("🏥 Health check:", {
+      hasSocket: !!this.socket,
+      readyState: this.socket?.readyState,
+      hasClientId: !!this.clientId,
+      isHealthy,
+    });
+
+    return isHealthy;
+  }
+
   // METODY GRY
   public buildSettlement(vertexId: number): void {
+    if (!this.healthCheck()) {
+      console.error("❌ Cannot build settlement - connection unhealthy");
+      return;
+    }
+
     console.log("Building settlement at vertex:", vertexId);
     this.sendMessage({
       type: "game_action",
@@ -237,6 +263,11 @@ class SimpleGameService {
   }
 
   public buildRoad(edgeId: number): void {
+    if (!this.healthCheck()) {
+      console.error("❌ Cannot build road - connection unhealthy");
+      return;
+    }
+
     console.log("Building road at edge:", edgeId);
     this.sendMessage({
       type: "game_action",
@@ -246,6 +277,11 @@ class SimpleGameService {
   }
 
   public rollDice(): void {
+    if (!this.healthCheck()) {
+      console.error("❌ Cannot roll dice - connection unhealthy");
+      return;
+    }
+
     console.log("Rolling dice");
     this.sendMessage({
       type: "game_action",
@@ -254,6 +290,11 @@ class SimpleGameService {
   }
 
   public endTurn(): void {
+    if (!this.healthCheck()) {
+      console.error("❌ Cannot end turn - connection unhealthy");
+      return;
+    }
+
     console.log("Ending turn");
     this.sendMessage({
       type: "game_action",

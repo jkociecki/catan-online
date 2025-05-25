@@ -1,7 +1,6 @@
-// frontend/src/view/game/GameActions.tsx - POPRAWIONA WERSJA
+// frontend/src/view/game/GameActions.tsx - KOMPLETNA WERSJA
 import React, { useState, useEffect } from "react";
 import styled from "styled-components";
-import GameService from "../../engine/board/GameService";
 
 interface GameActionsProps {
   isMyTurn: boolean;
@@ -12,119 +11,192 @@ interface GameActionsProps {
   gamePhase: string;
   players: any[];
   myPlayerId: string;
-  setBuildMode?: (mode: "settlement" | "city" | "road" | null) => void; // POPRAWKA 1: Dodano "city"
-  buildMode?: "settlement" | "city" | "road" | null; // POPRAWKA 1: Dodano "city"
+  setBuildMode?: (mode: "settlement" | "city" | "road" | null) => void;
+  buildMode?: "settlement" | "city" | "road" | null;
+  onEndTurn?: () => void;
+  onRollDice?: () => void;
 }
 
-const ActionsContainer = styled.div`
-  margin-top: 20px;
-  padding: 15px;
-  background-color: #f8f8f8;
-  border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-`;
+const RightPanel = styled.div`
+  width: 380px;
+  background: white;
+  border-left: 1px solid #e1e5e9;
+  overflow-y: auto;
 
-const ActionButton = styled.button<{ disabled: boolean; active?: boolean }>`
-  background-color: ${(props) =>
-    props.active ? "#2196F3" : props.disabled ? "#cccccc" : "#4caf50"};
-  color: white;
-  border: none;
-  padding: 10px 15px;
-  margin: 5px;
-  border-radius: 4px;
-  cursor: ${(props) => (props.disabled ? "not-allowed" : "pointer")};
-  opacity: ${(props) => (props.disabled ? 0.7 : 1)};
+  @media (max-width: 1400px) {
+    width: 340px;
+  }
 
-  &:hover {
-    background-color: ${(props) =>
-      props.active ? "#1976D2" : props.disabled ? "#cccccc" : "#45a049"};
+  @media (max-width: 1200px) {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid #e1e5e9;
+    max-height: 300px;
   }
 `;
 
-const ActionGroup = styled.div`
-  margin-bottom: 15px;
+const Panel = styled.div`
+  padding: 24px;
+
+  @media (max-width: 1200px) {
+    padding: 16px;
+  }
 `;
 
-const ResourceCounter = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  margin-bottom: 15px;
+const Section = styled.div`
+  margin-bottom: 20px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const SectionHeader = styled.div`
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  margin-bottom: 14px;
+`;
+
+const ResourceGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+  }
 `;
 
-const Resource = styled.div`
+const ResourceItem = styled.div`
+  text-align: center;
+  padding: 14px 10px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+  }
+`;
+
+const ResourceIcon = styled.div`
+  font-size: 18px;
+  margin-bottom: 6px;
+`;
+
+const ResourceCount = styled.div`
+  font-size: 18px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 3px;
+`;
+
+const ResourceLabel = styled.div`
+  font-size: 10px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const ActionGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+
+  @media (max-width: 1200px) {
+    gap: 8px;
+  }
+`;
+
+const ActionButton = styled.button<{
+  variant?: "primary" | "secondary" | "danger" | "disabled";
+  active?: boolean;
+  fullWidth?: boolean;
+}>`
+  padding: 14px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid;
   display: flex;
   align-items: center;
-  padding: 5px 10px;
-  background-color: #eee;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  justify-content: center;
+  gap: 8px;
+  grid-column: ${(props) => (props.fullWidth ? "1 / -1" : "auto")};
+
+  ${(props) => {
+    if (props.active) {
+      return `
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+        box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
+        &:hover { background: #2563eb; border-color: #2563eb; }
+      `;
+    }
+
+    switch (props.variant) {
+      case "danger":
+        return `
+          background: #ef4444;
+          border-color: #ef4444;
+          color: white;
+          &:hover:not(:disabled) { background: #dc2626; border-color: #dc2626; }
+        `;
+      case "disabled":
+        return `
+          background: #f1f5f9;
+          border-color: #e2e8f0;
+          color: #94a3b8;
+          cursor: not-allowed;
+        `;
+      case "secondary":
+        return `
+          background: #f8fafc;
+          border-color: #e2e8f0;
+          color: #475569;
+          &:hover:not(:disabled) { background: #f1f5f9; border-color: #cbd5e1; }
+        `;
+      default:
+        return `
+          background: #3b82f6;
+          border-color: #3b82f6;
+          color: white;
+          &:hover:not(:disabled) { background: #2563eb; border-color: #2563eb; }
+        `;
+    }
+  }}
+
+  &:disabled {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+  }
+
+  @media (max-width: 1200px) {
+    padding: 12px 14px;
+    font-size: 12px;
+  }
 `;
 
-const ResourceIcon = styled.span`
-  margin-right: 5px;
-`;
-
-// const ResourceText = styled.span`
-//   display: inline-block;
-// `;
-
-const BuildInstructions = styled.div`
-  background-color: #e3f2fd;
-  padding: 10px;
-  margin-top: 10px;
-  border-radius: 4px;
-  font-style: italic;
-`;
-
-const PhaseIndicator = styled.div<{ isSetup?: boolean }>`
-  background-color: ${(props) => (props.isSetup ? "#ff9800" : "#4caf50")};
-  color: white;
-  padding: 8px 12px;
-  border-radius: 4px;
-  margin-bottom: 15px;
-  font-weight: bold;
-  text-align: center;
-`;
-
-const SetupProgress = styled.div`
-  margin-top: 10px;
-  padding: 15px;
-  background-color: #fff3e0;
-  border-radius: 4px;
-  font-weight: bold;
-`;
-
-const ProgressBar = styled.div<{ fillPercent: number; color: string }>`
-  height: 12px;
-  background-color: #e0e0e0;
+const BuildModeIndicator = styled.div`
+  background: #fef3c7;
+  color: #d97706;
+  padding: 12px;
   border-radius: 6px;
-  margin-top: 5px;
-  overflow: hidden;
-
-  &:after {
-    content: "";
-    display: block;
-    height: 100%;
-    width: ${(props) => props.fillPercent}%;
-    background-color: ${(props) => props.color};
-    transition: width 0.3s ease-in-out;
-  }
-`;
-
-const DebugButton = styled.button`
-  margin-bottom: 10px;
-  padding: 5px 10px;
-  font-size: 12px;
-  background-color: #2196f3;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-
-  &:hover {
-    background-color: #1976d2;
-  }
+  text-align: center;
+  font-size: 13px;
+  border: 1px solid #fde68a;
 `;
 
 export default function GameActions({
@@ -138,6 +210,8 @@ export default function GameActions({
   myPlayerId,
   setBuildMode,
   buildMode,
+  onEndTurn,
+  onRollDice,
 }: GameActionsProps) {
   const [hasRolled, setHasRolled] = useState<boolean>(false);
   const [setupProgress, setSetupProgress] = useState<{
@@ -145,10 +219,8 @@ export default function GameActions({
     roads: number;
   }>({ settlements: 0, roads: 0 });
 
-  // Sprawdź czy jesteśmy w fazie setup
   const isSetupPhase = gamePhase === "setup";
 
-  // Resource icons mapping - obsługa różnych formatów
   const resourceIcons: { [key: string]: string } = {
     WOOD: "🌲",
     wood: "🌲",
@@ -162,43 +234,27 @@ export default function GameActions({
     ore: "⛰️",
   };
 
-  // Lepsze przetwarzanie zasobów z debugowaniem
+  // Process resources
   const processedResources = React.useMemo(() => {
-    console.log("Processing myResources:", myResources);
-
     if (!myResources || typeof myResources !== "object") {
-      console.log("myResources is null or not an object");
       return [];
     }
 
     const entries = Object.entries(myResources);
-    console.log("Resource entries:", entries);
-
-    // Filtruj i sortuj zasoby
     const validEntries = entries.filter(([resource, count]) => {
-      const isValid = typeof count === "number" && count >= 0;
-      if (!isValid) {
-        console.log(`Invalid resource entry: ${resource} = ${count}`);
-      }
-      return isValid;
+      return typeof count === "number" && count >= 0;
     });
-
-    console.log("Valid resource entries:", validEntries);
 
     return validEntries.sort(([a], [b]) => a.localeCompare(b));
   }, [myResources]);
 
-  // Oblicz postęp w fazie setup dla aktualnego gracza
+  // Calculate setup progress
   useEffect(() => {
     if (isSetupPhase) {
       const myPlayer = players.find((p) => p.id === myPlayerId);
       if (myPlayer) {
         const settlementCount = 5 - (myPlayer.settlements_left || 5);
         const roadCount = 15 - (myPlayer.roads_left || 15);
-
-        console.log(
-          `Updating setup progress: settlements=${settlementCount}, roads=${roadCount}`
-        );
 
         setSetupProgress({
           settlements: Math.min(settlementCount, 2),
@@ -208,7 +264,7 @@ export default function GameActions({
     }
   }, [isSetupPhase, players, myPlayerId]);
 
-  // Reset build mode and hasRolled when turn changes
+  // Reset states when turn changes
   useEffect(() => {
     if (!isMyTurn) {
       setBuildMode?.(null);
@@ -216,277 +272,169 @@ export default function GameActions({
     }
   }, [isMyTurn, setBuildMode]);
 
-  // Reset hasRolled when game phase changes
-  useEffect(() => {
-    if (gamePhase === "PLAYING" || gamePhase === "playing") {
-      setHasRolled(false);
-    }
-  }, [gamePhase]);
-
-  const handleBuild = (type: string) => {
+  // Handle build mode toggle
+  const handleBuild = (type: "settlement" | "city" | "road") => {
     if (!isMyTurn) return;
 
-    // Toggle build mode
     if (buildMode === type) {
       setBuildMode?.(null);
     } else {
-      setBuildMode?.(type as "settlement" | "city" | "road"); // POPRAWKA 1: Dodano "city"
+      setBuildMode?.(type);
     }
   };
 
+  // Handle dice roll
   const handleRollDice = () => {
-    console.log(
-      "Próba rzutu kośćmi: isMyTurn=",
-      isMyTurn,
-      "hasRolled=",
-      hasRolled,
-      "gamePhase=",
-      gamePhase
-    );
+    if (!isMyTurn || hasRolled || isSetupPhase) return;
 
-    const canRoll = gamePhase === "PLAYING" || gamePhase === "PLAYING";
-
-    if (!isMyTurn || hasRolled || isSetupPhase || !canRoll) {
-      console.log("Nie można rzucić kośćmi w tej fazie gry");
-      return;
+    if (onRollDice) {
+      onRollDice();
+      setHasRolled(true);
     }
-
-    console.log("Wysyłanie akcji roll_dice");
-    GameService.rollDice();
-    setHasRolled(true);
   };
 
+  // Handle end turn
   const handleEndTurn = () => {
-    console.log("Próba zakończenia tury: isMyTurn=", isMyTurn);
     if (!isMyTurn) return;
 
-    console.log("Wysyłanie akcji end_turn");
-    GameService.endTurn();
-    setBuildMode?.(null);
-    setHasRolled(false);
-  };
-
-  // Instrukcja dla fazy setup
-  const getSetupInstructionText = () => {
-    if (setupProgress.settlements < 1) {
-      return "Umieść swoją pierwszą osadę na planszy";
-    } else if (setupProgress.roads < 1) {
-      return "Umieść swoją pierwszą drogę, połączoną z osadą";
-    } else if (setupProgress.settlements < 2) {
-      return "Umieść swoją drugą osadę na planszy (otrzymasz surowce)";
-    } else if (setupProgress.roads < 2) {
-      return "Umieść swoją drugą drogę, połączoną z osadą";
-    } else {
-      return "Oczekiwanie na zakończenie fazy przygotowania przez pozostałych graczy";
+    if (onEndTurn) {
+      onEndTurn();
+      setBuildMode?.(null);
+      setHasRolled(false);
     }
-  };
-
-  // Funkcja określająca, co można budować w fazie setup
-  const getSetupActions = () => {
-    if (!isMyTurn) return null;
-
-    return (
-      <ActionGroup>
-        <ActionButton
-          disabled={
-            setupProgress.settlements >= 2 ||
-            (setupProgress.settlements === 1 && setupProgress.roads < 1)
-          }
-          active={buildMode === "settlement"}
-          onClick={() => handleBuild("settlement")}
-        >
-          {`Umieść osadę (${setupProgress.settlements}/2)`}
-        </ActionButton>
-
-        <ActionButton
-          disabled={
-            setupProgress.roads >= 2 ||
-            setupProgress.settlements <= setupProgress.roads
-          }
-          active={buildMode === "road"}
-          onClick={() => handleBuild("road")}
-        >
-          {`Umieść drogę (${setupProgress.roads}/2)`}
-        </ActionButton>
-
-        <ActionButton
-          disabled={
-            setupProgress.roads <= setupProgress.settlements ||
-            (setupProgress.settlements === 1 && setupProgress.roads === 0) ||
-            (setupProgress.settlements === 2 && setupProgress.roads === 1)
-          }
-          onClick={handleEndTurn}
-        >
-          Zakończ turę
-        </ActionButton>
-
-        <SetupProgress>
-          Postęp fazy przygotowania:
-          <ProgressBar
-            fillPercent={
-              setupProgress.settlements * 25 + setupProgress.roads * 25
-            }
-            color="#ff9800"
-          />
-        </SetupProgress>
-      </ActionGroup>
-    );
-  };
-
-  // Funkcja określająca, co można robić w normalnej fazie gry
-  const getNormalGameActions = () => {
-    const isRollDicePhase = gamePhase === "PLAYING" || gamePhase === "playing";
-    const isMainPhase = gamePhase === "MAIN" || gamePhase === "main";
-
-    return (
-      <>
-        <ActionGroup>
-          <ActionButton
-            disabled={!isMyTurn || hasRolled || !isRollDicePhase}
-            onClick={handleRollDice}
-          >
-            Rzuć kośćmi
-          </ActionButton>
-        </ActionGroup>
-
-        {isMainPhase && (
-          <ActionGroup>
-            <ActionButton
-              disabled={!isMyTurn || !canBuildSettlement}
-              active={buildMode === "settlement"}
-              onClick={() => handleBuild("settlement")}
-            >
-              Buduj osadę
-            </ActionButton>
-
-            <ActionButton
-              disabled={!isMyTurn || !canBuildCity}
-              active={buildMode === "city"}
-              onClick={() => handleBuild("city")}
-            >
-              Buduj miasto
-            </ActionButton>
-
-            <ActionButton
-              disabled={!isMyTurn || !canBuildRoad}
-              active={buildMode === "road"}
-              onClick={() => handleBuild("road")}
-            >
-              Buduj drogę
-            </ActionButton>
-          </ActionGroup>
-        )}
-
-        {isMyTurn &&
-          (isMainPhase ||
-            gamePhase === "END_TURN" ||
-            gamePhase === "end_turn") && (
-            <ActionGroup>
-              <ActionButton
-                disabled={!isMyTurn || (!hasRolled && isRollDicePhase)}
-                onClick={handleEndTurn}
-              >
-                Zakończ turę
-              </ActionButton>
-            </ActionGroup>
-          )}
-      </>
-    );
   };
 
   return (
-    <ActionsContainer>
-      <h3>Akcje Gry</h3>
+    <RightPanel>
+      <Panel>
+        <Section>
+          <SectionHeader>Resources</SectionHeader>
+          <ResourceGrid>
+            {processedResources.length > 0 ? (
+              processedResources.map(([resource, amount]) => (
+                <ResourceItem key={resource}>
+                  <ResourceIcon>
+                    {resourceIcons[resource] ||
+                      resourceIcons[resource.toLowerCase()] ||
+                      "📦"}
+                  </ResourceIcon>
+                  <ResourceCount>{amount as number}</ResourceCount>
+                  <ResourceLabel>{resource}</ResourceLabel>
+                </ResourceItem>
+              ))
+            ) : (
+              <ResourceItem style={{ gridColumn: "1 / -1" }}>
+                <ResourceIcon>📦</ResourceIcon>
+                <ResourceCount>0</ResourceCount>
+                <ResourceLabel>No Resources</ResourceLabel>
+              </ResourceItem>
+            )}
+          </ResourceGrid>
+        </Section>
 
-      <PhaseIndicator isSetup={isSetupPhase}>
-        {isSetupPhase
-          ? "Faza przygotowania"
-          : gamePhase === "PLAYING" || gamePhase === "playing"
-          ? "Rzut kośćmi"
-          : gamePhase === "MAIN" || gamePhase === "main"
-          ? "Faza główna gry"
-          : gamePhase === "END_TURN" || gamePhase === "end_turn"
-          ? "Zakończenie tury"
-          : "Faza gry: " + gamePhase}
-      </PhaseIndicator>
+        <Section>
+          <SectionHeader>Actions</SectionHeader>
+          <ActionGrid>
+            {isSetupPhase ? (
+              <>
+                <ActionButton variant="secondary" disabled={true}>
+                  🎲 Roll Dice
+                </ActionButton>
 
-      {/* Debug button - tylko w development */}
-      {process.env.NODE_ENV === "development" && (
-        <DebugButton
-          onClick={() => {
-            console.log("=== DEBUG RESOURCES ===");
-            console.log("myResources:", myResources);
-            console.log("processedResources:", processedResources);
-            console.log("players:", players);
-            console.log("myPlayerId:", myPlayerId);
-            const myPlayer = players.find((p) => p.id === myPlayerId);
-            console.log("myPlayer:", myPlayer);
-            console.log("myPlayer.resources:", myPlayer?.resources);
-            console.log("gamePhase:", gamePhase);
-            console.log("isMyTurn:", isMyTurn);
-            console.log("buildMode:", buildMode);
-            console.log("setupProgress:", setupProgress);
-            console.log("=====================");
-          }}
-        >
-          🔍 Debug Resources & State
-        </DebugButton>
-      )}
+                <ActionButton
+                  variant="danger"
+                  onClick={handleEndTurn}
+                  disabled={
+                    !isMyTurn ||
+                    setupProgress.roads <= setupProgress.settlements ||
+                    (setupProgress.settlements === 1 &&
+                      setupProgress.roads === 0) ||
+                    (setupProgress.settlements === 2 &&
+                      setupProgress.roads === 1)
+                  }
+                >
+                  ⏭️ End Turn
+                </ActionButton>
+              </>
+            ) : (
+              <>
+                <ActionButton
+                  variant="secondary"
+                  onClick={handleRollDice}
+                  disabled={!isMyTurn || hasRolled}
+                >
+                  🎲 Roll Dice
+                </ActionButton>
 
-      {/* Zasoby gracza */}
-      <ResourceCounter>
-        {processedResources.length > 0 ? (
-          processedResources.map(([resource, count]) => (
-            <Resource key={resource}>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                <ResourceIcon>
-                  {resourceIcons[resource] ||
-                    resourceIcons[resource.toLowerCase()] ||
-                    "📦"}
-                </ResourceIcon>
-                <span>
-                  {resource}: {count}
-                </span>
+                <ActionButton
+                  variant="danger"
+                  onClick={handleEndTurn}
+                  disabled={!isMyTurn}
+                >
+                  ⏭️ End Turn
+                </ActionButton>
+              </>
+            )}
+          </ActionGrid>
+        </Section>
+
+        <Section>
+          <SectionHeader>Build</SectionHeader>
+          <ActionGrid>
+            <ActionButton
+              active={buildMode === "settlement"}
+              onClick={() => handleBuild("settlement")}
+              disabled={!isMyTurn || (!canBuildSettlement && !isSetupPhase)}
+            >
+              🏠 Settlement
+            </ActionButton>
+
+            <ActionButton
+              active={buildMode === "road"}
+              onClick={() => handleBuild("road")}
+              disabled={!isMyTurn || (!canBuildRoad && !isSetupPhase)}
+            >
+              🛣️ Road
+            </ActionButton>
+
+            <ActionButton
+              active={buildMode === "city"}
+              onClick={() => handleBuild("city")}
+              disabled={!isMyTurn || !canBuildCity || isSetupPhase}
+            >
+              🏰 City
+            </ActionButton>
+
+            <ActionButton variant="disabled" disabled={true}>
+              🃏 Dev Card
+            </ActionButton>
+          </ActionGrid>
+        </Section>
+
+        <Section>
+          <SectionHeader>Trade</SectionHeader>
+          <ActionGrid>
+            <ActionButton variant="disabled" disabled={true}>
+              🤝 Trade
+            </ActionButton>
+
+            <ActionButton variant="disabled" disabled={true}>
+              🏪 Maritime
+            </ActionButton>
+          </ActionGrid>
+        </Section>
+
+        {buildMode && (
+          <Section>
+            <BuildModeIndicator>
+              🔨 Building: {buildMode}
+              <div style={{ fontSize: "11px", marginTop: "4px", opacity: 0.8 }}>
+                Click on the board to place
               </div>
-            </Resource>
-          ))
-        ) : (
-          <Resource>
-            <span>Brak zasobów</span>{" "}
-            {/* POPRAWKA 2: Usunięto ResourceText wrapper */}
-          </Resource>
+            </BuildModeIndicator>
+          </Section>
         )}
-      </ResourceCounter>
-
-      {/* Akcje w zależności od fazy gry */}
-      {isSetupPhase ? getSetupActions() : getNormalGameActions()}
-
-      {/* Instrukcje budowania */}
-      {buildMode && (
-        <BuildInstructions>
-          <p>Kliknij na planszy, aby zbudować: {buildMode}</p>
-          <ActionButton disabled={false} onClick={() => setBuildMode?.(null)}>
-            Anuluj budowanie
-          </ActionButton>
-        </BuildInstructions>
-      )}
-
-      {/* Komunikaty dla gracza */}
-      {!isMyTurn && (
-        <BuildInstructions>
-          Oczekiwanie na zakończenie tury przez innego gracza...
-        </BuildInstructions>
-      )}
-
-      {isMyTurn && isSetupPhase && (
-        <BuildInstructions>{getSetupInstructionText()}</BuildInstructions>
-      )}
-
-      {isMyTurn && !isSetupPhase && gamePhase === "PLAYING" && !hasRolled && (
-        <BuildInstructions>
-          Rzuć kośćmi, aby rozpocząć swoją turę!
-        </BuildInstructions>
-      )}
-    </ActionsContainer>
+      </Panel>
+    </RightPanel>
   );
 }

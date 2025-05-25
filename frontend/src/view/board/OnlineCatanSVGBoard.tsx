@@ -1,4 +1,4 @@
-// frontend/src/view/board/OnlineCatanSVGBoard.tsx
+// frontend/src/view/board/OnlineCatanSVGBoard.tsx - MINIMALISTYCZNA WERSJA Z DEBUG
 import React, { useState, useCallback, useEffect } from "react";
 import styled from "styled-components";
 
@@ -9,7 +9,7 @@ interface OnlineCatanSVGBoardProps {
   gameState?: any;
   myPlayerId?: string;
   myColor?: string;
-  isMyTurn?: boolean; // ZMIENIONE Z FUNKCJI NA BOOLEAN
+  isMyTurn?: boolean;
   gamePhase?: string;
 }
 
@@ -17,23 +17,26 @@ const BoardContainer = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 `;
 
 const BoardSVG = styled.svg`
-  /* Czyste SVG bez tła i obramowania */
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.08));
 `;
 
 const Hexagon = styled.polygon<{ resource?: string }>`
   fill: ${(props) => getResourceColor(props.resource || "")};
-  stroke: #654321;
+  stroke: #e2e8f0;
   stroke-width: 2;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 
   &:hover {
-    opacity: 0.8;
+    stroke: #cbd5e1;
     stroke-width: 3;
+    filter: brightness(1.05);
   }
 `;
 
@@ -42,24 +45,25 @@ const Vertex = styled.circle<{
   hasSettlement?: boolean;
   playerColor?: string;
 }>`
-  pointer-events: all;
   fill: ${(props) => {
-    if (props.hasSettlement) return props.playerColor || "#4CAF50";
-    if (props.active) return "rgba(76, 175, 80, 0.3)";
-    return "rgba(255, 255, 255, 0.8)";
+    if (props.hasSettlement) return props.playerColor || "#ef4444";
+    if (props.active) return "#3b82f6";
+    return "#f8fafc";
   }};
-  stroke: #333;
+  stroke: ${(props) => {
+    if (props.hasSettlement) return props.playerColor || "#ef4444";
+    if (props.active) return "#3b82f6";
+    return "#cbd5e1";
+  }};
   stroke-width: ${(props) => (props.hasSettlement ? 3 : 2)};
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 
   &:hover {
-    fill: ${(props) => {
-      if (props.hasSettlement) return props.playerColor || "#45a049";
-      if (props.active) return "rgba(76, 175, 80, 0.6)";
-      return "#DDD";
-    }};
+    stroke-width: 3;
+    transform-origin: center;
     r: ${(props) => (props.hasSettlement ? 12 : 10)};
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.15));
   }
 `;
 
@@ -69,96 +73,104 @@ const Edge = styled.line<{
   playerColor?: string;
 }>`
   stroke: ${(props) => {
-    if (props.hasRoad) return props.playerColor || "#2196F3";
-    if (props.active) return "rgba(33, 150, 243, 0.3)";
-    return "rgba(102, 102, 102, 0.6)";
+    if (props.hasRoad) return props.playerColor || "#3b82f6";
+    if (props.active) return "#3b82f6";
+    return "#e2e8f0";
   }};
   stroke-width: ${(props) => {
-    if (props.hasRoad) return 8;
-    if (props.active) return 6;
-    return 4;
+    if (props.hasRoad) return 6;
+    if (props.active) return 4;
+    return 2;
   }};
+  stroke-linecap: round;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
 
   &:hover {
-    stroke: ${(props) => {
-      if (props.hasRoad) return props.playerColor || "#1976D2";
-      if (props.active) return "rgba(33, 150, 243, 0.8)";
-      return "#888";
-    }};
-    stroke-width: ${(props) => (props.hasRoad ? 10 : 8)};
+    stroke-width: ${(props) => (props.hasRoad ? 8 : 6)};
+    filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.1));
   }
 `;
 
 const NumberToken = styled.circle<{ isRed?: boolean }>`
-  fill: ${(props) => (props.isRed ? "#DC143C" : "#F5DEB3")};
-  stroke: #8b4513;
+  fill: white;
+  stroke: ${(props) => (props.isRed ? "#ef4444" : "#64748b")};
   stroke-width: 2;
-  filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
 `;
 
 const NumberText = styled.text<{ isRed?: boolean }>`
-  fill: ${(props) => (props.isRed ? "white" : "#8B4513")};
-  font-size: 16px;
-  font-weight: bold;
+  fill: ${(props) => (props.isRed ? "#ef4444" : "#1e293b")};
+  font-size: 14px;
+  font-weight: 700;
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    sans-serif;
 `;
 
-const ResourceText = styled.text`
-  fill: white;
-  font-size: 10px;
-  font-weight: bold;
-  text-anchor: middle;
-  dominant-baseline: central;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.7);
-  pointer-events: none;
-`;
-
+// Debug styles
 const VertexLabel = styled.text<{ hasSettlement?: boolean }>`
-  fill: ${(props) => (props.hasSettlement ? "white" : "#333")};
+  fill: ${(props) => (props.hasSettlement ? "white" : "#64748b")};
   font-size: 8px;
-  font-weight: bold;
+  font-weight: 600;
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
-  text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    sans-serif;
 `;
 
-// Debug info
+const EdgeLabel = styled.text`
+  fill: #64748b;
+  font-size: 7px;
+  font-weight: 500;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    sans-serif;
+`;
+
 const DebugInfo = styled.div`
-  margin-top: 10px;
-  padding: 10px;
-  background: #f0f0f0;
-  border-radius: 5px;
-  font-family: monospace;
+  margin-top: 20px;
+  padding: 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    sans-serif;
   font-size: 12px;
+  color: #475569;
+  min-width: 300px;
+
+  div {
+    margin-bottom: 4px;
+  }
+
+  strong {
+    color: #1e293b;
+  }
 `;
 
-// Funkcja do kolorów zasobów
+// Minimalistyczne kolory zasobów
 const getResourceColor = (resource: string): string => {
   const colors: Record<string, string> = {
-    wood: "#228B22",
-    brick: "#CD853F",
-    sheep: "#98FB98",
-    wheat: "#FFD700",
-    ore: "#708090",
-    desert: "#F4A460",
+    wood: "#16a34a", // Zielony
+    brick: "#dc2626", // Czerwony
+    sheep: "#84cc16", // Jasny zielony
+    wheat: "#eab308", // Żółty
+    ore: "#64748b", // Szary
+    desert: "#f59e0b", // Pomarańczowy
   };
-  return colors[resource.toLowerCase()] || "#DDD";
+  return colors[resource.toLowerCase()] || "#f1f5f9";
 };
 
 const getVertexIdForHexAndIndex = (
   hexIndex: number,
   vertexIndex: number
 ): number => {
-  // KLUCZOWE: Musi być zgodne z backendem!
-  // Backend używa: vertex_id = hexIndex * 6 + vertexIndex
-  // ALE hexIndex musi być w tej samej kolejności co hex_order_frontend w backend!
-
-  // hexData jest w tej samej kolejności co hex_order_frontend w backend
   return hexIndex * 6 + vertexIndex;
 };
 
@@ -166,11 +178,10 @@ const getEdgeIdForHexAndIndex = (
   hexIndex: number,
   edgeIndex: number
 ): number => {
-  // Analogicznie dla krawędzi
   return hexIndex * 6 + edgeIndex;
 };
 
-// Definicja planszy - dokładnie taka sama jak w backend
+// Definicja planszy
 const hexData = [
   { q: 0, r: 0, s: 0, resource: "desert", number: 0 },
   { q: 0, r: -2, s: 2, resource: "wood", number: 6 },
@@ -200,7 +211,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
   gameState,
   myPlayerId,
   myColor = "red",
-  isMyTurn = false, // ZMIENIONE Z FUNKCJI NA BOOLEAN
+  isMyTurn = false,
 }) => {
   const [builtSettlements, setBuiltSettlements] = useState<
     Map<number, { playerId: string; color: string }>
@@ -208,20 +219,18 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
   const [builtRoads, setBuiltRoads] = useState<
     Map<number, { playerId: string; color: string }>
   >(new Map());
-
-  // DODANE: Debug state
   const [debugInfo, setDebugInfo] = useState<string>("");
 
   // Funkcja do konwersji współrzędnych hex na pozycję ekranu
-  const hexToPixel = useCallback((q: number, r: number, size: number = 50) => {
+  const hexToPixel = useCallback((q: number, r: number, size: number = 45) => {
     const x = size * ((3 / 2) * q);
     const y = size * ((Math.sqrt(3) / 2) * q + Math.sqrt(3) * r);
-    return { x: x + 400, y: y + 300 };
+    return { x: x + 350, y: y + 250 };
   }, []);
 
   // Funkcje do tworzenia wierzchołków i krawędzi heksagonu
   const getHexagonVertices = useCallback(
-    (centerX: number, centerY: number, size: number = 50) => {
+    (centerX: number, centerY: number, size: number = 45) => {
       const vertices = [];
       for (let i = 0; i < 6; i++) {
         const angle = (Math.PI / 3) * i;
@@ -235,7 +244,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
   );
 
   const getHexagonEdges = useCallback(
-    (centerX: number, centerY: number, size: number = 50) => {
+    (centerX: number, centerY: number, size: number = 45) => {
       const vertices = getHexagonVertices(centerX, centerY, size);
       const edges = [];
       for (let i = 0; i < 6; i++) {
@@ -246,6 +255,8 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
           y1: start.y,
           x2: end.x,
           y2: end.y,
+          midX: (start.x + end.x) / 2,
+          midY: (start.y + end.y) / 2,
         });
       }
       return edges;
@@ -290,12 +301,12 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
   // Pomocnicza funkcja do pobierania koloru gracza
   const getPlayerColor = (playerId: string): string => {
-    if (!gameState?.players) return "#333";
+    if (!gameState?.players) return "#64748b";
 
     const playerData = Object.values(gameState.players).find(
       (p: any) => p.player_id === playerId
     );
-    return (playerData as any)?.color || "#333";
+    return (playerData as any)?.color || "#64748b";
   };
 
   const handleVertexClick = useCallback(
@@ -352,7 +363,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
   return (
     <BoardContainer>
-      <BoardSVG width={800} height={600} viewBox="0 0 800 600">
+      <BoardSVG width={700} height={500} viewBox="0 0 700 500">
         {hexData.map((hex, hexIndex) => {
           const { x, y } = hexToPixel(hex.q, hex.r);
           const vertices = getHexagonVertices(x, y);
@@ -367,24 +378,18 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                 resource={hex.resource}
               />
 
-              {/* Tekst zasobu */}
-              <ResourceText x={x} y={y - 12}>
-                {hex.resource.toUpperCase()}
-              </ResourceText>
-
               {/* Token z numerem */}
               {hex.number > 0 && (
                 <>
-                  <NumberToken cx={x} cy={y + 8} r="20" isRed={isRedNumber} />
-                  <NumberText x={x} y={y + 8} isRed={isRedNumber}>
+                  <NumberToken cx={x} cy={y} r="16" isRed={isRedNumber} />
+                  <NumberText x={x} y={y} isRed={isRedNumber}>
                     {hex.number}
                   </NumberText>
                 </>
               )}
 
-              {/* Wierzchołki (dla domków) */}
+              {/* Wierzchołki (dla osad) */}
               {vertices.map((vertex, vertexIndex) => {
-                // const globalVertexId = hexIndex * 6 + vertexIndex;
                 const globalVertexId = getVertexIdForHexAndIndex(
                   hexIndex,
                   vertexIndex
@@ -398,7 +403,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                     <Vertex
                       cx={vertex.x}
                       cy={vertex.y}
-                      r={hasSettlement ? 10 : 8}
+                      r={hasSettlement ? 8 : 6}
                       active={buildMode === "settlement" && isMyTurn}
                       hasSettlement={hasSettlement}
                       playerColor={settlement?.color}
@@ -406,10 +411,10 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                     />
                     <VertexLabel
                       x={vertex.x}
-                      y={vertex.y}
+                      y={vertex.y + (hasSettlement ? 0 : 15)}
                       hasSettlement={hasSettlement}
                     >
-                      {globalVertexId}
+                      {/* {globalVertexId} */}
                     </VertexLabel>
                   </g>
                 );
@@ -417,7 +422,6 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
               {/* Krawędzie (dla dróg) */}
               {edges.map((edge, edgeIndex) => {
-                // const globalEdgeId = hexIndex * 6 + edgeIndex;
                 const globalEdgeId = getEdgeIdForHexAndIndex(
                   hexIndex,
                   edgeIndex
@@ -425,13 +429,6 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
                 const road = builtRoads.get(globalEdgeId);
                 const hasRoad = !!road;
-                // W OnlineCatanSVGBoard, dodaj to PRZED return:
-                // console.log("Frontend hexData order:");
-                // hexData.forEach((hex, i) => {
-                //   console.log(
-                //     `${i}: (${hex.q}, ${hex.r}, ${hex.s}) - ${hex.resource}`
-                //   );
-                // });
 
                 return (
                   <g key={`edge-${globalEdgeId}`}>
@@ -445,6 +442,9 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                       playerColor={road?.color}
                       onClick={() => handleEdgeClick(globalEdgeId)}
                     />
+                    <EdgeLabel x={edge.midX} y={edge.midY}>
+                      {/* {globalEdgeId} */}
+                    </EdgeLabel>
                   </g>
                 );
               })}
@@ -452,19 +452,6 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
           );
         })}
       </BoardSVG>
-
-      {/* Debug info */}
-      <DebugInfo>
-        <div>
-          <strong>Debug Info:</strong>
-        </div>
-        <div>My Turn: {isMyTurn ? "YES" : "NO"}</div>
-        <div>Build Mode: {buildMode || "None"}</div>
-        <div>My Player ID: {myPlayerId || "None"}</div>
-        <div>Last Action: {debugInfo || "None"}</div>
-        <div>Settlements: {builtSettlements.size}</div>
-        <div>Roads: {builtRoads.size}</div>
-      </DebugInfo>
     </BoardContainer>
   );
 };

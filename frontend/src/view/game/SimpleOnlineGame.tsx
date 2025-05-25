@@ -1,4 +1,4 @@
-// frontend/src/view/game/SimpleOnlineGame.tsx - POPRAWIONA WERSJA
+// frontend/src/view/game/SimpleOnlineGame.tsx - PIĘKNA WERSJA
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import SimpleGameService from "../../view/board/SimpleGameService";
@@ -7,113 +7,421 @@ import styled from "styled-components";
 import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
 
-const GameContainer = styled.div`
+const AppContainer = styled.div`
   display: flex;
   flex-direction: column;
-  margin: 0 auto;
-  padding: 20px;
-  max-width: 1200px;
+  height: 100vh;
+  background: #fafafa;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    sans-serif;
+  color: #1e293b;
+  overflow: hidden;
 `;
 
-const GameHeader = styled.div`
+const TopBar = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  padding: 12px 24px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
 `;
 
-const BoardContainer = styled.div`
-  flex: 2;
-  position: relative;
-`;
-
-const SidePanel = styled.div`
-  flex: 1;
-  padding: 0 20px;
-`;
-
-const GameLayout = styled.div`
+const LeftSection = styled.div`
   display: flex;
-  flex-direction: row;
-
-  @media (max-width: 768px) {
-    flex-direction: column;
-  }
+  align-items: center;
+  gap: 20px;
 `;
 
-const GameStatus = styled.div`
-  background-color: #f0f0f0;
-  padding: 10px;
-  border-radius: 5px;
-  margin-bottom: 15px;
-  text-align: center;
+const GameTitle = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+`;
+
+const Title = styled.h1`
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: #1e293b;
+`;
+
+const GameInfo = styled.div`
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+`;
+
+const TurnIndicator = styled.div<{ isMyTurn: boolean }>`
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: ${(props) => (props.isMyTurn ? "#059669" : "#64748b")};
+  border: 1px solid #e2e8f0;
 `;
 
 const LeaveButton = styled.button`
-  background-color: #f44336;
+  background: #ef4444;
   color: white;
   border: none;
-  padding: 8px 15px;
-  border-radius: 4px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s;
 
   &:hover {
-    background-color: #d32f2f;
+    background: #dc2626;
   }
 `;
 
-const LoadingMessage = styled.div`
+const MainContent = styled.div`
+  display: flex;
+  flex: 1;
+  min-height: 0;
+`;
+
+const LeftPanel = styled.div`
+  width: 260px;
+  background: white;
+  border-right: 1px solid #e2e8f0;
+  overflow-y: auto;
+  flex-shrink: 0;
+`;
+
+const GameBoard = styled.div`
+  flex: 1;
+  background: white;
+  display: flex;
+  align-items: flex-start;
+  padding-top: -50px;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+`;
+
+const RightPanel = styled.div`
+  width: 420px;
+  background: white;
+  border-left: 1px solid #e2e8f0;
+  overflow-y: auto;
+  flex-shrink: 0;
+`;
+
+const Panel = styled.div`
+  padding: 20px;
+`;
+
+const Section = styled.div`
+  margin-bottom: 24px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const SectionHeader = styled.div`
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #64748b;
+  margin-bottom: 12px;
+`;
+
+const PlayerCard = styled.div<{ isActive: boolean; color: string }>`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid ${(props) => (props.isActive ? props.color : "#e2e8f0")};
+  background: ${(props) => (props.isActive ? `${props.color}08` : "white")};
+  margin-bottom: 8px;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: ${(props) => props.color};
+    background: ${(props) => `${props.color}05`};
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  }
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+`;
+
+const PlayerInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
+const PlayerDot = styled.div<{ color: string }>`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: ${(props) => props.color};
+  box-shadow: 0 0 0 2px white, 0 0 0 3px ${(props) => props.color}30;
+`;
+
+const PlayerName = styled.div`
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+`;
+
+const PlayerStats = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+`;
+
+const VictoryPoints = styled.div<{ isLeading: boolean }>`
+  background: ${(props) => (props.isLeading ? "#3b82f6" : "#f1f5f9")};
+  color: ${(props) => (props.isLeading ? "white" : "#64748b")};
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 24px;
   text-align: center;
-  padding: 40px;
+`;
+
+const ResourceGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+`;
+
+const ResourceItem = styled.div`
+  text-align: center;
+  padding: 12px 6px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+  }
+`;
+
+const ResourceIcon = styled.div`
   font-size: 20px;
-  color: #666;
+  margin-bottom: 4px;
+`;
+
+const ResourceCount = styled.div`
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 2px;
+`;
+
+const ResourceLabel = styled.div`
+  font-size: 9px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+`;
+
+const ActionsGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+`;
+
+const BuildGrid = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+`;
+
+const ActionButton = styled.button<{
+  variant?: "primary" | "secondary" | "danger" | "disabled";
+  active?: boolean;
+  compact?: boolean;
+}>`
+  padding: ${(props) => (props.compact ? "10px 8px" : "12px 12px")};
+  border-radius: 8px;
+  font-size: ${(props) => (props.compact ? "11px" : "12px")};
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: ${(props) => (props.compact ? "50px" : "60px")};
+
+  ${(props) => {
+    if (props.active) {
+      return `
+        background: #3b82f6;
+        border-color: #3b82f6;
+        color: white;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        transform: translateY(-1px);
+      `;
+    }
+
+    switch (props.variant) {
+      case "danger":
+        return `
+          background: #ef4444;
+          border-color: #ef4444;
+          color: white;
+          &:hover:not(:disabled) { 
+            background: #dc2626; 
+            border-color: #dc2626;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+          }
+        `;
+      case "disabled":
+        return `
+          background: #f8fafc;
+          border-color: #e2e8f0;
+          color: #94a3b8;
+          cursor: not-allowed;
+        `;
+      case "secondary":
+        return `
+          background: #f8fafc;
+          border-color: #e2e8f0;
+          color: #475569;
+          &:hover:not(:disabled) { 
+            background: #f1f5f9; 
+            border-color: #cbd5e1;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+          }
+        `;
+      default:
+        return `
+          background: #3b82f6;
+          border-color: #3b82f6;
+          color: white;
+          &:hover:not(:disabled) { 
+            background: #2563eb; 
+            border-color: #2563eb;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+          }
+        `;
+    }
+  }}
+
+  &:disabled {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+`;
+
+const ButtonIcon = styled.div`
+  font-size: 16px;
+`;
+
+const BuildModeIndicator = styled.div`
+  background: #fef3c7;
+  color: #d97706;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #fde68a;
+`;
+
+const LoadingMessage = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 16px;
+  color: #64748b;
+  gap: 16px;
+`;
+
+const LoadingSpinner = styled.div`
+  width: 32px;
+  height: 32px;
+  border: 3px solid #f1f5f9;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
 `;
 
 const ErrorMessage = styled.div`
-  background-color: #ffeeee;
-  color: #d32f2f;
-  padding: 15px;
-  border-radius: 5px;
-  margin: 20px 0;
-  border: 1px solid #ffcccc;
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 16px;
+  border-radius: 8px;
+  margin: 16px;
+  font-weight: 500;
+  text-align: center;
+  border: 1px solid #fecaca;
 `;
 
 const SuccessIndicator = styled.div<{ show: boolean }>`
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background-color: rgba(76, 175, 80, 0.9);
-  color: white;
-  padding: 15px 30px;
-  border-radius: 50px;
-  font-weight: bold;
-  font-size: 18px;
+  top: 80px;
+  right: 24px;
+  background: white;
+  color: #059669;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-weight: 600;
   opacity: ${(props) => (props.show ? 1 : 0)};
-  transition: opacity 0.5s;
+  transform: translateX(${(props) => (props.show ? "0" : "100px")});
+  transition: all 0.3s ease;
   z-index: 1000;
-  pointer-events: none;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid #bbf7d0;
 `;
 
-const TestButtons = styled.div`
-  margin-bottom: 20px;
-  display: flex;
-  gap: 10px;
-`;
-
-const TestButton = styled.button<{ active?: boolean }>`
-  padding: 10px 20px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  font-weight: bold;
-  background-color: ${(props) => (props.active ? "#4CAF50" : "#f0f0f0")};
-  color: ${(props) => (props.active ? "white" : "black")};
-
-  &:hover {
-    opacity: 0.8;
-  }
+const DiceResult = styled.div`
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  color: #3b82f6;
+  padding: 16px 24px;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 999;
+  border: 2px solid #3b82f6;
 `;
 
 export default function SimpleOnlineGame() {
@@ -123,9 +431,7 @@ export default function SimpleOnlineGame() {
 
   const roomId = urlRoomId || location.state?.roomId;
   const initialGameState = location.state?.gameState;
-  const useSimpleService = location.state?.useSimpleService || true;
 
-  // POPRAWKA: Zmieniony typ buildMode, aby uwzględnić "city"
   const [gameState, setGameState] = useState<any>(initialGameState);
   const [currentPlayerId, setCurrentPlayerId] = useState<string>("");
   const [players, setPlayers] = useState<any[]>([]);
@@ -141,7 +447,6 @@ export default function SimpleOnlineGame() {
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
 
-  // Znajdź kolor mojego gracza
   const myColor = players.find((p) => p.id === myPlayerId)?.color || "red";
 
   const showSuccessIndicator = useCallback((message: string) => {
@@ -152,15 +457,34 @@ export default function SimpleOnlineGame() {
     }, 2000);
   }, []);
 
-  // Sprawdź czy roomId istnieje
+  // ✅ Automatyczne ustawianie currentPlayerId
+  useEffect(() => {
+    if (
+      gameState?.player_order &&
+      gameState?.current_player_index !== undefined
+    ) {
+      const expectedCurrentPlayer =
+        gameState.player_order[gameState.current_player_index];
+
+      if (expectedCurrentPlayer && expectedCurrentPlayer !== currentPlayerId) {
+        console.log("✅ Setting currentPlayerId to:", expectedCurrentPlayer);
+        setCurrentPlayerId(expectedCurrentPlayer);
+      }
+    }
+  }, [
+    gameState?.player_order,
+    gameState?.current_player_index,
+    currentPlayerId,
+  ]);
+
+  // Check if roomId exists
   useEffect(() => {
     if (!roomId) {
-      console.error("Missing roomId in SimpleOnlineGame");
       navigate("/");
     }
   }, [roomId, navigate]);
 
-  // Połączenie WebSocket
+  // WebSocket connection
   useEffect(() => {
     if (!roomId) {
       navigate("/");
@@ -173,7 +497,6 @@ export default function SimpleOnlineGame() {
 
       try {
         if (!SimpleGameService.isConnected()) {
-          console.log(`Connecting to room: ${roomId}`);
           await SimpleGameService.connectToRoom(roomId);
           setIsConnected(true);
         } else {
@@ -184,7 +507,6 @@ export default function SimpleOnlineGame() {
 
         try {
           const clientId = await SimpleGameService.getClientId();
-          console.log("Got client ID:", clientId);
           setMyPlayerId(clientId);
         } catch (err) {
           console.warn("Could not get client ID immediately:", err);
@@ -192,7 +514,6 @@ export default function SimpleOnlineGame() {
 
         setLoading(false);
       } catch (err) {
-        console.error("Connection error:", err);
         setError(
           `Connection error: ${
             err instanceof Error ? err.message : "Unknown error"
@@ -206,129 +527,77 @@ export default function SimpleOnlineGame() {
     setupConnection();
   }, [roomId, navigate]);
 
-  // Event handlers
-  useEffect(() => {
-    const handleGameUpdate = (data: any) => {
-      console.log("Game update received:", data);
+  // Game update handler
+  const handleGameUpdate = useCallback(
+    (data: any) => {
+      if (data.game_state) {
+        setGameState(data.game_state);
 
-      // Wiadomości o akcjach
+        if (data.game_state.phase) {
+          setGamePhase(data.game_state.phase);
+        }
+
+        // Set current player
+        if (
+          data.game_state.current_player_index !== undefined &&
+          data.game_state.player_order &&
+          data.game_state.player_order.length > 0
+        ) {
+          const newCurrentPlayerId =
+            data.game_state.player_order[data.game_state.current_player_index];
+          if (newCurrentPlayerId && newCurrentPlayerId !== currentPlayerId) {
+            setCurrentPlayerId(newCurrentPlayerId);
+          }
+        }
+
+        // Convert players
+        if (data.game_state.players) {
+          let playersData;
+          if (Array.isArray(data.game_state.players)) {
+            playersData = data.game_state.players;
+          } else {
+            playersData = Object.values(data.game_state.players);
+          }
+
+          const playersList = playersData.map((p: any) => ({
+            id: p.player_id,
+            color: p.color,
+            resources: p.resources || {},
+            victory_points: p.victory_points || 0,
+            settlements_left: p.settlements_left || 5,
+            cities_left: p.cities_left || 4,
+            roads_left: p.roads_left || 15,
+          }));
+
+          setPlayers(playersList);
+        }
+      }
+
+      // Action messages
       if (data.action) {
         const actionMessages: { [key: string]: string } = {
-          build_settlement: "Osada zbudowana!",
-          build_city: "Miasto zbudowane!",
-          build_road: "Droga zbudowana!",
-          end_turn: "Tura zakończona",
+          build_settlement: "Settlement built!",
+          build_city: "City built!",
+          build_road: "Road built!",
+          end_turn: "Turn ended",
         };
 
         if (actionMessages[data.action] && data.player_id === myPlayerId) {
           showSuccessIndicator(actionMessages[data.action]);
         }
-
-        // Komunikat o zmianie tury
-        if (data.turn_advanced && data.new_current_player) {
-          if (data.new_current_player === myPlayerId) {
-            showSuccessIndicator("Twoja tura!");
-          } else {
-            const newPlayerName =
-              players
-                .find((p) => p.id === data.new_current_player)
-                ?.id?.substring(0, 6) || "Gracz";
-            showSuccessIndicator(`Tura przeszła do ${newPlayerName}...`);
-          }
-        }
-
-        // Komunikat o zakończeniu setup
-        if (data.setup_complete) {
-          showSuccessIndicator(
-            "Faza przygotowania zakończona! Rozpoczyna się gra!"
-          );
-        }
       }
 
-      // Aktualizacja stanu gry
-      if (data.game_state) {
-        console.log("Updating game state from data:", data.game_state);
-        setGameState(data.game_state);
-
-        if (data.game_state.phase) {
-          console.log("Setting game phase:", data.game_state.phase);
-          setGamePhase(data.game_state.phase);
-        }
-
-        // Konwertuj graczy do formatu zgodnego z PlayersList
-        if (data.game_state.players) {
-          console.log("Raw players data from server:", data.game_state.players);
-
-          // Sprawdź czy players to obiekt czy tablica
-          let playersData;
-          if (Array.isArray(data.game_state.players)) {
-            console.log("Players data is array");
-            playersData = data.game_state.players;
-          } else {
-            console.log("Players data is object");
-            playersData = Object.values(data.game_state.players);
-          }
-
-          const playersList = playersData.map((p: any) => {
-            console.log("Processing player:", p);
-
-            return {
-              id: p.player_id, // ✅ Zawsze używaj player_id
-              color: p.color,
-              resources: p.resources || {},
-              victory_points: p.victory_points || 0,
-              settlements_left: p.settlements_left || 5,
-              cities_left: p.cities_left || 4,
-              roads_left: p.roads_left || 15,
-            };
-          });
-
-          console.log("Processed players list:", playersList);
-          setPlayers(playersList);
-
-          // ✅ USTAW AKTUALNEGO GRACZA
-          if (
-            data.game_state.current_player_index !== undefined &&
-            data.game_state.player_order &&
-            data.game_state.player_order.length > 0
-          ) {
-            const currentPlayerIndex = data.game_state.current_player_index;
-            const playerOrder = data.game_state.player_order;
-
-            console.log("Player order from server:", playerOrder);
-            console.log(
-              "Current player index from server:",
-              currentPlayerIndex
-            );
-
-            if (playerOrder[currentPlayerIndex]) {
-              const newCurrentPlayerId = playerOrder[currentPlayerIndex];
-              console.log("Setting current player ID:", newCurrentPlayerId);
-              setCurrentPlayerId(newCurrentPlayerId);
-            } else {
-              console.warn(
-                "Invalid current player index:",
-                currentPlayerIndex,
-                "for order:",
-                playerOrder
-              );
-            }
-          } else {
-            console.warn(
-              "Missing current_player_index or player_order in game state"
-            );
-          }
-        }
-      }
-
-      // Automatycznie wyczyść build mode po postawieniu drogi w setup
+      // Auto clear build mode
       if (data.action === "build_road" && gamePhase === "setup") {
         setBuildMode(null);
       }
-    };
+    },
+    [currentPlayerId, myPlayerId, gamePhase, showSuccessIndicator]
+  );
 
+  // Event handlers
+  useEffect(() => {
     const handleGameState = (data: any) => {
-      console.log("Game state received:", data);
       if (data.game_state) {
         handleGameUpdate(data);
       }
@@ -336,27 +605,19 @@ export default function SimpleOnlineGame() {
 
     const handleClientId = (data: any) => {
       if (data.player_id) {
-        console.log("Received client ID:", data.player_id);
         setMyPlayerId(data.player_id);
       }
     };
 
     const handlePlayerJoined = (data: any) => {
-      console.log("Player joined:", data);
       SimpleGameService.getGameState();
     };
 
     const handleDiceRoll = (data: any) => {
-      console.log("Dice roll:", data);
       if (data.total) {
         setDiceResult(data.total);
         if (data.player_id === myPlayerId) {
-          showSuccessIndicator(`Wyrzucono ${data.total}!`);
-        } else {
-          const playerName =
-            players.find((p) => p.id === data.player_id)?.id?.substring(0, 6) ||
-            "Gracz";
-          showSuccessIndicator(`${playerName} wyrzucił ${data.total}`);
+          showSuccessIndicator(`Rolled ${data.total}!`);
         }
       }
 
@@ -366,10 +627,7 @@ export default function SimpleOnlineGame() {
     };
 
     const handleError = (data: any) => {
-      console.error("Game error:", data.message);
       setError(data.message || "An unknown error occurred");
-
-      // Automatycznie wyczyść błąd po 5 sekundach
       setTimeout(() => {
         setError(null);
       }, 5000);
@@ -380,7 +638,6 @@ export default function SimpleOnlineGame() {
       setError("Disconnected from game server. Try refreshing the page.");
     };
 
-    // Register event handlers
     if (isConnected) {
       SimpleGameService.addEventHandler("game_update", handleGameUpdate);
       SimpleGameService.addEventHandler("game_state", handleGameState);
@@ -405,7 +662,7 @@ export default function SimpleOnlineGame() {
         SimpleGameService.removeEventHandler("disconnect", handleDisconnect);
       }
     };
-  }, [isConnected, myPlayerId, showSuccessIndicator, players, gamePhase]);
+  }, [isConnected, handleGameUpdate, myPlayerId, showSuccessIndicator]);
 
   // Helper functions
   const getMyResources = useCallback(() => {
@@ -463,49 +720,37 @@ export default function SimpleOnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
-  // Handlery kliknięć
+  // Action handlers
+  const handleEndTurn = useCallback(() => {
+    if (!isMyTurn()) return;
+    SimpleGameService.endTurn();
+    setBuildMode(null);
+    showSuccessIndicator("Ending turn...");
+  }, [isMyTurn, showSuccessIndicator]);
+
+  const handleRollDice = useCallback(() => {
+    if (!isMyTurn() || gamePhase === "setup") return;
+    SimpleGameService.rollDice();
+    showSuccessIndicator("Rolling dice...");
+  }, [isMyTurn, gamePhase, showSuccessIndicator]);
+
+  // Click handlers
   const handleVertexClick = useCallback(
     (vertexId: number) => {
-      console.log("Vertex click handler called:", {
-        vertexId,
-        isMyTurn: isMyTurn(),
-        buildMode,
-        myPlayerId,
-        currentPlayerId,
-      });
-
-      if (!isMyTurn() || buildMode !== "settlement") {
-        console.log("Click rejected in handler");
-        return;
-      }
-
-      console.log("Processing vertex click:", vertexId);
+      if (!isMyTurn() || buildMode !== "settlement") return;
       SimpleGameService.buildSettlement(vertexId);
-      showSuccessIndicator("Budowanie osady...");
+      showSuccessIndicator("Building settlement...");
     },
-    [isMyTurn, buildMode, showSuccessIndicator, myPlayerId, currentPlayerId]
+    [isMyTurn, buildMode, showSuccessIndicator]
   );
 
   const handleEdgeClick = useCallback(
     (edgeId: number) => {
-      console.log("Edge click handler called:", {
-        edgeId,
-        isMyTurn: isMyTurn(),
-        buildMode,
-        myPlayerId,
-        currentPlayerId,
-      });
-
-      if (!isMyTurn() || buildMode !== "road") {
-        console.log("Click rejected in handler");
-        return;
-      }
-
-      console.log("Processing edge click:", edgeId);
+      if (!isMyTurn() || buildMode !== "road") return;
       SimpleGameService.buildRoad(edgeId);
-      showSuccessIndicator("Budowanie drogi...");
+      showSuccessIndicator("Building road...");
     },
-    [isMyTurn, buildMode, showSuccessIndicator, myPlayerId, currentPlayerId]
+    [isMyTurn, buildMode, showSuccessIndicator]
   );
 
   const handleLeaveGame = () => {
@@ -513,187 +758,123 @@ export default function SimpleOnlineGame() {
     navigate("/");
   };
 
-  // Test functions for debugging
-  const handleTestSettlement = () => {
-    setBuildMode(buildMode === "settlement" ? null : "settlement");
+  // Build mode toggle
+  const handleBuild = (type: "settlement" | "city" | "road") => {
+    if (!isMyTurn()) return;
+    if (buildMode === type) {
+      setBuildMode(null);
+    } else {
+      setBuildMode(type);
+    }
   };
 
-  const handleTestRoad = () => {
-    setBuildMode(buildMode === "road" ? null : "road");
+  // Resource processing
+  const processedResources = React.useMemo(() => {
+    const myResources = getMyResources();
+    if (!myResources || typeof myResources !== "object") {
+      return [];
+    }
+
+    const entries = Object.entries(myResources);
+    const validEntries = entries.filter(([resource, count]) => {
+      return typeof count === "number" && count >= 0;
+    });
+
+    return validEntries.sort(([a], [b]) => a.localeCompare(b));
+  }, [getMyResources]);
+
+  const resourceIcons: { [key: string]: string } = {
+    WOOD: "🌲",
+    wood: "🌲",
+    BRICK: "🧱",
+    brick: "🧱",
+    SHEEP: "🐑",
+    sheep: "🐑",
+    WHEAT: "🌾",
+    wheat: "🌾",
+    ORE: "⛰️",
+    ore: "⛰️",
   };
 
   if (loading) {
-    return <LoadingMessage>Wczytywanie gry...</LoadingMessage>;
+    return (
+      <LoadingMessage>
+        <LoadingSpinner />
+        Loading game...
+      </LoadingMessage>
+    );
   }
 
   if (error) {
-    return <ErrorMessage>{error}</ErrorMessage>;
+    return (
+      <AppContainer>
+        <ErrorMessage>{error}</ErrorMessage>
+      </AppContainer>
+    );
   }
 
+  const maxVictoryPoints = Math.max(...players.map((p) => p.victory_points));
+
   return (
-    <GameContainer>
-      <GameHeader>
-        <h2>Simple Catan Online - Room: {roomId}</h2>
-        <LeaveButton onClick={handleLeaveGame}>Opuść grę</LeaveButton>
-      </GameHeader>
+    <AppContainer>
+      <TopBar>
+        <LeftSection>
+          <GameTitle>
+            <Title>Catan</Title>
+            <GameInfo>
+              Room: {roomId} • {players.length} players
+            </GameInfo>
+          </GameTitle>
+          <TurnIndicator isMyTurn={isMyTurn()}>
+            {isMyTurn() ? "✨ Your Turn" : "⏳Waiting..."}
+          </TurnIndicator>
+        </LeftSection>
+        <LeaveButton onClick={handleLeaveGame}>Leave Game</LeaveButton>
+      </TopBar>
 
-      {error && <ErrorMessage>{error}</ErrorMessage>}
+      <MainContent>
+        <LeftPanel>
+          <Panel>
+            <Section>
+              <SectionHeader>Players ({players.length})</SectionHeader>
+              {players.map((player, index) => {
+                const isCurrentPlayer = player.id === currentPlayerId;
+                const isLeading =
+                  player.victory_points === maxVictoryPoints &&
+                  maxVictoryPoints > 0;
+                const displayName = player.id.substring(0, 8);
+                const totalResources = Object.values(
+                  player.resources || {}
+                ).reduce(
+                  (a: number, b: unknown) =>
+                    a + (typeof b === "number" ? b : 0),
+                  0
+                );
 
-      {/* Test buttons for debugging */}
-      <TestButtons>
-        <TestButton
-          active={buildMode === "settlement"}
-          onClick={handleTestSettlement}
-        >
-          🏠 Test Settlement Mode
-        </TestButton>
-        <TestButton active={buildMode === "road"} onClick={handleTestRoad}>
-          🛣️ Test Road Mode
-        </TestButton>
-        <TestButton
-          onClick={() =>
-            console.log("Current state:", {
-              myPlayerId,
-              currentPlayerId,
-              isMyTurn: isMyTurn(),
-              buildMode,
-              gameState,
-            })
-          }
-        >
-          🔍 Debug State
-        </TestButton>
-        <TestButton
-          onClick={() => {
-            console.log("🔍 CURRENT STATE DEBUG:");
-            console.log("   myPlayerId:", myPlayerId);
-            console.log("   currentPlayerId:", currentPlayerId);
-            console.log("   isMyTurn():", isMyTurn());
-            console.log(
-              "   gameState.current_player_index:",
-              gameState?.current_player_index
-            );
-            console.log("   gameState.player_order:", gameState?.player_order);
-            console.log("   players array:", players);
+                return (
+                  <PlayerCard
+                    key={player.id}
+                    isActive={isCurrentPlayer}
+                    color={player.color}
+                  >
+                    <PlayerInfo>
+                      <PlayerDot color={player.color} />
+                      <PlayerName>{displayName}</PlayerName>
+                    </PlayerInfo>
+                    <PlayerStats>
+                      <span>{totalResources}</span>
+                      <VictoryPoints isLeading={isLeading}>
+                        {player.victory_points}
+                      </VictoryPoints>
+                    </PlayerStats>
+                  </PlayerCard>
+                );
+              })}
+            </Section>
+          </Panel>
+        </LeftPanel>
 
-            // Sprawdź czy może problem jest w stanie React
-            if (
-              gameState?.player_order &&
-              gameState?.current_player_index !== undefined
-            ) {
-              const expectedCurrentPlayer =
-                gameState.player_order[gameState.current_player_index];
-              console.log(
-                "   Expected current player from gameState:",
-                expectedCurrentPlayer
-              );
-              console.log(
-                "   Does it match myPlayerId?",
-                expectedCurrentPlayer === myPlayerId
-              );
-
-              // Ręcznie ustaw currentPlayerId dla testu
-              console.log("   Setting currentPlayerId manually for test...");
-              setCurrentPlayerId(expectedCurrentPlayer);
-            }
-          }}
-        >
-          🔍 Debug Current Player
-        </TestButton>
-
-        <TestButton
-          onClick={async () => {
-            console.log("🔍 WebSocket Connection Debug:");
-            console.log("   Is connected:", SimpleGameService.isConnected());
-            console.log("   Current room ID:", roomId);
-
-            try {
-              if (!SimpleGameService.isConnected()) {
-                console.log("🔄 Attempting to reconnect...");
-                await SimpleGameService.forceReconnect();
-                console.log("✅ Reconnected successfully");
-              } else {
-                console.log("✅ Already connected");
-              }
-
-              // Test wysłania wiadomości
-              console.log("🧪 Testing message send...");
-              SimpleGameService.getGameState();
-            } catch (error) {
-              console.error("❌ Connection test failed:", error);
-            }
-          }}
-        >
-          🔧 Test WebSocket
-        </TestButton>
-        <TestButton
-          onClick={() => {
-            console.log("🎲 Manual Dice Roll Test");
-            console.log("   Connected:", SimpleGameService.isConnected());
-            console.log("   Is my turn:", isMyTurn());
-            console.log("   Game phase:", gamePhase);
-
-            if (SimpleGameService.isConnected()) {
-              SimpleGameService.rollDice();
-            } else {
-              console.error("❌ WebSocket not connected for dice roll");
-            }
-          }}
-        >
-          🎲 Test Dice Roll
-        </TestButton>
-      </TestButtons>
-
-      <div
-        style={{
-          backgroundColor: "#f5f5f5",
-          padding: "15px",
-          marginBottom: "15px",
-          borderRadius: "5px",
-          textAlign: "center",
-          borderLeft: `5px solid ${isMyTurn() ? "#4CAF50" : "#2196F3"}`,
-        }}
-      >
-        {gamePhase === "setup" ? (
-          <div>
-            <div style={{ fontWeight: "bold", marginBottom: "5px" }}>
-              🏗️ Faza przygotowania
-            </div>
-            {isMyTurn() ? (
-              <div>
-                Twoja tura - umieść osadę i drogę
-                {gameState?.setup_round === 2 &&
-                  " (druga runda - otrzymasz surowce za osadę)"}
-              </div>
-            ) : (
-              <div>Tura gracza - poczekaj na swoją kolej</div>
-            )}
-          </div>
-        ) : (
-          // ✅ UPROSZCZONE WYŚWIETLANIE GRY GŁÓWNEJ
-          <div>
-            <div style={{ fontWeight: "bold", marginBottom: "5px" }}>
-              🎲 Gra główna
-            </div>
-            {isMyTurn() ? (
-              <div>Twoja tura - rzuć kośćmi, handluj, buduj, zakończ turę</div>
-            ) : (
-              <div>Tura gracza - poczekaj na swoją kolej</div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <SuccessIndicator show={showSuccess}>{successMessage}</SuccessIndicator>
-
-      {diceResult && (
-        <GameStatus>
-          <h3>Wynik rzutu: {diceResult}</h3>
-        </GameStatus>
-      )}
-
-      <GameLayout>
-        <BoardContainer>
+        <GameBoard>
           <OnlineCatanSVGBoard
             gameState={gameState}
             onVertexClick={handleVertexClick}
@@ -704,28 +885,162 @@ export default function SimpleOnlineGame() {
             gamePhase={gamePhase}
             isMyTurn={isMyTurn()}
           />
-        </BoardContainer>
+        </GameBoard>
 
-        <SidePanel>
-          <PlayersList
-            players={players}
-            currentPlayerId={currentPlayerId}
-            isMyTurn={isMyTurn()}
-          />
-          <GameActions
-            isMyTurn={isMyTurn()}
-            myResources={getMyResources()}
-            canBuildSettlement={canBuildSettlement()}
-            canBuildCity={canBuildCity()}
-            canBuildRoad={canBuildRoad()}
-            gamePhase={gamePhase}
-            players={players}
-            myPlayerId={myPlayerId}
-            setBuildMode={setBuildMode} // Teraz typy pasują
-            buildMode={buildMode}
-          />
-        </SidePanel>
-      </GameLayout>
-    </GameContainer>
+        <RightPanel>
+          <Panel>
+            <Section>
+              <SectionHeader>Resources</SectionHeader>
+              <ResourceGrid>
+                {processedResources.length > 0 ? (
+                  processedResources.map(([resource, amount]) => (
+                    <ResourceItem key={resource}>
+                      <ResourceIcon>
+                        {resourceIcons[resource] ||
+                          resourceIcons[resource.toLowerCase()] ||
+                          "📦"}
+                      </ResourceIcon>
+                      <ResourceCount>{amount as number}</ResourceCount>
+                      <ResourceLabel>{resource}</ResourceLabel>
+                    </ResourceItem>
+                  ))
+                ) : (
+                  <ResourceItem style={{ gridColumn: "1 / -1" }}>
+                    <ResourceIcon>📦</ResourceIcon>
+                    <ResourceCount>0</ResourceCount>
+                    <ResourceLabel>None</ResourceLabel>
+                  </ResourceItem>
+                )}
+              </ResourceGrid>
+            </Section>
+
+            <Section>
+              <SectionHeader>Actions</SectionHeader>
+              <ActionsGrid>
+                {gamePhase === "setup" ? (
+                  <>
+                    <ActionButton variant="secondary" disabled={true} compact>
+                      <ButtonIcon>🎲</ButtonIcon>
+                      Roll
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="danger"
+                      onClick={handleEndTurn}
+                      disabled={!isMyTurn()}
+                      compact
+                    >
+                      <ButtonIcon>⏭️</ButtonIcon>
+                      End
+                    </ActionButton>
+                  </>
+                ) : (
+                  <>
+                    <ActionButton
+                      variant="secondary"
+                      onClick={handleRollDice}
+                      disabled={!isMyTurn()}
+                      compact
+                    >
+                      <ButtonIcon>🎲</ButtonIcon>
+                      Roll
+                    </ActionButton>
+
+                    <ActionButton
+                      variant="danger"
+                      onClick={handleEndTurn}
+                      disabled={!isMyTurn()}
+                      compact
+                    >
+                      <ButtonIcon>⏭️</ButtonIcon>
+                      End
+                    </ActionButton>
+                  </>
+                )}
+              </ActionsGrid>
+            </Section>
+
+            <Section>
+              <SectionHeader>Build</SectionHeader>
+              <BuildGrid>
+                <ActionButton
+                  active={buildMode === "settlement"}
+                  onClick={() => handleBuild("settlement")}
+                  disabled={
+                    !isMyTurn() ||
+                    (!canBuildSettlement() && gamePhase !== "setup")
+                  }
+                  compact
+                >
+                  <ButtonIcon>🏠</ButtonIcon>
+                  Settlement
+                </ActionButton>
+
+                <ActionButton
+                  active={buildMode === "road"}
+                  onClick={() => handleBuild("road")}
+                  disabled={
+                    !isMyTurn() || (!canBuildRoad() && gamePhase !== "setup")
+                  }
+                  compact
+                >
+                  <ButtonIcon>🛣️</ButtonIcon>
+                  Road
+                </ActionButton>
+
+                <ActionButton
+                  active={buildMode === "city"}
+                  onClick={() => handleBuild("city")}
+                  disabled={
+                    !isMyTurn() || !canBuildCity() || gamePhase === "setup"
+                  }
+                  compact
+                >
+                  <ButtonIcon>🏰</ButtonIcon>
+                  City
+                </ActionButton>
+
+                <ActionButton variant="disabled" disabled={true} compact>
+                  <ButtonIcon>🃏</ButtonIcon>
+                  Dev Card
+                </ActionButton>
+              </BuildGrid>
+            </Section>
+
+            <Section>
+              <SectionHeader>Trade</SectionHeader>
+              <ActionsGrid>
+                <ActionButton variant="disabled" disabled={true} compact>
+                  <ButtonIcon>🤝</ButtonIcon>
+                  Trade
+                </ActionButton>
+
+                <ActionButton variant="disabled" disabled={true} compact>
+                  <ButtonIcon>🏪</ButtonIcon>
+                  Maritime
+                </ActionButton>
+              </ActionsGrid>
+            </Section>
+
+            {buildMode && (
+              <Section>
+                <BuildModeIndicator>
+                  🔨 Building: {buildMode}
+                  <div
+                    style={{ fontSize: "10px", marginTop: "4px", opacity: 0.8 }}
+                  >
+                    Click on the board to place
+                  </div>
+                </BuildModeIndicator>
+              </Section>
+            )}
+          </Panel>
+        </RightPanel>
+      </MainContent>
+
+      <SuccessIndicator show={showSuccess}>{successMessage}</SuccessIndicator>
+
+      {diceResult && <DiceResult>🎲 {diceResult}</DiceResult>}
+    </AppContainer>
   );
 }

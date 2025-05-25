@@ -228,8 +228,7 @@ class SimpleGameState:
         
         # RĘCZNE POPRAWKI dla problematycznych vertices
         manual_fixes = {
-            41: [2, 3, 6],    # Z Twojego screenshota
-            # Dodaj więcej w miarę potrzeb
+            
         }
         
         # Generuj mapowanie
