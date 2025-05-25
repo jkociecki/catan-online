@@ -346,3 +346,85 @@ class SimpleGameState:
             "current_player_index": self.current_player_index,
             "player_order": self.player_order
         }
+    #tu
+    # backend/game_engine/simple/models.py - dodaj te metody do SimpleGameState
+
+    def get_setup_progress(self, player_id: str) -> Dict[str, int]:
+        """Pobierz postęp gracza w fazie setup"""
+        if player_id not in self.setup_progress:
+            self.setup_progress[player_id] = {"settlements": 0, "roads": 0}
+        return self.setup_progress[player_id]
+
+    def can_player_build_settlement_in_setup(self, player_id: str) -> bool:
+        """Sprawdź czy gracz może budować osadę w setup"""
+        progress = self.get_setup_progress(player_id)
+        
+        if self.setup_round == 1:
+            # Pierwsza runda: każdy może postawić 1 osadę
+            return progress["settlements"] < 1
+        else:
+            # Druga runda: każdy może postawić 2 osadę (czyli +1 do pierwszej)
+            return progress["settlements"] < 2
+
+    def can_player_build_road_in_setup(self, player_id: str) -> bool:
+        """Sprawdź czy gracz może budować drogę w setup"""
+        progress = self.get_setup_progress(player_id)
+        
+        if self.setup_round == 1:
+            # Pierwsza runda: może postawić drogę tylko jeśli ma już osadę
+            return progress["settlements"] >= 1 and progress["roads"] < 1
+        else:
+            # Druga runda: może postawić 2 drogę jeśli ma już 2 osadę
+            return progress["settlements"] >= 2 and progress["roads"] < 2
+
+    def should_advance_to_next_player(self, current_player_id: str) -> bool:
+        """Sprawdź czy powinniśmy przejść do następnego gracza"""
+        progress = self.get_setup_progress(current_player_id)
+        
+        if self.setup_round == 1:
+            # W pierwszej rundzie: przejdź jeśli gracz ma 1 osadę i 1 drogę
+            return progress["settlements"] >= 1 and progress["roads"] >= 1
+        else:
+            # W drugiej rundzie: przejdź jeśli gracz ma 2 osady i 2 drogi
+            return progress["settlements"] >= 2 and progress["roads"] >= 2
+
+    def advance_setup_turn(self):
+        """Przejdź do następnego gracza w fazie setup"""
+        if self.setup_round == 1:
+            # Pierwsza runda: w przód (clockwise)
+            self.current_player_index += 1
+            if self.current_player_index >= len(self.player_order):
+                # Koniec pierwszej rundy, rozpocznij drugą rundę
+                self.setup_round = 2
+                self.current_player_index = len(self.player_order) - 1  # Zacznij od ostatniego gracza
+        else:
+            # Druga runda: w tył (counter-clockwise)
+            self.current_player_index -= 1
+            if self.current_player_index < 0:
+                # Koniec fazy setup
+                if self.is_setup_complete():
+                    self.phase = GamePhase.ROLL_DICE
+                    self.current_player_index = 0  # Rozpocznij grę od pierwszego gracza
+                else:
+                    # Coś poszło nie tak, resetuj
+                    self.current_player_index = 0
+
+    def give_initial_resources_for_second_settlement(self, player_id: str, vertex_id: int):
+        """Daj początkowe surowce za drugą osadę"""
+        progress = self.get_setup_progress(player_id)
+        
+        # Tylko za drugą osadę
+        if progress["settlements"] == 2:
+            player = self.players[player_id]
+            
+            # W prawdziwej grze sprawdzilibyśmy sąsiednie kafelki
+            # Na razie dajmy losowe surowce jako test
+            import random
+            resources = [Resource.WOOD, Resource.BRICK, Resource.SHEEP, Resource.WHEAT, Resource.ORE]
+            
+            # Daj 2-3 losowe surowce
+            for _ in range(random.randint(2, 3)):
+                resource = random.choice(resources)
+                player.resources.add(resource, 1)
+            
+            print(f"Player {player_id} received initial resources for second settlement")

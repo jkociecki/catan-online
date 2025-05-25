@@ -9,7 +9,7 @@ interface OnlineCatanSVGBoardProps {
   gameState?: any;
   myPlayerId?: string;
   myColor?: string;
-  isMyTurn?: boolean;
+  isMyTurn?: boolean; // ZMIENIONE Z FUNKCJI NA BOOLEAN
   gamePhase?: string;
 }
 
@@ -127,6 +127,16 @@ const VertexLabel = styled.text<{ hasSettlement?: boolean }>`
   text-shadow: 1px 1px 1px rgba(0, 0, 0, 0.5);
 `;
 
+// Debug info
+const DebugInfo = styled.div`
+  margin-top: 10px;
+  padding: 10px;
+  background: #f0f0f0;
+  border-radius: 5px;
+  font-family: monospace;
+  font-size: 12px;
+`;
+
 // Funkcja do kolorów zasobów
 const getResourceColor = (resource: string): string => {
   const colors: Record<string, string> = {
@@ -170,7 +180,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
   gameState,
   myPlayerId,
   myColor = "red",
-  isMyTurn = false,
+  isMyTurn = false, // ZMIENIONE Z FUNKCJI NA BOOLEAN
 }) => {
   const [builtSettlements, setBuiltSettlements] = useState<
     Map<number, { playerId: string; color: string }>
@@ -178,6 +188,9 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
   const [builtRoads, setBuiltRoads] = useState<
     Map<number, { playerId: string; color: string }>
   >(new Map());
+
+  // DODANE: Debug state
+  const [debugInfo, setDebugInfo] = useState<string>("");
 
   // Funkcja do konwersji współrzędnych hex na pozycję ekranu
   const hexToPixel = useCallback((q: number, r: number, size: number = 50) => {
@@ -267,26 +280,54 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
   const handleVertexClick = useCallback(
     (vertexId: number) => {
-      if (!isMyTurn || buildMode !== "settlement") return;
+      console.log("Vertex click attempt:", {
+        vertexId,
+        isMyTurn,
+        buildMode,
+        myPlayerId,
+      });
+
+      setDebugInfo(
+        `Vertex ${vertexId} clicked - MyTurn: ${isMyTurn}, Mode: ${buildMode}`
+      );
+
+      if (!isMyTurn || buildMode !== "settlement") {
+        console.log("Click rejected - not my turn or wrong build mode");
+        return;
+      }
 
       console.log("Vertex clicked:", vertexId);
       if (onVertexClick) {
         onVertexClick(vertexId);
       }
     },
-    [isMyTurn, buildMode, onVertexClick]
+    [isMyTurn, buildMode, onVertexClick, myPlayerId]
   );
 
   const handleEdgeClick = useCallback(
     (edgeId: number) => {
-      if (!isMyTurn || buildMode !== "road") return;
+      console.log("Edge click attempt:", {
+        edgeId,
+        isMyTurn,
+        buildMode,
+        myPlayerId,
+      });
+
+      setDebugInfo(
+        `Edge ${edgeId} clicked - MyTurn: ${isMyTurn}, Mode: ${buildMode}`
+      );
+
+      if (!isMyTurn || buildMode !== "road") {
+        console.log("Click rejected - not my turn or wrong build mode");
+        return;
+      }
 
       console.log("Edge clicked:", edgeId);
       if (onEdgeClick) {
         onEdgeClick(edgeId);
       }
     },
-    [isMyTurn, buildMode, onEdgeClick]
+    [isMyTurn, buildMode, onEdgeClick, myPlayerId]
   );
 
   return (
@@ -374,6 +415,19 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
           );
         })}
       </BoardSVG>
+
+      {/* Debug info */}
+      <DebugInfo>
+        <div>
+          <strong>Debug Info:</strong>
+        </div>
+        <div>My Turn: {isMyTurn ? "YES" : "NO"}</div>
+        <div>Build Mode: {buildMode || "None"}</div>
+        <div>My Player ID: {myPlayerId || "None"}</div>
+        <div>Last Action: {debugInfo || "None"}</div>
+        <div>Settlements: {builtSettlements.size}</div>
+        <div>Roads: {builtRoads.size}</div>
+      </DebugInfo>
     </BoardContainer>
   );
 };

@@ -1,13 +1,13 @@
 // frontend/src/view/game/SimpleOnlineGame.tsx
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import SimpleGameService from "../../view/board/SimpleGameService"; // NOWY SERVICE
-import OnlineCatanSVGBoard from "../board/OnlineCatanSVGBoard"; // NOWY BOARD
+import SimpleGameService from "../../view/board/SimpleGameService";
+import OnlineCatanSVGBoard from "../board/OnlineCatanSVGBoard";
 import styled from "styled-components";
 import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
 
-// Skopiuj wszystkie styled components z OnlineGame.tsx
+// Wszystkie styled components...
 const GameContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -95,6 +95,26 @@ const SuccessIndicator = styled.div<{ show: boolean }>`
   z-index: 1000;
   pointer-events: none;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+`;
+
+const TestButtons = styled.div`
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+`;
+
+const TestButton = styled.button<{ active?: boolean }>`
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  background-color: ${(props) => (props.active ? "#4CAF50" : "#f0f0f0")};
+  color: ${(props) => (props.active ? "white" : "black")};
+
+  &:hover {
+    opacity: 0.8;
+  }
 `;
 
 export default function SimpleOnlineGame() {
@@ -202,6 +222,22 @@ export default function SimpleOnlineGame() {
         if (actionMessages[data.action] && data.player_id === myPlayerId) {
           showSuccessIndicator(actionMessages[data.action]);
         }
+
+        // Komunikat o zmianie tury
+        if (data.turn_advanced && data.new_current_player) {
+          if (data.new_current_player === myPlayerId) {
+            showSuccessIndicator("Twoja tura!");
+          } else {
+            showSuccessIndicator("Tura przeszła do następnego gracza");
+          }
+        }
+
+        // Komunikat o zakończeniu setup
+        if (data.setup_complete) {
+          showSuccessIndicator(
+            "Faza przygotowania zakończona! Rozpoczyna się gra!"
+          );
+        }
       }
 
       if (data.game_state) {
@@ -240,7 +276,8 @@ export default function SimpleOnlineGame() {
         }
       }
 
-      if (data.action === "end_turn") {
+      // Automatycznie wyczyść build mode po postawieniu drogi w setup
+      if (data.action === "build_road" && gamePhase === "setup") {
         setBuildMode(null);
       }
     };
@@ -371,37 +408,63 @@ export default function SimpleOnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
+  // POPRAWIONE HANDLERY - używają isMyTurn() jako funkcji
   const handleVertexClick = useCallback(
     (vertexId: number) => {
-      console.log("click attempted", { isMyTurn, buildMode });
+      console.log("Vertex click handler called:", {
+        vertexId,
+        isMyTurn: isMyTurn(),
+        buildMode,
+        myPlayerId,
+        currentPlayerId,
+      });
 
-      if (!isMyTurn || buildMode !== "settlement") return;
-      console.log("Vertex clicked:", vertexId);
-
-      if (buildMode === "settlement") {
-        SimpleGameService.buildSettlement(vertexId);
-        showSuccessIndicator(
-          `Budowanie ${buildMode === "settlement" ? "osady" : "miasta"}...`
-        );
+      if (!isMyTurn() || buildMode !== "settlement") {
+        console.log("Click rejected in handler");
+        return;
       }
+
+      console.log("Processing vertex click:", vertexId);
+      SimpleGameService.buildSettlement(vertexId);
+      showSuccessIndicator("Budowanie osady...");
     },
-    [isMyTurn, buildMode, showSuccessIndicator]
+    [isMyTurn, buildMode, showSuccessIndicator, myPlayerId, currentPlayerId]
   );
 
   const handleEdgeClick = useCallback(
     (edgeId: number) => {
-      if (!isMyTurn() || buildMode !== "road") return;
+      console.log("Edge click handler called:", {
+        edgeId,
+        isMyTurn: isMyTurn(),
+        buildMode,
+        myPlayerId,
+        currentPlayerId,
+      });
 
-      console.log("Edge clicked:", edgeId);
+      if (!isMyTurn() || buildMode !== "road") {
+        console.log("Click rejected in handler");
+        return;
+      }
+
+      console.log("Processing edge click:", edgeId);
       SimpleGameService.buildRoad(edgeId);
       showSuccessIndicator("Budowanie drogi...");
     },
-    [isMyTurn, buildMode, showSuccessIndicator]
+    [isMyTurn, buildMode, showSuccessIndicator, myPlayerId, currentPlayerId]
   );
 
   const handleLeaveGame = () => {
     SimpleGameService.disconnectFromRoom();
     navigate("/");
+  };
+
+  // Test functions for debugging
+  const handleTestSettlement = () => {
+    setBuildMode(buildMode === "settlement" ? null : "settlement");
+  };
+
+  const handleTestRoad = () => {
+    setBuildMode(buildMode === "road" ? null : "road");
   };
 
   if (loading) {
@@ -421,6 +484,32 @@ export default function SimpleOnlineGame() {
 
       {error && <ErrorMessage>{error}</ErrorMessage>}
 
+      {/* Test buttons for debugging */}
+      <TestButtons>
+        <TestButton
+          active={buildMode === "settlement"}
+          onClick={handleTestSettlement}
+        >
+          🏠 Test Settlement Mode
+        </TestButton>
+        <TestButton active={buildMode === "road"} onClick={handleTestRoad}>
+          🛣️ Test Road Mode
+        </TestButton>
+        <TestButton
+          onClick={() =>
+            console.log("Current state:", {
+              myPlayerId,
+              currentPlayerId,
+              isMyTurn: isMyTurn(),
+              buildMode,
+              gameState,
+            })
+          }
+        >
+          🔍 Debug State
+        </TestButton>
+      </TestButtons>
+
       <div
         style={{
           backgroundColor: "#f5f5f5",
@@ -431,9 +520,28 @@ export default function SimpleOnlineGame() {
           borderLeft: `5px solid ${isMyTurn() ? "#4CAF50" : "#2196F3"}`,
         }}
       >
-        {isMyTurn()
-          ? "Twoja tura - wykonaj akcję"
-          : `Tura gracza - poczekaj na swoją kolej`}
+        {gamePhase === "setup" ? (
+          <div>
+            <div style={{ fontWeight: "bold", marginBottom: "5px" }}>
+              🏗️ Faza przygotowania
+            </div>
+            {isMyTurn() ? (
+              <div>
+                Twoja tura - umieść osadę i drogę
+                {gameState?.setup_round === 2 &&
+                  " (druga runda - otrzymasz surowce za osadę)"}
+              </div>
+            ) : (
+              <div>Tura gracza - poczekaj na swoją kolej</div>
+            )}
+          </div>
+        ) : (
+          <div>
+            {isMyTurn()
+              ? "Twoja tura - wykonaj akcję"
+              : `Tura gracza - poczekaj na swoją kolej`}
+          </div>
+        )}
       </div>
 
       <SuccessIndicator show={showSuccess}>{successMessage}</SuccessIndicator>
@@ -454,7 +562,7 @@ export default function SimpleOnlineGame() {
             myPlayerId={myPlayerId}
             myColor={myColor}
             gamePhase={gamePhase}
-            isMyTurn={isMyTurn()}
+            isMyTurn={isMyTurn()} // PRZEKAZUJ JAKO BOOLEAN
           />
         </BoardContainer>
 
@@ -473,6 +581,8 @@ export default function SimpleOnlineGame() {
             gamePhase={gamePhase}
             players={players}
             myPlayerId={myPlayerId}
+            setBuildMode={setBuildMode} // DODANE
+            buildMode={buildMode} // DODANE
           />
         </SidePanel>
       </GameLayout>
