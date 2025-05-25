@@ -1,4 +1,4 @@
-# backend/game_api/simple_consumer.py
+# backend/game_api/simple_consumer.py - poprawiona metoda receive
 import json
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -123,8 +123,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             # Remove room if empty
             if not room['connected_players']:
                 del simple_game_rooms[self.room_id]
-    #tu
-    # backend/game_api/simple_consumer.py - zastąp metodę receive
 
     async def receive(self, text_data):
         try:
@@ -179,11 +177,16 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                         if is_setup:
                             # W fazie setup sprawdź czy gracz może budować osadę
                             if not game_state.can_player_build_settlement_in_setup(self.player_id):
-                                error_msg = "Cannot build more settlements in this setup round"
+                                error_msg = f"Cannot build settlement in setup - round {game_state.setup_round}"
+                                print(f"Settlement build rejected for player {self.player_id}: {error_msg}")
+                                print(f"Current progress: {game_state.get_setup_progress(self.player_id)}")
                             else:
                                 success = game_state.place_settlement(vertex_id, self.player_id, is_setup)
                                 if not success:
                                     error_msg = "Cannot place settlement there"
+                                else:
+                                    print(f"Settlement placed successfully for player {self.player_id}")
+                                    print(f"New progress: {game_state.get_setup_progress(self.player_id)}")
                         else:
                             # Normalna gra
                             success = game_state.place_settlement(vertex_id, self.player_id, is_setup)
@@ -200,19 +203,32 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                         if is_setup:
                             # W fazie setup sprawdź czy gracz może budować drogę
                             if not game_state.can_player_build_road_in_setup(self.player_id):
-                                error_msg = "Cannot build road - need settlement first or already built road for this round"
+                                error_msg = f"Cannot build road in setup - round {game_state.setup_round}"
+                                print(f"Road build rejected for player {self.player_id}: {error_msg}")
+                                print(f"Current progress: {game_state.get_setup_progress(self.player_id)}")
                             else:
                                 success = game_state.place_road(edge_id, self.player_id, is_setup)
                                 if success:
+                                    print(f"Road placed successfully for player {self.player_id}")
+                                    print(f"New progress: {game_state.get_setup_progress(self.player_id)}")
+                                    
                                     # Sprawdź czy powinniśmy przejść do następnego gracza
                                     should_advance_turn = game_state.should_advance_to_next_player(self.player_id)
+                                    print(f"Should advance turn: {should_advance_turn}")
+                                    
                                     if should_advance_turn:
                                         # Daj surowce za drugą osadę jeśli to druga runda
                                         if game_state.setup_round == 2:
-                                            game_state.give_initial_resources_for_second_settlement(self.player_id, 0)  # vertex_id nie jest używane w tej implementacji
+                                            print(f"Giving initial resources to player {self.player_id}")
+                                            # POPRAWKA: Przekaż edge_id zamiast vertex_id (lub 0 jako placeholder)
+                                            game_state.give_initial_resources_for_second_settlement(self.player_id, 0)
                                         
+                                        # Przejdź do następnego gracza
+                                        old_player = game_state.get_current_player().player_id
                                         game_state.advance_setup_turn()
-                                        print(f"Advanced to next player. Current player index: {game_state.current_player_index}, Round: {game_state.setup_round}, Phase: {game_state.phase}")
+                                        new_player = game_state.get_current_player().player_id
+                                        print(f"Turn advanced from {old_player} to {new_player}")
+                                        print(f"Game phase is now: {game_state.phase}")
                                 else:
                                     error_msg = "Cannot place road there"
                         else:

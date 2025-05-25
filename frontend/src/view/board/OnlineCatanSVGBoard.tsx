@@ -5,7 +5,7 @@ import styled from "styled-components";
 interface OnlineCatanSVGBoardProps {
   onVertexClick?: (vertexId: number) => void;
   onEdgeClick?: (edgeId: number) => void;
-  buildMode?: "settlement" | "road" | null;
+  buildMode?: "settlement" | "road" | "city" | null;
   gameState?: any;
   myPlayerId?: string;
   myColor?: string;
@@ -148,6 +148,26 @@ const getResourceColor = (resource: string): string => {
     desert: "#F4A460",
   };
   return colors[resource.toLowerCase()] || "#DDD";
+};
+
+const getVertexIdForHexAndIndex = (
+  hexIndex: number,
+  vertexIndex: number
+): number => {
+  // KLUCZOWE: Musi być zgodne z backendem!
+  // Backend używa: vertex_id = hexIndex * 6 + vertexIndex
+  // ALE hexIndex musi być w tej samej kolejności co hex_order_frontend w backend!
+
+  // hexData jest w tej samej kolejności co hex_order_frontend w backend
+  return hexIndex * 6 + vertexIndex;
+};
+
+const getEdgeIdForHexAndIndex = (
+  hexIndex: number,
+  edgeIndex: number
+): number => {
+  // Analogicznie dla krawędzi
+  return hexIndex * 6 + edgeIndex;
 };
 
 // Definicja planszy - dokładnie taka sama jak w backend
@@ -364,7 +384,12 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
               {/* Wierzchołki (dla domków) */}
               {vertices.map((vertex, vertexIndex) => {
-                const globalVertexId = hexIndex * 6 + vertexIndex;
+                // const globalVertexId = hexIndex * 6 + vertexIndex;
+                const globalVertexId = getVertexIdForHexAndIndex(
+                  hexIndex,
+                  vertexIndex
+                );
+
                 const settlement = builtSettlements.get(globalVertexId);
                 const hasSettlement = !!settlement;
 
@@ -392,9 +417,21 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
 
               {/* Krawędzie (dla dróg) */}
               {edges.map((edge, edgeIndex) => {
-                const globalEdgeId = hexIndex * 6 + edgeIndex;
+                // const globalEdgeId = hexIndex * 6 + edgeIndex;
+                const globalEdgeId = getEdgeIdForHexAndIndex(
+                  hexIndex,
+                  edgeIndex
+                );
+
                 const road = builtRoads.get(globalEdgeId);
                 const hasRoad = !!road;
+                // W OnlineCatanSVGBoard, dodaj to PRZED return:
+                console.log("Frontend hexData order:");
+                hexData.forEach((hex, i) => {
+                  console.log(
+                    `${i}: (${hex.q}, ${hex.r}, ${hex.s}) - ${hex.resource}`
+                  );
+                });
 
                 return (
                   <g key={`edge-${globalEdgeId}`}>

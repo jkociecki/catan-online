@@ -1,4 +1,4 @@
-// frontend/src/view/game/SimpleOnlineGame.tsx
+// frontend/src/view/game/SimpleOnlineGame.tsx - POPRAWIONA WERSJA
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import SimpleGameService from "../../view/board/SimpleGameService";
@@ -7,7 +7,6 @@ import styled from "styled-components";
 import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
 
-// Wszystkie styled components...
 const GameContainer = styled.div`
   display: flex;
   flex-direction: column;
@@ -125,14 +124,14 @@ export default function SimpleOnlineGame() {
   const roomId = urlRoomId || location.state?.roomId;
   const initialGameState = location.state?.gameState;
 
-  // State
+  // POPRAWKA: Zmieniony typ buildMode, aby uwzględnić "city"
   const [gameState, setGameState] = useState<any>(initialGameState);
   const [currentPlayerId, setCurrentPlayerId] = useState<string>("");
   const [players, setPlayers] = useState<any[]>([]);
   const [myPlayerId, setMyPlayerId] = useState<string>("");
-  const [buildMode, setBuildMode] = useState<"settlement" | "road" | null>(
-    null
-  );
+  const [buildMode, setBuildMode] = useState<
+    "settlement" | "city" | "road" | null
+  >(null);
   const [diceResult, setDiceResult] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -211,6 +210,7 @@ export default function SimpleOnlineGame() {
     const handleGameUpdate = (data: any) => {
       console.log("Game update received:", data);
 
+      // Wiadomości o akcjach
       if (data.action) {
         const actionMessages: { [key: string]: string } = {
           build_settlement: "Osada zbudowana!",
@@ -228,7 +228,11 @@ export default function SimpleOnlineGame() {
           if (data.new_current_player === myPlayerId) {
             showSuccessIndicator("Twoja tura!");
           } else {
-            showSuccessIndicator("Tura przeszła do następnego gracza");
+            const newPlayerName =
+              players
+                .find((p) => p.id === data.new_current_player)
+                ?.id?.substring(0, 6) || "Gracz";
+            showSuccessIndicator(`Tura przeszła do ${newPlayerName}...`);
           }
         }
 
@@ -240,26 +244,37 @@ export default function SimpleOnlineGame() {
         }
       }
 
+      // Aktualizacja stanu gry
       if (data.game_state) {
+        console.log("Updating game state from data:", data.game_state);
         setGameState(data.game_state);
 
         if (data.game_state.phase) {
+          console.log("Setting game phase:", data.game_state.phase);
           setGamePhase(data.game_state.phase);
         }
 
         // Konwertuj graczy do formatu zgodnego z PlayersList
         if (data.game_state.players) {
+          console.log("Raw players data from server:", data.game_state.players);
+
           const playersList = Object.values(data.game_state.players).map(
-            (p: any) => ({
-              id: p.player_id,
-              color: p.color,
-              resources: p.resources || {},
-              victory_points: p.victory_points || 0,
-              settlements_left: p.settlements_left || 5,
-              cities_left: p.cities_left || 4,
-              roads_left: p.roads_left || 15,
-            })
+            (p: any) => {
+              console.log("Processing player:", p);
+
+              return {
+                id: p.player_id,
+                color: p.color,
+                resources: p.resources || {},
+                victory_points: p.victory_points || 0,
+                settlements_left: p.settlements_left || 5,
+                cities_left: p.cities_left || 4,
+                roads_left: p.roads_left || 15,
+              };
+            }
           );
+
+          console.log("Processed players list:", playersList);
           setPlayers(playersList);
 
           // Ustaw aktualnego gracza
@@ -270,7 +285,9 @@ export default function SimpleOnlineGame() {
             const currentPlayerIndex = data.game_state.current_player_index;
             const playerOrder = data.game_state.player_order;
             if (playerOrder[currentPlayerIndex]) {
-              setCurrentPlayerId(playerOrder[currentPlayerIndex]);
+              const newCurrentPlayerId = playerOrder[currentPlayerIndex];
+              console.log("Setting current player ID:", newCurrentPlayerId);
+              setCurrentPlayerId(newCurrentPlayerId);
             }
           }
         }
@@ -285,7 +302,7 @@ export default function SimpleOnlineGame() {
     const handleGameState = (data: any) => {
       console.log("Game state received:", data);
       if (data.game_state) {
-        handleGameUpdate(data); // Użyj tej samej logiki
+        handleGameUpdate(data);
       }
     };
 
@@ -307,6 +324,11 @@ export default function SimpleOnlineGame() {
         setDiceResult(data.total);
         if (data.player_id === myPlayerId) {
           showSuccessIndicator(`Wyrzucono ${data.total}!`);
+        } else {
+          const playerName =
+            players.find((p) => p.id === data.player_id)?.id?.substring(0, 6) ||
+            "Gracz";
+          showSuccessIndicator(`${playerName} wyrzucił ${data.total}`);
         }
       }
 
@@ -318,6 +340,11 @@ export default function SimpleOnlineGame() {
     const handleError = (data: any) => {
       console.error("Game error:", data.message);
       setError(data.message || "An unknown error occurred");
+
+      // Automatycznie wyczyść błąd po 5 sekundach
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
     };
 
     const handleDisconnect = () => {
@@ -350,7 +377,7 @@ export default function SimpleOnlineGame() {
         SimpleGameService.removeEventHandler("disconnect", handleDisconnect);
       }
     };
-  }, [isConnected, myPlayerId, showSuccessIndicator]);
+  }, [isConnected, myPlayerId, showSuccessIndicator, players, gamePhase]);
 
   // Helper functions
   const getMyResources = useCallback(() => {
@@ -408,7 +435,7 @@ export default function SimpleOnlineGame() {
     );
   }, [players, myPlayerId, gamePhase]);
 
-  // POPRAWIONE HANDLERY - używają isMyTurn() jako funkcji
+  // Handlery kliknięć
   const handleVertexClick = useCallback(
     (vertexId: number) => {
       console.log("Vertex click handler called:", {
@@ -562,7 +589,7 @@ export default function SimpleOnlineGame() {
             myPlayerId={myPlayerId}
             myColor={myColor}
             gamePhase={gamePhase}
-            isMyTurn={isMyTurn()} // PRZEKAZUJ JAKO BOOLEAN
+            isMyTurn={isMyTurn()}
           />
         </BoardContainer>
 
@@ -581,8 +608,8 @@ export default function SimpleOnlineGame() {
             gamePhase={gamePhase}
             players={players}
             myPlayerId={myPlayerId}
-            setBuildMode={setBuildMode} // DODANE
-            buildMode={buildMode} // DODANE
+            setBuildMode={setBuildMode} // Teraz typy pasują
+            buildMode={buildMode}
           />
         </SidePanel>
       </GameLayout>

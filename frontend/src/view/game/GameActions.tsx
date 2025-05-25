@@ -1,3 +1,4 @@
+// frontend/src/view/game/GameActions.tsx - POPRAWIONA WERSJA
 import React, { useState, useEffect } from "react";
 import styled from "styled-components";
 import GameService from "../../engine/board/GameService";
@@ -8,11 +9,11 @@ interface GameActionsProps {
   canBuildSettlement: boolean;
   canBuildCity: boolean;
   canBuildRoad: boolean;
-  gamePhase: string; // Obecnie używana faza gry
-  players: any[]; // Wszyscy gracze
-  myPlayerId: string; // ID mojego gracza
-  setBuildMode?: (mode: "settlement" | "road" | null) => void; // DODANE
-  buildMode?: "settlement" | "road" | null; // DODANE
+  gamePhase: string;
+  players: any[];
+  myPlayerId: string;
+  setBuildMode?: (mode: "settlement" | "city" | "road" | null) => void; // POPRAWKA 1: Dodano "city"
+  buildMode?: "settlement" | "city" | "road" | null; // POPRAWKA 1: Dodano "city"
 }
 
 const ActionsContainer = styled.div`
@@ -64,9 +65,9 @@ const ResourceIcon = styled.span`
   margin-right: 5px;
 `;
 
-const ResourceText = styled.span`
-  display: inline-block;
-`;
+// const ResourceText = styled.span`
+//   display: inline-block;
+// `;
 
 const BuildInstructions = styled.div`
   background-color: #e3f2fd;
@@ -111,6 +112,21 @@ const ProgressBar = styled.div<{ fillPercent: number; color: string }>`
   }
 `;
 
+const DebugButton = styled.button`
+  margin-bottom: 10px;
+  padding: 5px 10px;
+  font-size: 12px;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #1976d2;
+  }
+`;
+
 export default function GameActions({
   isMyTurn,
   myResources,
@@ -120,8 +136,9 @@ export default function GameActions({
   gamePhase,
   players,
   myPlayerId,
+  setBuildMode,
+  buildMode,
 }: GameActionsProps) {
-  const [buildMode, setBuildMode] = useState<string | null>(null);
   const [hasRolled, setHasRolled] = useState<boolean>(false);
   const [setupProgress, setSetupProgress] = useState<{
     settlements: number;
@@ -131,14 +148,51 @@ export default function GameActions({
   // Sprawdź czy jesteśmy w fazie setup
   const isSetupPhase = gamePhase === "setup";
 
+  // Resource icons mapping - obsługa różnych formatów
+  const resourceIcons: { [key: string]: string } = {
+    WOOD: "🌲",
+    wood: "🌲",
+    BRICK: "🧱",
+    brick: "🧱",
+    SHEEP: "🐑",
+    sheep: "🐑",
+    WHEAT: "🌾",
+    wheat: "🌾",
+    ORE: "⛰️",
+    ore: "⛰️",
+  };
+
+  // Lepsze przetwarzanie zasobów z debugowaniem
+  const processedResources = React.useMemo(() => {
+    console.log("Processing myResources:", myResources);
+
+    if (!myResources || typeof myResources !== "object") {
+      console.log("myResources is null or not an object");
+      return [];
+    }
+
+    const entries = Object.entries(myResources);
+    console.log("Resource entries:", entries);
+
+    // Filtruj i sortuj zasoby
+    const validEntries = entries.filter(([resource, count]) => {
+      const isValid = typeof count === "number" && count >= 0;
+      if (!isValid) {
+        console.log(`Invalid resource entry: ${resource} = ${count}`);
+      }
+      return isValid;
+    });
+
+    console.log("Valid resource entries:", validEntries);
+
+    return validEntries.sort(([a], [b]) => a.localeCompare(b));
+  }, [myResources]);
+
   // Oblicz postęp w fazie setup dla aktualnego gracza
   useEffect(() => {
     if (isSetupPhase) {
-      // Znajdź dane o moim graczu
       const myPlayer = players.find((p) => p.id === myPlayerId);
       if (myPlayer) {
-        // W prawdziwej implementacji trzeba by śledzić faktyczną liczbę postawionych osad/dróg
-        // To jest uproszczona wersja - założenie, że max liczba osad to 5, dróg to 15
         const settlementCount = 5 - (myPlayer.settlements_left || 5);
         const roadCount = 15 - (myPlayer.roads_left || 15);
 
@@ -147,8 +201,8 @@ export default function GameActions({
         );
 
         setSetupProgress({
-          settlements: Math.min(settlementCount, 2), // Max 2 osady w fazie setup
-          roads: Math.min(roadCount, 2), // Max 2 drogi w fazie setup
+          settlements: Math.min(settlementCount, 2),
+          roads: Math.min(roadCount, 2),
         });
       }
     }
@@ -157,12 +211,12 @@ export default function GameActions({
   // Reset build mode and hasRolled when turn changes
   useEffect(() => {
     if (!isMyTurn) {
-      setBuildMode(null);
+      setBuildMode?.(null);
       setHasRolled(false);
     }
-  }, [isMyTurn]);
+  }, [isMyTurn, setBuildMode]);
 
-  // Reset hasRolled when game phase changes (np. z MAIN na ROLL_DICE)
+  // Reset hasRolled when game phase changes
   useEffect(() => {
     if (gamePhase === "ROLL_DICE" || gamePhase === "roll_dice") {
       setHasRolled(false);
@@ -176,7 +230,7 @@ export default function GameActions({
     if (buildMode === type) {
       setBuildMode?.(null);
     } else {
-      setBuildMode?.(type as "settlement" | "road");
+      setBuildMode?.(type as "settlement" | "city" | "road"); // POPRAWKA 1: Dodano "city"
     }
   };
 
@@ -190,10 +244,8 @@ export default function GameActions({
       gamePhase
     );
 
-    // Sprawdź czy jesteśmy w fazie, w której można rzucać kośćmi
     const canRoll = gamePhase === "ROLL_DICE" || gamePhase === "roll_dice";
 
-    // Nie pozwól na rzut kośćmi w fazie setup lub jeśli nie jest nasza tura
     if (!isMyTurn || hasRolled || isSetupPhase || !canRoll) {
       console.log("Nie można rzucić kośćmi w tej fazie gry");
       return;
@@ -210,23 +262,9 @@ export default function GameActions({
 
     console.log("Wysyłanie akcji end_turn");
     GameService.endTurn();
-    setBuildMode(null);
+    setBuildMode?.(null);
     setHasRolled(false);
   };
-
-  // Resource icons mapping
-  const resourceIcons: { [key: string]: string } = {
-    WOOD: "🌲",
-    BRICK: "🧱",
-    SHEEP: "🐑",
-    WHEAT: "🌾",
-    ORE: "⛰️",
-  };
-
-  // Sort resources for consistent display
-  const sortedResources = Object.entries(myResources || {}).sort(([a], [b]) =>
-    a.localeCompare(b)
-  );
 
   // Instrukcja dla fazy setup
   const getSetupInstructionText = () => {
@@ -235,7 +273,7 @@ export default function GameActions({
     } else if (setupProgress.roads < 1) {
       return "Umieść swoją pierwszą drogę, połączoną z osadą";
     } else if (setupProgress.settlements < 2) {
-      return "Umieść swoją drugą osadę na planszy";
+      return "Umieść swoją drugą osadę na planszy (otrzymasz surowce)";
     } else if (setupProgress.roads < 2) {
       return "Umieść swoją drugą drogę, połączoną z osadą";
     } else {
@@ -282,7 +320,6 @@ export default function GameActions({
           Zakończ turę
         </ActionButton>
 
-        {/* Dodany pasek postępu fazy setup */}
         <SetupProgress>
           Postęp fazy przygotowania:
           <ProgressBar
@@ -298,11 +335,8 @@ export default function GameActions({
 
   // Funkcja określająca, co można robić w normalnej fazie gry
   const getNormalGameActions = () => {
-    // Sprawdź czy jesteśmy w fazie rzucania kośćmi
     const isRollDicePhase =
       gamePhase === "ROLL_DICE" || gamePhase === "roll_dice";
-
-    // Sprawdź czy jesteśmy w fazie głównej (po rzucie kośćmi)
     const isMainPhase = gamePhase === "MAIN" || gamePhase === "main";
 
     return (
@@ -377,32 +411,68 @@ export default function GameActions({
           : "Faza gry: " + gamePhase}
       </PhaseIndicator>
 
+      {/* Debug button - tylko w development */}
+      {process.env.NODE_ENV === "development" && (
+        <DebugButton
+          onClick={() => {
+            console.log("=== DEBUG RESOURCES ===");
+            console.log("myResources:", myResources);
+            console.log("processedResources:", processedResources);
+            console.log("players:", players);
+            console.log("myPlayerId:", myPlayerId);
+            const myPlayer = players.find((p) => p.id === myPlayerId);
+            console.log("myPlayer:", myPlayer);
+            console.log("myPlayer.resources:", myPlayer?.resources);
+            console.log("gamePhase:", gamePhase);
+            console.log("isMyTurn:", isMyTurn);
+            console.log("buildMode:", buildMode);
+            console.log("setupProgress:", setupProgress);
+            console.log("=====================");
+          }}
+        >
+          🔍 Debug Resources & State
+        </DebugButton>
+      )}
+
+      {/* Zasoby gracza */}
       <ResourceCounter>
-        {sortedResources.length > 0 ? (
-          sortedResources.map(([resource, count]) => (
+        {processedResources.length > 0 ? (
+          processedResources.map(([resource, count]) => (
             <Resource key={resource}>
-              <ResourceIcon>{resourceIcons[resource] || "📦"}</ResourceIcon>
-              {/* <ResourceText>{resource}: {count}</ResourceText> */}
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <ResourceIcon>
+                  {resourceIcons[resource] ||
+                    resourceIcons[resource.toLowerCase()] ||
+                    "📦"}
+                </ResourceIcon>
+                <span>
+                  {resource}: {count}
+                </span>
+              </div>
             </Resource>
           ))
         ) : (
           <Resource>
-            <ResourceText>Brak zasobów</ResourceText>
+            <span>Brak zasobów</span>{" "}
+            {/* POPRAWKA 2: Usunięto ResourceText wrapper */}
           </Resource>
         )}
       </ResourceCounter>
 
+      {/* Akcje w zależności od fazy gry */}
       {isSetupPhase ? getSetupActions() : getNormalGameActions()}
 
+      {/* Instrukcje budowania */}
       {buildMode && (
         <BuildInstructions>
           <p>Kliknij na planszy, aby zbudować: {buildMode}</p>
-          <ActionButton disabled={false} onClick={() => setBuildMode(null)}>
+          <ActionButton disabled={false} onClick={() => setBuildMode?.(null)}>
             Anuluj budowanie
           </ActionButton>
         </BuildInstructions>
       )}
 
+      {/* Komunikaty dla gracza */}
       {!isMyTurn && (
         <BuildInstructions>
           Oczekiwanie na zakończenie tury przez innego gracza...
