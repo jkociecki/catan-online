@@ -1,4 +1,4 @@
-# backend/game_api/simple_consumer.py - poprawiona metoda receive
+# backend/game_api/simple_consumer.py - POPRAWKI dla startowania gry
 import json
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -60,30 +60,53 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
               for p in room['connected_players']:
                   print(f"   - {p['player_id'][:8]} ({p['color']})")
               
-              # KLUCZOWE: Wyślij client_id do nowego gracza
+              # ✅ NAJPIERW wyślij client_id
               await self.send(text_data=json.dumps({
                   'type': 'client_id',
                   'player_id': self.player_id
               }))
               
-              # KLUCZOWE: Wyślij pełny stan gry do nowego gracza
+              # ✅ POCZEKAJ krótko i wyślij stan gry
+              import asyncio
+              await asyncio.sleep(0.1)
+              
+              game_state_data = room['game_state'].serialize()
+              print(f"📤 Sending game_state to new player {self.player_id[:8]}")
+              print(f"   Players in serialized state: {len(game_state_data.get('players', {}))}")
+              
               await self.send(text_data=json.dumps({
                   'type': 'game_state',
-                  'game_state': room['game_state'].serialize()
+                  'game_state': game_state_data
               }))
               
-              # KLUCZOWE: Powiadom WSZYSTKICH graczy o nowym graczu
+              # ✅ Powiadom innych o nowym graczu
               await self.channel_layer.group_send(
                   self.room_group_name,
                   {
-                      'type': 'player_joined',
+                      'type': 'player_joined_notification',
                       'player_id': self.player_id,
                       'player_color': player_color,
                       'player_count': len(room['connected_players'])
                   }
               )
               
-              # KLUCZOWE: Wyślij zaktualizowany stan gry do WSZYSTKICH graczy
+              # ✅ NOWA LOGIKA: Automatycznie rozpocznij grę przy 4 graczach
+              if len(room['connected_players']) == 4:
+                  print("🏁 AUTO-STARTING game with 4 players")
+                  await asyncio.sleep(0.3)  # Krótka pauza żeby wszyscy się połączyli
+                  
+                  # Rozpocznij grę
+                  await self.channel_layer.group_send(
+                      self.room_group_name,
+                      {
+                          'type': 'game_start_notification',
+                          'game_state': room['game_state'].serialize()
+                      }
+                  )
+              
+              # ✅ POCZEKAJ i wyślij zaktualizowany stan do WSZYSTKICH
+              await asyncio.sleep(0.2)
+              
               await self.channel_layer.group_send(
                   self.room_group_name,
                   {
@@ -102,12 +125,15 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
               'type': 'error', 
               'message': 'Room is full'
           }))
+    
     async def broadcast_game_state(self, event):
       """Wyślij stan gry do tego gracza"""
+      print(f"📤 Broadcasting game state to {self.player_id[:8]}")
       await self.send(text_data=json.dumps({
           'type': 'game_state',
           'game_state': event['game_state']
       }))
+    
     async def game_state_update(self, event):
       await self.send(text_data=json.dumps({
           'type': 'game_state',
@@ -139,7 +165,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    'type': 'player_left',
+                    'type': 'player_left_notification',
                     'player_id': self.player_id,
                     'player_count': len(room['connected_players'])
                 }
@@ -150,7 +176,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 del game_rooms[self.room_id]
 
     async def receive(self, text_data):
-
         try:
             data = json.loads(text_data)
             message_type = data.get('type')
@@ -169,11 +194,12 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
             if message_type == 'get_game_state':
                 print(f"🎮 Sending game state to player {self.player_id[:8]}")
-                print(f"   Players in game state: {len(game_state.players)}")
+                game_state_data = game_state.serialize()
+                print(f"   Players in game state: {len(game_state_data.get('players', {}))}")
                 
                 await self.send(text_data=json.dumps({
                     'type': 'game_state',
-                    'game_state': game_state.serialize()
+                    'game_state': game_state_data
                 }))
             
             elif message_type == 'get_client_id':
@@ -182,12 +208,49 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                     'player_id': self.player_id
                 }))
             
+            # ✅ NOWA AKCJA: start_game_manual - pozwala każdemu graczowi rozpocząć grę
+            elif message_type == 'start_game_manual':
+                print(f"🎮 Manual game start requested by {self.player_id[:8]}")
+                
+                if len(room['connected_players']) >= 2:
+                    print("🏁 Starting game manually")
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_start_notification',
+                            'game_state': game_state.serialize()
+                        }
+                    )
+                else:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Need at least 2 players to start'
+                    }))
+            
             elif message_type == 'game_action':
                 action = data.get('action')
-
                 
+                # ✅ SPECJALNE PRZYPADKI które nie wymagają sprawdzania tury:
+                if action == 'roll_dice' and room['game_state'].phase.value == 'setup':
+                    # Ten przypadek był używany do startowania gry - teraz używamy start_game_manual
+                    if len(room['connected_players']) >= 2:
+                        print("🏁 Starting game via old roll_dice method")
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_start_notification',
+                                'game_state': room['game_state'].serialize()
+                            }
+                        )
+                        return
+                    else:
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Need at least 2 players to start'
+                        }))
+                        return
                 
-                # Check if it's player's turn
+                # ✅ DLA WSZYSTKICH INNYCH AKCJI: Sprawdź turę
                 current_player = game_state.get_current_player()
                 if current_player.player_id != self.player_id:
                     await self.send(text_data=json.dumps({
@@ -200,25 +263,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 error_msg = None
                 should_advance_turn = False
 
-                if action == 'roll_dice' and room['game_state'].phase.value == 'setup':
-                  # Jeśli to pierwszy rzut kości w setup, oznacza to start gry
-                  if len(room['connected_players']) >= 2:
-                      # Wyślij powiadomienie o starcie gry
-                      await self.channel_layer.group_send(
-                          self.room_group_name,
-                          {
-                              'type': 'game_start',
-                              'game_state': room['game_state'].serialize()
-                          }
-                      )
-                      return
-                  else:
-                      await self.send(text_data=json.dumps({
-                          'type': 'error',
-                          'message': 'Need at least 2 players to start'
-                      }))
-                      return
-                
                 if action == 'build_settlement':
                     vertex_id = data.get('vertex_id')
                     if vertex_id is not None:
@@ -270,7 +314,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                                         # Daj surowce za drugą osadę jeśli to druga runda
                                         if game_state.setup_round == 2:
                                             print(f"Giving initial resources to player {self.player_id}")
-                                            # POPRAWKA: Przekaż edge_id zamiast vertex_id (lub 0 jako placeholder)
                                             game_state.give_initial_resources_for_second_settlement(self.player_id, 0)
                                         
                                         # Przejdź do następnego gracza
@@ -313,30 +356,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                   print(f"   Current phase: {game_state.phase}")
                   print(f"   Current player: {game_state.get_current_player().player_id[:8]}")
                   
-                  if game_state.phase == GamePhase.SETUP:
-                      # Start gry z setup
-                      if len(room['connected_players']) >= 2:
-                          print("🏁 Starting main game from setup")
-                          game_state.phase = GamePhase.PLAYING
-                          
-                          # Wyślij powiadomienie o starcie gry
-                          await self.channel_layer.group_send(
-                              self.room_group_name,
-                              {
-                                  'type': 'game_start',
-                                  'game_state': game_state.serialize()
-                              }
-                          )
-                          
-                          # ✅ KONTYNUUJ I WYKONAJ RZUT KOŚCI
-                          print("🎲 Continuing with dice roll...")
-                      else:
-                          await self.send(text_data=json.dumps({
-                              'type': 'error',
-                              'message': 'Need at least 2 players to start'
-                          }))
-                          return
-                  
                   # ✅ WYKONAJ RZUT KOŚCI w fazie PLAYING
                   if game_state.phase == GamePhase.PLAYING:
                       print("🎲 Processing dice roll in main game")
@@ -346,9 +365,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                       total = dice1 + dice2
                       
                       print(f"   Dice result: {dice1} + {dice2} = {total}")
-                      
-                      # ✅ ZOSTAŃ W FAZIE PLAYING - gracz może dalej handlować/budować
-                      # NIE ZMIENIAJ FAZY!
                       
                       # Rozdaj surowce za rzut kością
                       game_state.distribute_resources_for_dice_roll(total)
@@ -362,7 +378,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                       await self.channel_layer.group_send(
                           self.room_group_name,
                           {
-                              'type': 'dice_roll',
+                              'type': 'dice_roll_notification',
                               'player_id': self.player_id,
                               'dice1': dice1,
                               'dice2': dice2,
@@ -375,10 +391,11 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                   else:
                       error_msg = f"Cannot roll dice in phase {game_state.phase.value}"
                       print(f"❌ {error_msg}")
+                
                 if success:
-                    # Broadcast game update - TEGO BRAKOWAŁO!
+                    # Broadcast game update
                     update_message = {
-                        'type': 'game_update',
+                        'type': 'game_update_notification',
                         'action': action,
                         'player_id': self.player_id,
                         'game_state': game_state.serialize()
@@ -416,29 +433,31 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 'message': f'Server error: {str(e)}'
             }))
     
-    # Event handlers
-    async def player_joined(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'player_joined',
-            'player_id': event['player_id'],
-            'player_color': event['player_color'],
-            'player_count': event['player_count']
-        }))
+    # ✅ POPRAWIONE Event handlers - dodano _notification sufiksy
+    async def player_joined_notification(self, event):
+        # Wyślij tylko do innych graczy (nie do siebie)
+        if event['player_id'] != self.player_id:
+            await self.send(text_data=json.dumps({
+                'type': 'player_joined',
+                'player_id': event['player_id'],
+                'player_color': event['player_color'],
+                'player_count': event['player_count']
+            }))
     
-    async def player_left(self, event):
+    async def player_left_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'player_left',
             'player_id': event['player_id'],
             'player_count': event['player_count']
         }))
     
-    async def game_start(self, event):
+    async def game_start_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'game_start',
             'game_state': event['game_state']
         }))
     
-    async def game_update(self, event):
+    async def game_update_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'game_update',
             'action': event['action'],
@@ -446,7 +465,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             'game_state': event['game_state']
         }))
     
-    async def dice_roll(self, event):
+    async def dice_roll_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'dice_roll',
             'player_id': event['player_id'],
