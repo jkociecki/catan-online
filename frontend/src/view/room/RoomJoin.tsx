@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import GameService from "../../engine/board/GameService";
+import SimpleGameService from "../board/SimpleGameService";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 
@@ -79,12 +79,12 @@ export default function RoomJoin() {
 
     try {
       // First create a room
-      const newRoomId = await GameService.createRoom();
+      const newRoomId = await SimpleGameService.createRoom();
       setStatus(`Room created! Room ID: ${newRoomId}. Connecting...`);
 
       // Then connect to it via WebSocket
       try {
-        await GameService.connectToRoom(newRoomId);
+        await SimpleGameService.connectToRoom(newRoomId);
         setStatus(`Connected to room ${newRoomId}! Redirecting...`);
 
         // Poprawione przekierowanie - upewnij się, że URL ma ID pokoju
@@ -114,7 +114,7 @@ export default function RoomJoin() {
     setStatus(`Connecting to room ${roomId}...`);
 
     try {
-      await GameService.connectToRoom(roomId);
+      await SimpleGameService.connectToRoom(roomId);
       setStatus(`Connected to room ${roomId}! Redirecting...`);
       navigate(`/room/${roomId}`);
     } catch (err) {
