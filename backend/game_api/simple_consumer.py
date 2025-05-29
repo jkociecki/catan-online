@@ -226,6 +226,22 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                         'type': 'error',
                         'message': 'Need at least 2 players to start'
                     }))
+
+            #
+            elif message_type == 'create_trade_offer':
+                await self.handle_create_trade_offer(data)
+
+            elif message_type == 'accept_trade_offer':
+                await self.handle_accept_trade_offer(data)
+
+            elif message_type == 'reject_trade_offer':
+                await self.handle_reject_trade_offer(data)
+
+            elif message_type == 'cancel_trade_offer':
+                await self.handle_cancel_trade_offer(data)
+
+            elif message_type == 'bank_trade':
+                await self.handle_bank_trade(data)
             
             elif message_type == 'game_action':
                 action = data.get('action')
@@ -472,5 +488,327 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             'dice1': event['dice1'],
             'dice2': event['dice2'],
             'total': event['total'],
+            'game_state': event['game_state']
+        }))
+
+        # Trade handling methods
+    async def handle_create_trade_offer(self, data):
+        """Gracz tworzy ofertę handlową"""
+        try:
+            offering_resources = data.get('offering', {})  # {wood: 2, brick: 1}
+            requesting_resources = data.get('requesting', {})  # {sheep: 1, wheat: 1}
+            target_player_id = data.get('target_player_id')  # Konkretny gracz lub None
+            
+            if self.room_id not in game_rooms:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Game room not found'
+                }))
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            # Sprawdź czy to tura gracza
+            current_player = game_state.get_current_player()
+            if current_player.player_id != self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Not your turn'
+                }))
+                return
+            
+            # Sprawdź czy gracz ma wystarczająco zasobów
+            player = game_state.players[self.player_id]
+            for resource, amount in offering_resources.items():
+                current_amount = getattr(player.resources, resource, 0)
+                if current_amount < amount:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Not enough {resource}'
+                    }))
+                    return
+            
+            # Utwórz ofertę
+            import uuid
+            import time
+            trade_offer = {
+                'id': str(uuid.uuid4()),
+                'from_player_id': self.player_id,
+                'offering': offering_resources,
+                'requesting': requesting_resources,
+                'target_player_id': target_player_id,
+                'created_at': time.time()
+            }
+            
+            # Zapisz ofertę w stanie gry
+            if not hasattr(game_state, 'active_trade_offers'):
+                game_state.active_trade_offers = {}
+            game_state.active_trade_offers[trade_offer['id']] = trade_offer
+            
+            print(f"🤝 Trade offer created by {self.player_id[:8]}: {offering_resources} for {requesting_resources}")
+            
+            # Wyślij ofertę do wszystkich graczy
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'trade_offer_notification',
+                    'trade_offer': trade_offer
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error creating trade offer: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Error creating trade offer: {str(e)}'
+            }))
+
+    async def handle_accept_trade_offer(self, data):
+        """Gracz akceptuje ofertę handlową"""
+        try:
+            trade_offer_id = data.get('trade_offer_id')
+            
+            if self.room_id not in game_rooms:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Game room not found'
+                }))
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            if not hasattr(game_state, 'active_trade_offers'):
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'No active trade offers'
+                }))
+                return
+            
+            trade_offer = game_state.active_trade_offers.get(trade_offer_id)
+            if not trade_offer:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Trade offer not found'
+                }))
+                return
+            
+            # Sprawdź czy gracz może akceptować tę ofertę
+            if trade_offer['target_player_id'] and trade_offer['target_player_id'] != self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'This offer is not for you'
+                }))
+                return
+            
+            if trade_offer['from_player_id'] == self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Cannot accept your own offer'
+                }))
+                return
+            
+            # Sprawdź czy akceptujący gracz ma wystarczające zasoby
+            accepting_player = game_state.players[self.player_id]
+            for resource, amount in trade_offer['requesting'].items():
+                current_amount = getattr(accepting_player.resources, resource, 0)
+                if current_amount < amount:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'You don\'t have enough {resource}'
+                    }))
+                    return
+            
+            # Sprawdź czy oferujący nadal ma zasoby
+            # Sprawdź czy oferujący nadal ma zasoby
+            offering_player = game_state.players[trade_offer['from_player_id']]
+            for resource, amount in trade_offer['offering'].items():
+                current_amount = getattr(offering_player.resources, resource, 0)
+                if current_amount < amount:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Offering player no longer has enough {resource}'
+                    }))
+                    return
+            
+            # Wykonaj wymianę zasobów
+            # Zabierz zasoby od oferującego, daj akceptującemu
+            for resource, amount in trade_offer['offering'].items():
+                # Zabierz od oferującego
+                current_offering = getattr(offering_player.resources, resource, 0)
+                setattr(offering_player.resources, resource, current_offering - amount)
+                
+                # Daj akceptującemu
+                current_accepting = getattr(accepting_player.resources, resource, 0)
+                setattr(accepting_player.resources, resource, current_accepting + amount)
+
+            # Zabierz zasoby od akceptującego, daj oferującemu
+            for resource, amount in trade_offer['requesting'].items():
+                # Zabierz od akceptującego
+                current_accepting = getattr(accepting_player.resources, resource, 0)
+                setattr(accepting_player.resources, resource, current_accepting - amount)
+                
+                # Daj oferującemu
+                current_offering = getattr(offering_player.resources, resource, 0)
+                setattr(offering_player.resources, resource, current_offering + amount)
+            
+            print(f"🤝 Trade completed between {trade_offer['from_player_id'][:8]} and {self.player_id[:8]}")
+            
+            # Usuń ofertę
+            del game_state.active_trade_offers[trade_offer_id]
+            
+            # Powiadom wszystkich o wykonanym handlu
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'trade_completed_notification',
+                    'trade_offer': trade_offer,
+                    'accepting_player_id': self.player_id,
+                    'game_state': game_state.serialize()
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error accepting trade: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Error accepting trade: {str(e)}'
+            }))
+
+    async def handle_reject_trade_offer(self, data):
+        """Gracz odrzuca ofertę handlową"""
+        trade_offer_id = data.get('trade_offer_id')
+        # Po prostu usuń ofertę z listy aktywnych u klienta - nie robimy nic na serwerze
+        await self.send(text_data=json.dumps({
+            'type': 'trade_offer_rejected',
+            'trade_offer_id': trade_offer_id
+        }))
+
+    async def handle_cancel_trade_offer(self, data):
+        """Gracz anuluje swoją ofertę handlową"""
+        try:
+            trade_offer_id = data.get('trade_offer_id')
+            
+            if self.room_id not in game_rooms:
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            if hasattr(game_state, 'active_trade_offers') and trade_offer_id in game_state.active_trade_offers:
+                trade_offer = game_state.active_trade_offers[trade_offer_id]
+                
+                # Sprawdź czy to oferta tego gracza
+                if trade_offer['from_player_id'] == self.player_id:
+                    del game_state.active_trade_offers[trade_offer_id]
+                    
+                    # Powiadom wszystkich o anulowaniu
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'trade_offer_cancelled_notification',
+                            'trade_offer_id': trade_offer_id
+                        }
+                    )
+        except Exception as e:
+            print(f"Error cancelling trade offer: {e}")
+
+    # Event handlers dla handlu
+    async def trade_offer_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'trade_offer_received',
+            'trade_offer': event['trade_offer']
+        }))
+
+    async def trade_completed_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'trade_completed',
+            'trade_offer': event['trade_offer'],
+            'accepting_player_id': event['accepting_player_id'],
+            'game_state': event['game_state']
+        }))
+
+    async def trade_offer_cancelled_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'trade_offer_cancelled',
+            'trade_offer_id': event['trade_offer_id']
+        }))
+    
+    async def handle_bank_trade(self, data):
+        """Handel z bankiem 4:1"""
+        try:
+            giving_resource = data.get('giving_resource')  # 'wood'
+            giving_amount = data.get('giving_amount', 4)   # domyślnie 4
+            requesting_resource = data.get('requesting_resource')  # 'sheep'
+            
+            if self.room_id not in game_rooms:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Game room not found'
+                }))
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            # Sprawdź czy to tura gracza
+            current_player = game_state.get_current_player()
+            if current_player.player_id != self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Not your turn'
+                }))
+                return
+            
+            # Sprawdź czy gracz ma wystarczająco zasobów
+            player = game_state.players[self.player_id]
+            current_amount = getattr(player.resources, giving_resource, 0)
+            
+            if current_amount < giving_amount:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': f'Not enough {giving_resource} (need {giving_amount}, have {current_amount})'
+                }))
+                return
+            
+            # Wykonaj handel z bankiem
+            # Zabierz zasoby
+            setattr(player.resources, giving_resource, current_amount - giving_amount)
+            
+            # Daj nowy zasób
+            current_requesting = getattr(player.resources, requesting_resource, 0)
+            setattr(player.resources, requesting_resource, current_requesting + 1)
+            
+            print(f"🏪 Bank trade: {self.player_id[:8]} gave {giving_amount} {giving_resource} for 1 {requesting_resource}")
+            
+            # Powiadom wszystkich
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'bank_trade_notification',
+                    'player_id': self.player_id,
+                    'giving_resource': giving_resource,
+                    'giving_amount': giving_amount,
+                    'requesting_resource': requesting_resource,
+                    'game_state': game_state.serialize()
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error in bank trade: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Bank trade error: {str(e)}'
+            }))
+
+    # Event handler dla bank trade
+    async def bank_trade_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'bank_trade_completed',
+            'player_id': event['player_id'],
+            'giving_resource': event['giving_resource'],
+            'giving_amount': event['giving_amount'],
+            'requesting_resource': event['requesting_resource'],
             'game_state': event['game_state']
         }))
