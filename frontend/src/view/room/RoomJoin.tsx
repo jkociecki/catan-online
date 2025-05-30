@@ -207,16 +207,18 @@ export default function RoomJoin() {
 
     try {
       const newRoomId = await SimpleGameService.createRoom();
-      setStatus(`Room created! Room ID: ${newRoomId}. Connecting...`);
+      const normalizedRoomId = newRoomId.toLowerCase();
+
+      setStatus(`Room created! Room ID: ${normalizedRoomId}. Connecting...`);
 
       try {
-        await SimpleGameService.connectToRoom(newRoomId);
-        setStatus(`Connected to room ${newRoomId}! Redirecting...`);
-        navigate(`/room/${newRoomId}`);
+        await SimpleGameService.connectToRoom(normalizedRoomId);
+        setStatus(`Connected to room ${normalizedRoomId}! Redirecting...`);
+        navigate(`/room/${normalizedRoomId}`);
       } catch (connectError) {
         console.error("Error connecting to room:", connectError);
         setError(
-          `Created room but couldn't connect. Please try joining with room ID: ${newRoomId}`
+          `Created room but couldn't connect. Please try joining with room ID: ${normalizedRoomId}`
         );
         setIsLoading(false);
       }
@@ -233,14 +235,16 @@ export default function RoomJoin() {
       return;
     }
 
+    const normalizedRoomId = roomId.trim().toLowerCase();
+
     setIsLoading(true);
     setError(null);
-    setStatus(`Connecting to room ${roomId}...`);
+    setStatus(`Connecting to room ${normalizedRoomId}...`);
 
     try {
-      await SimpleGameService.connectToRoom(roomId);
-      setStatus(`Connected to room ${roomId}! Redirecting...`);
-      navigate(`/room/${roomId}`);
+      await SimpleGameService.connectToRoom(normalizedRoomId);
+      setStatus(`Connected to room ${normalizedRoomId}! Redirecting...`);
+      navigate(`/room/${normalizedRoomId}`);
     } catch (err) {
       console.error("Room join error:", err);
       setError(
@@ -290,7 +294,7 @@ export default function RoomJoin() {
               type="text"
               placeholder="Enter Room Code"
               value={roomId}
-              onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+              onChange={(e) => setRoomId(e.target.value.toLowerCase())}
               disabled={isLoading}
               onKeyPress={(e) => {
                 if (e.key === "Enter" && !isLoading) {
