@@ -797,6 +797,8 @@ export default function SimpleOnlineGame() {
     (data: any) => {
       console.log("🎮 handleGameUpdate received:", data);
 
+      let newPlayersList = players; // Zachowaj starą listę jako backup
+
       if (data.game_state) {
         setGameState(data.game_state);
 
@@ -817,7 +819,6 @@ export default function SimpleOnlineGame() {
           }
         }
 
-        // ✅ DODAJ DEBUG TUTAJ
         console.log("🔍 Raw game_state.players:", data.game_state.players);
 
         if (data.game_state.players) {
@@ -846,6 +847,7 @@ export default function SimpleOnlineGame() {
 
           console.log("🔍 Final playersList:", playersList);
           setPlayers(playersList);
+          newPlayersList = playersList; // Użyj nowej listy
         } else {
           console.log("❌ No players in game_state");
         }
@@ -861,17 +863,13 @@ export default function SimpleOnlineGame() {
         setGamePhase('playing');
       }
 
-      // Add history entries for actions
+      // ✅ PRZENIESIONE NA KONIEC - obsługa historii
       if (data.action && data.player_id) {
-        const playerName = getPlayerName(data.player_id);
+        const playerName = newPlayersList.find(p => p.id === data.player_id)?.display_name || data.player_id.substring(0, 8);
 
         switch (data.action) {
           case "build_settlement":
-            addHistoryEntry(
-              data.player_id,
-              `${playerName} built a settlement`,
-              "🏠"
-            );
+            addHistoryEntry(data.player_id, `${playerName} built a settlement`, "🏠");
             break;
           case "build_city":
             addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰");
@@ -880,11 +878,7 @@ export default function SimpleOnlineGame() {
             addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️");
             break;
           case "end_turn":
-            addHistoryEntry(
-              data.player_id,
-              `${playerName} ended their turn`,
-              "⏭️"
-            );
+            addHistoryEntry(data.player_id, `${playerName} ended their turn`, "⏭️");
             break;
         }
       }
@@ -908,7 +902,7 @@ export default function SimpleOnlineGame() {
         setBuildMode(null);
       }
     },
-    [currentPlayerId, myPlayerId, gamePhase, showSuccessIndicator, addHistoryEntry, getPlayerName]
+    [currentPlayerId, myPlayerId, gamePhase, showSuccessIndicator, addHistoryEntry, players]
   );
 
   // Event handlers
@@ -973,6 +967,14 @@ export default function SimpleOnlineGame() {
       setError("Disconnected from game server. Try refreshing the page.");
     };
 
+    // ✅ DODANE - obsługa początkowego stanu gry
+    const handleInitialGameState = (data: any) => {
+      console.log("📨 Initial game state received:", data);
+      if (data.game_state) {
+        handleGameUpdate(data);
+      }
+    };
+
     if (isConnected) {
       SimpleGameService.addEventHandler("game_update", handleGameUpdate);
       SimpleGameService.addEventHandler("game_state", handleGameState);
@@ -989,6 +991,7 @@ export default function SimpleOnlineGame() {
         "trade_completed",
         handleTradeCompleted
       );
+      SimpleGameService.addEventHandler("game_state", handleInitialGameState);
     }
 
     return () => {
@@ -1011,6 +1014,7 @@ export default function SimpleOnlineGame() {
           "trade_completed",
           handleTradeCompleted
         );
+        SimpleGameService.removeEventHandler("game_state", handleInitialGameState);
       }
     };
   }, [
