@@ -1,4 +1,4 @@
-# backend/game_api/simple_consumer.py - poprawiona metoda receive
+# backend/game_api/simple_consumer.py - POPRAWKI dla startowania gry
 import json
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -60,30 +60,53 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
               for p in room['connected_players']:
                   print(f"   - {p['player_id'][:8]} ({p['color']})")
               
-              # KLUCZOWE: Wyślij client_id do nowego gracza
+              # ✅ NAJPIERW wyślij client_id
               await self.send(text_data=json.dumps({
                   'type': 'client_id',
                   'player_id': self.player_id
               }))
               
-              # KLUCZOWE: Wyślij pełny stan gry do nowego gracza
+              # ✅ POCZEKAJ krótko i wyślij stan gry
+              import asyncio
+              await asyncio.sleep(0.1)
+              
+              game_state_data = room['game_state'].serialize()
+              print(f"📤 Sending game_state to new player {self.player_id[:8]}")
+              print(f"   Players in serialized state: {len(game_state_data.get('players', {}))}")
+              
               await self.send(text_data=json.dumps({
                   'type': 'game_state',
-                  'game_state': room['game_state'].serialize()
+                  'game_state': game_state_data
               }))
               
-              # KLUCZOWE: Powiadom WSZYSTKICH graczy o nowym graczu
+              # ✅ Powiadom innych o nowym graczu
               await self.channel_layer.group_send(
                   self.room_group_name,
                   {
-                      'type': 'player_joined',
+                      'type': 'player_joined_notification',
                       'player_id': self.player_id,
                       'player_color': player_color,
                       'player_count': len(room['connected_players'])
                   }
               )
               
-              # KLUCZOWE: Wyślij zaktualizowany stan gry do WSZYSTKICH graczy
+              # ✅ NOWA LOGIKA: Automatycznie rozpocznij grę przy 4 graczach
+              if len(room['connected_players']) == 4:
+                  print("🏁 AUTO-STARTING game with 4 players")
+                  await asyncio.sleep(0.3)  # Krótka pauza żeby wszyscy się połączyli
+                  
+                  # Rozpocznij grę
+                  await self.channel_layer.group_send(
+                      self.room_group_name,
+                      {
+                          'type': 'game_start_notification',
+                          'game_state': room['game_state'].serialize()
+                      }
+                  )
+              
+              # ✅ POCZEKAJ i wyślij zaktualizowany stan do WSZYSTKICH
+              await asyncio.sleep(0.2)
+              
               await self.channel_layer.group_send(
                   self.room_group_name,
                   {
@@ -102,12 +125,15 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
               'type': 'error', 
               'message': 'Room is full'
           }))
+    
     async def broadcast_game_state(self, event):
       """Wyślij stan gry do tego gracza"""
+      print(f"📤 Broadcasting game state to {self.player_id[:8]}")
       await self.send(text_data=json.dumps({
           'type': 'game_state',
           'game_state': event['game_state']
       }))
+    
     async def game_state_update(self, event):
       await self.send(text_data=json.dumps({
           'type': 'game_state',
@@ -139,7 +165,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    'type': 'player_left',
+                    'type': 'player_left_notification',
                     'player_id': self.player_id,
                     'player_count': len(room['connected_players'])
                 }
@@ -150,7 +176,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 del game_rooms[self.room_id]
 
     async def receive(self, text_data):
-
         try:
             data = json.loads(text_data)
             message_type = data.get('type')
@@ -169,11 +194,12 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
             if message_type == 'get_game_state':
                 print(f"🎮 Sending game state to player {self.player_id[:8]}")
-                print(f"   Players in game state: {len(game_state.players)}")
+                game_state_data = game_state.serialize()
+                print(f"   Players in game state: {len(game_state_data.get('players', {}))}")
                 
                 await self.send(text_data=json.dumps({
                     'type': 'game_state',
-                    'game_state': game_state.serialize()
+                    'game_state': game_state_data
                 }))
             
             elif message_type == 'get_client_id':
@@ -182,12 +208,65 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                     'player_id': self.player_id
                 }))
             
+            # ✅ NOWA AKCJA: start_game_manual - pozwala każdemu graczowi rozpocząć grę
+            elif message_type == 'start_game_manual':
+                print(f"🎮 Manual game start requested by {self.player_id[:8]}")
+                
+                if len(room['connected_players']) >= 2:
+                    print("🏁 Starting game manually")
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_start_notification',
+                            'game_state': game_state.serialize()
+                        }
+                    )
+                else:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Need at least 2 players to start'
+                    }))
+
+            #
+            elif message_type == 'create_trade_offer':
+                await self.handle_create_trade_offer(data)
+
+            elif message_type == 'accept_trade_offer':
+                await self.handle_accept_trade_offer(data)
+
+            elif message_type == 'reject_trade_offer':
+                await self.handle_reject_trade_offer(data)
+
+            elif message_type == 'cancel_trade_offer':
+                await self.handle_cancel_trade_offer(data)
+
+            elif message_type == 'bank_trade':
+                await self.handle_bank_trade(data)
+            
             elif message_type == 'game_action':
                 action = data.get('action')
-
                 
+                # ✅ SPECJALNE PRZYPADKI które nie wymagają sprawdzania tury:
+                if action == 'roll_dice' and room['game_state'].phase.value == 'setup':
+                    # Ten przypadek był używany do startowania gry - teraz używamy start_game_manual
+                    if len(room['connected_players']) >= 2:
+                        print("🏁 Starting game via old roll_dice method")
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'game_start_notification',
+                                'game_state': room['game_state'].serialize()
+                            }
+                        )
+                        return
+                    else:
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': 'Need at least 2 players to start'
+                        }))
+                        return
                 
-                # Check if it's player's turn
+                # ✅ DLA WSZYSTKICH INNYCH AKCJI: Sprawdź turę
                 current_player = game_state.get_current_player()
                 if current_player.player_id != self.player_id:
                     await self.send(text_data=json.dumps({
@@ -200,25 +279,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 error_msg = None
                 should_advance_turn = False
 
-                if action == 'roll_dice' and room['game_state'].phase.value == 'setup':
-                  # Jeśli to pierwszy rzut kości w setup, oznacza to start gry
-                  if len(room['connected_players']) >= 2:
-                      # Wyślij powiadomienie o starcie gry
-                      await self.channel_layer.group_send(
-                          self.room_group_name,
-                          {
-                              'type': 'game_start',
-                              'game_state': room['game_state'].serialize()
-                          }
-                      )
-                      return
-                  else:
-                      await self.send(text_data=json.dumps({
-                          'type': 'error',
-                          'message': 'Need at least 2 players to start'
-                      }))
-                      return
-                
                 if action == 'build_settlement':
                     vertex_id = data.get('vertex_id')
                     if vertex_id is not None:
@@ -270,7 +330,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                                         # Daj surowce za drugą osadę jeśli to druga runda
                                         if game_state.setup_round == 2:
                                             print(f"Giving initial resources to player {self.player_id}")
-                                            # POPRAWKA: Przekaż edge_id zamiast vertex_id (lub 0 jako placeholder)
                                             game_state.give_initial_resources_for_second_settlement(self.player_id, 0)
                                         
                                         # Przejdź do następnego gracza
@@ -313,30 +372,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                   print(f"   Current phase: {game_state.phase}")
                   print(f"   Current player: {game_state.get_current_player().player_id[:8]}")
                   
-                  if game_state.phase == GamePhase.SETUP:
-                      # Start gry z setup
-                      if len(room['connected_players']) >= 2:
-                          print("🏁 Starting main game from setup")
-                          game_state.phase = GamePhase.PLAYING
-                          
-                          # Wyślij powiadomienie o starcie gry
-                          await self.channel_layer.group_send(
-                              self.room_group_name,
-                              {
-                                  'type': 'game_start',
-                                  'game_state': game_state.serialize()
-                              }
-                          )
-                          
-                          # ✅ KONTYNUUJ I WYKONAJ RZUT KOŚCI
-                          print("🎲 Continuing with dice roll...")
-                      else:
-                          await self.send(text_data=json.dumps({
-                              'type': 'error',
-                              'message': 'Need at least 2 players to start'
-                          }))
-                          return
-                  
                   # ✅ WYKONAJ RZUT KOŚCI w fazie PLAYING
                   if game_state.phase == GamePhase.PLAYING:
                       print("🎲 Processing dice roll in main game")
@@ -346,9 +381,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                       total = dice1 + dice2
                       
                       print(f"   Dice result: {dice1} + {dice2} = {total}")
-                      
-                      # ✅ ZOSTAŃ W FAZIE PLAYING - gracz może dalej handlować/budować
-                      # NIE ZMIENIAJ FAZY!
                       
                       # Rozdaj surowce za rzut kością
                       game_state.distribute_resources_for_dice_roll(total)
@@ -362,7 +394,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                       await self.channel_layer.group_send(
                           self.room_group_name,
                           {
-                              'type': 'dice_roll',
+                              'type': 'dice_roll_notification',
                               'player_id': self.player_id,
                               'dice1': dice1,
                               'dice2': dice2,
@@ -375,10 +407,11 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                   else:
                       error_msg = f"Cannot roll dice in phase {game_state.phase.value}"
                       print(f"❌ {error_msg}")
+                
                 if success:
-                    # Broadcast game update - TEGO BRAKOWAŁO!
+                    # Broadcast game update
                     update_message = {
-                        'type': 'game_update',
+                        'type': 'game_update_notification',
                         'action': action,
                         'player_id': self.player_id,
                         'game_state': game_state.serialize()
@@ -416,29 +449,31 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 'message': f'Server error: {str(e)}'
             }))
     
-    # Event handlers
-    async def player_joined(self, event):
-        await self.send(text_data=json.dumps({
-            'type': 'player_joined',
-            'player_id': event['player_id'],
-            'player_color': event['player_color'],
-            'player_count': event['player_count']
-        }))
+    # ✅ POPRAWIONE Event handlers - dodano _notification sufiksy
+    async def player_joined_notification(self, event):
+        # Wyślij tylko do innych graczy (nie do siebie)
+        if event['player_id'] != self.player_id:
+            await self.send(text_data=json.dumps({
+                'type': 'player_joined',
+                'player_id': event['player_id'],
+                'player_color': event['player_color'],
+                'player_count': event['player_count']
+            }))
     
-    async def player_left(self, event):
+    async def player_left_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'player_left',
             'player_id': event['player_id'],
             'player_count': event['player_count']
         }))
     
-    async def game_start(self, event):
+    async def game_start_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'game_start',
             'game_state': event['game_state']
         }))
     
-    async def game_update(self, event):
+    async def game_update_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'game_update',
             'action': event['action'],
@@ -446,12 +481,334 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             'game_state': event['game_state']
         }))
     
-    async def dice_roll(self, event):
+    async def dice_roll_notification(self, event):
         await self.send(text_data=json.dumps({
             'type': 'dice_roll',
             'player_id': event['player_id'],
             'dice1': event['dice1'],
             'dice2': event['dice2'],
             'total': event['total'],
+            'game_state': event['game_state']
+        }))
+
+        # Trade handling methods
+    async def handle_create_trade_offer(self, data):
+        """Gracz tworzy ofertę handlową"""
+        try:
+            offering_resources = data.get('offering', {})  # {wood: 2, brick: 1}
+            requesting_resources = data.get('requesting', {})  # {sheep: 1, wheat: 1}
+            target_player_id = data.get('target_player_id')  # Konkretny gracz lub None
+            
+            if self.room_id not in game_rooms:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Game room not found'
+                }))
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            # Sprawdź czy to tura gracza
+            current_player = game_state.get_current_player()
+            if current_player.player_id != self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Not your turn'
+                }))
+                return
+            
+            # Sprawdź czy gracz ma wystarczająco zasobów
+            player = game_state.players[self.player_id]
+            for resource, amount in offering_resources.items():
+                current_amount = getattr(player.resources, resource, 0)
+                if current_amount < amount:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Not enough {resource}'
+                    }))
+                    return
+            
+            # Utwórz ofertę
+            import uuid
+            import time
+            trade_offer = {
+                'id': str(uuid.uuid4()),
+                'from_player_id': self.player_id,
+                'offering': offering_resources,
+                'requesting': requesting_resources,
+                'target_player_id': target_player_id,
+                'created_at': time.time()
+            }
+            
+            # Zapisz ofertę w stanie gry
+            if not hasattr(game_state, 'active_trade_offers'):
+                game_state.active_trade_offers = {}
+            game_state.active_trade_offers[trade_offer['id']] = trade_offer
+            
+            print(f"🤝 Trade offer created by {self.player_id[:8]}: {offering_resources} for {requesting_resources}")
+            
+            # Wyślij ofertę do wszystkich graczy
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'trade_offer_notification',
+                    'trade_offer': trade_offer
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error creating trade offer: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Error creating trade offer: {str(e)}'
+            }))
+
+    async def handle_accept_trade_offer(self, data):
+        """Gracz akceptuje ofertę handlową"""
+        try:
+            trade_offer_id = data.get('trade_offer_id')
+            
+            if self.room_id not in game_rooms:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Game room not found'
+                }))
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            if not hasattr(game_state, 'active_trade_offers'):
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'No active trade offers'
+                }))
+                return
+            
+            trade_offer = game_state.active_trade_offers.get(trade_offer_id)
+            if not trade_offer:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Trade offer not found'
+                }))
+                return
+            
+            # Sprawdź czy gracz może akceptować tę ofertę
+            if trade_offer['target_player_id'] and trade_offer['target_player_id'] != self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'This offer is not for you'
+                }))
+                return
+            
+            if trade_offer['from_player_id'] == self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Cannot accept your own offer'
+                }))
+                return
+            
+            # Sprawdź czy akceptujący gracz ma wystarczające zasoby
+            accepting_player = game_state.players[self.player_id]
+            for resource, amount in trade_offer['requesting'].items():
+                current_amount = getattr(accepting_player.resources, resource, 0)
+                if current_amount < amount:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'You don\'t have enough {resource}'
+                    }))
+                    return
+            
+            # Sprawdź czy oferujący nadal ma zasoby
+            # Sprawdź czy oferujący nadal ma zasoby
+            offering_player = game_state.players[trade_offer['from_player_id']]
+            for resource, amount in trade_offer['offering'].items():
+                current_amount = getattr(offering_player.resources, resource, 0)
+                if current_amount < amount:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Offering player no longer has enough {resource}'
+                    }))
+                    return
+            
+            # Wykonaj wymianę zasobów
+            # Zabierz zasoby od oferującego, daj akceptującemu
+            for resource, amount in trade_offer['offering'].items():
+                # Zabierz od oferującego
+                current_offering = getattr(offering_player.resources, resource, 0)
+                setattr(offering_player.resources, resource, current_offering - amount)
+                
+                # Daj akceptującemu
+                current_accepting = getattr(accepting_player.resources, resource, 0)
+                setattr(accepting_player.resources, resource, current_accepting + amount)
+
+            # Zabierz zasoby od akceptującego, daj oferującemu
+            for resource, amount in trade_offer['requesting'].items():
+                # Zabierz od akceptującego
+                current_accepting = getattr(accepting_player.resources, resource, 0)
+                setattr(accepting_player.resources, resource, current_accepting - amount)
+                
+                # Daj oferującemu
+                current_offering = getattr(offering_player.resources, resource, 0)
+                setattr(offering_player.resources, resource, current_offering + amount)
+            
+            print(f"🤝 Trade completed between {trade_offer['from_player_id'][:8]} and {self.player_id[:8]}")
+            
+            # Usuń ofertę
+            del game_state.active_trade_offers[trade_offer_id]
+            
+            # Powiadom wszystkich o wykonanym handlu
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'trade_completed_notification',
+                    'trade_offer': trade_offer,
+                    'accepting_player_id': self.player_id,
+                    'game_state': game_state.serialize()
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error accepting trade: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Error accepting trade: {str(e)}'
+            }))
+
+    async def handle_reject_trade_offer(self, data):
+        """Gracz odrzuca ofertę handlową"""
+        trade_offer_id = data.get('trade_offer_id')
+        # Po prostu usuń ofertę z listy aktywnych u klienta - nie robimy nic na serwerze
+        await self.send(text_data=json.dumps({
+            'type': 'trade_offer_rejected',
+            'trade_offer_id': trade_offer_id
+        }))
+
+    async def handle_cancel_trade_offer(self, data):
+        """Gracz anuluje swoją ofertę handlową"""
+        try:
+            trade_offer_id = data.get('trade_offer_id')
+            
+            if self.room_id not in game_rooms:
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            if hasattr(game_state, 'active_trade_offers') and trade_offer_id in game_state.active_trade_offers:
+                trade_offer = game_state.active_trade_offers[trade_offer_id]
+                
+                # Sprawdź czy to oferta tego gracza
+                if trade_offer['from_player_id'] == self.player_id:
+                    del game_state.active_trade_offers[trade_offer_id]
+                    
+                    # Powiadom wszystkich o anulowaniu
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'trade_offer_cancelled_notification',
+                            'trade_offer_id': trade_offer_id
+                        }
+                    )
+        except Exception as e:
+            print(f"Error cancelling trade offer: {e}")
+
+    # Event handlers dla handlu
+    async def trade_offer_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'trade_offer_received',
+            'trade_offer': event['trade_offer']
+        }))
+
+    async def trade_completed_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'trade_completed',
+            'trade_offer': event['trade_offer'],
+            'accepting_player_id': event['accepting_player_id'],
+            'game_state': event['game_state']
+        }))
+
+    async def trade_offer_cancelled_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'trade_offer_cancelled',
+            'trade_offer_id': event['trade_offer_id']
+        }))
+    
+    async def handle_bank_trade(self, data):
+        """Handel z bankiem 4:1"""
+        try:
+            giving_resource = data.get('giving_resource')  # 'wood'
+            giving_amount = data.get('giving_amount', 4)   # domyślnie 4
+            requesting_resource = data.get('requesting_resource')  # 'sheep'
+            
+            if self.room_id not in game_rooms:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Game room not found'
+                }))
+                return
+            
+            room = game_rooms[self.room_id]
+            game_state = room['game_state']
+            
+            # Sprawdź czy to tura gracza
+            current_player = game_state.get_current_player()
+            if current_player.player_id != self.player_id:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': 'Not your turn'
+                }))
+                return
+            
+            # Sprawdź czy gracz ma wystarczająco zasobów
+            player = game_state.players[self.player_id]
+            current_amount = getattr(player.resources, giving_resource, 0)
+            
+            if current_amount < giving_amount:
+                await self.send(text_data=json.dumps({
+                    'type': 'error',
+                    'message': f'Not enough {giving_resource} (need {giving_amount}, have {current_amount})'
+                }))
+                return
+            
+            # Wykonaj handel z bankiem
+            # Zabierz zasoby
+            setattr(player.resources, giving_resource, current_amount - giving_amount)
+            
+            # Daj nowy zasób
+            current_requesting = getattr(player.resources, requesting_resource, 0)
+            setattr(player.resources, requesting_resource, current_requesting + 1)
+            
+            print(f"🏪 Bank trade: {self.player_id[:8]} gave {giving_amount} {giving_resource} for 1 {requesting_resource}")
+            
+            # Powiadom wszystkich
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'bank_trade_notification',
+                    'player_id': self.player_id,
+                    'giving_resource': giving_resource,
+                    'giving_amount': giving_amount,
+                    'requesting_resource': requesting_resource,
+                    'game_state': game_state.serialize()
+                }
+            )
+            
+        except Exception as e:
+            print(f"Error in bank trade: {e}")
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Bank trade error: {str(e)}'
+            }))
+
+    # Event handler dla bank trade
+    async def bank_trade_notification(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'bank_trade_completed',
+            'player_id': event['player_id'],
+            'giving_resource': event['giving_resource'],
+            'giving_amount': event['giving_amount'],
+            'requesting_resource': event['requesting_resource'],
             'game_state': event['game_state']
         }))

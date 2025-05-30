@@ -1,4 +1,4 @@
-// frontend/src/view/game/SimpleOnlineGame.tsx - PIĘKNA WERSJA
+// frontend/src/view/game/SimpleOnlineGame.tsx - Z HANDLEM
 import React, { useState, useEffect, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import SimpleGameService from "../../view/board/SimpleGameService";
@@ -6,6 +6,8 @@ import OnlineCatanSVGBoard from "../board/OnlineCatanSVGBoard";
 import styled from "styled-components";
 import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
+import TradeModal from "../trade/TradeModal";
+import TradeOfferNotification from "../trade/TradeOfferNotification";
 
 const AppContainer = styled.div`
   display: flex;
@@ -92,6 +94,8 @@ const LeftPanel = styled.div`
   border-right: 1px solid #e2e8f0;
   overflow-y: auto;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 `;
 
 const GameBoard = styled.div`
@@ -117,6 +121,17 @@ const Panel = styled.div`
   padding: 20px;
 `;
 
+const PlayersSection = styled.div`
+  flex-shrink: 0;
+  border-bottom: 1px solid #e2e8f0;
+`;
+
+const HistorySection = styled.div`
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+`;
+
 const Section = styled.div`
   margin-bottom: 24px;
 
@@ -132,6 +147,92 @@ const SectionHeader = styled.div`
   letter-spacing: 1px;
   color: #64748b;
   margin-bottom: 12px;
+`;
+
+const HistoryContainer = styled.div`
+  max-height: 300px;
+  overflow-y: auto;
+  background: #fafafa;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+`;
+
+const HistoryEntry = styled.div`
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+  background: white;
+  color: #475569;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &:hover {
+    background: #f8fafc;
+  }
+
+  &:nth-child(even) {
+    background: #fafafa;
+  }
+
+  &:nth-child(even):hover {
+    background: #f1f5f9;
+  }
+`;
+
+const HistoryIcon = styled.div`
+  font-size: 14px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+`;
+
+const HistoryText = styled.div`
+  flex: 1;
+  font-weight: 500;
+  color: #334155;
+`;
+
+const HistoryTime = styled.div`
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 400;
+`;
+
+const PlayerDot = styled.div<{ color: string }>`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: ${(props) => props.color};
+  flex-shrink: 0;
+  opacity: 0.8;
 `;
 
 const PlayerCard = styled.div<{ isActive: boolean; color: string }>`
@@ -163,7 +264,7 @@ const PlayerInfo = styled.div`
   gap: 10px;
 `;
 
-const PlayerDot = styled.div<{ color: string }>`
+const PlayerDotLarge = styled.div<{ color: string }>`
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -424,6 +525,15 @@ const DiceResult = styled.div`
   border: 2px solid #3b82f6;
 `;
 
+interface HistoryItem {
+  id: string;
+  playerId: string;
+  playerColor: string;
+  message: string;
+  timestamp: Date;
+  icon: string;
+}
+
 export default function SimpleOnlineGame() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -446,6 +556,11 @@ export default function SimpleOnlineGame() {
   const [gamePhase, setGamePhase] = useState<string>("setup");
   const [showSuccess, setShowSuccess] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string>("");
+  const [gameHistory, setGameHistory] = useState<HistoryItem[]>([]);
+
+  // Trade states
+  const [showTradeModal, setShowTradeModal] = useState<boolean>(false);
+  const [activeTradeOffers, setActiveTradeOffers] = useState<any[]>([]);
 
   const myColor = players.find((p) => p.id === myPlayerId)?.color || "red";
 
@@ -456,6 +571,138 @@ export default function SimpleOnlineGame() {
       setShowSuccess(false);
     }, 2000);
   }, []);
+
+  // Helper function to add history entry
+  const addHistoryEntry = useCallback(
+    (playerId: string, message: string, icon: string) => {
+      const playerColor =
+        players.find((p) => p.id === playerId)?.color || "#64748b";
+      const newEntry: HistoryItem = {
+        id: `${Date.now()}-${Math.random()}`,
+        playerId,
+        playerColor,
+        message,
+        timestamp: new Date(),
+        icon,
+      };
+
+      setGameHistory((prev) => [newEntry, ...prev].slice(0, 50)); // Keep last 50 entries
+    },
+    [players]
+  );
+
+  // Get player name helper
+  const getPlayerName = useCallback((playerId: string) => {
+    return playerId.substring(0, 8);
+  }, []);
+
+  // Get player color helper
+  const getPlayerColor = useCallback(
+    (playerId: string) => {
+      const player = players.find((p) => p.id === playerId);
+      return player?.color || "#64748b";
+    },
+    [players]
+  );
+
+  // Trade handlers
+  const handleCreateTradeOffer = useCallback(
+    (
+      offering: Record<string, number>,
+      requesting: Record<string, number>,
+      targetPlayer?: string
+    ) => {
+      console.log("Creating trade offer:", {
+        offering,
+        requesting,
+        targetPlayer,
+      });
+      SimpleGameService.sendMessage({
+        type: "create_trade_offer",
+        offering,
+        requesting,
+        target_player_id: targetPlayer,
+      });
+      showSuccessIndicator("Trade offer sent!");
+    },
+    [showSuccessIndicator]
+  );
+
+  const handleAcceptTrade = useCallback(
+    (offerId: string) => {
+      console.log("Accepting trade:", offerId);
+      SimpleGameService.sendMessage({
+        type: "accept_trade_offer",
+        trade_offer_id: offerId,
+      });
+
+      // Usuń ofertę z listy
+      setActiveTradeOffers((prev) =>
+        prev.filter((offer) => offer.id !== offerId)
+      );
+      showSuccessIndicator("Trade accepted!");
+    },
+    [showSuccessIndicator]
+  );
+
+  const handleRejectTrade = useCallback((offerId: string) => {
+    console.log("Rejecting trade:", offerId);
+    // Po prostu usuń z listy lokalnie
+    setActiveTradeOffers((prev) =>
+      prev.filter((offer) => offer.id !== offerId)
+    );
+  }, []);
+
+  // Trade event handlers
+  const handleTradeOfferReceived = useCallback(
+    (data: any) => {
+      console.log("📨 Trade offer received:", data);
+      if (data.trade_offer && data.trade_offer.from_player_id !== myPlayerId) {
+        setActiveTradeOffers((prev) => [...prev, data.trade_offer]);
+
+        // Dodaj do historii
+        const playerName = getPlayerName(data.trade_offer.from_player_id);
+        addHistoryEntry(
+          data.trade_offer.from_player_id,
+          `${playerName} sent a trade offer`,
+          "🤝"
+        );
+      }
+    },
+    [myPlayerId, addHistoryEntry, getPlayerName]
+  );
+
+  const handleTradeCompleted = useCallback(
+    (data: any) => {
+      console.log("📨 Trade completed:", data);
+
+      // Usuń ofertę z aktywnych
+      if (data.trade_offer) {
+        setActiveTradeOffers((prev) =>
+          prev.filter((offer) => offer.id !== data.trade_offer.id)
+        );
+      }
+
+      // Aktualizuj stan gry
+      if (data.game_state) {
+        handleGameUpdate(data);
+      }
+
+      // Dodaj do historii
+      if (data.trade_offer && data.accepting_player_id) {
+        const fromPlayerName = getPlayerName(data.trade_offer.from_player_id);
+        const toPlayerName = getPlayerName(data.accepting_player_id);
+        addHistoryEntry(
+          data.accepting_player_id,
+          `${toPlayerName} accepted trade from ${fromPlayerName}`,
+          "✅"
+        );
+      }
+
+      showSuccessIndicator("Trade completed!");
+    },
+    [addHistoryEntry, getPlayerName, showSuccessIndicator]
+  );
 
   // ✅ Automatyczne ustawianie currentPlayerId
   useEffect(() => {
@@ -503,13 +750,30 @@ export default function SimpleOnlineGame() {
           setIsConnected(true);
         }
 
+        // ✅ NATYCHMIAST pobierz stan gry i client ID
         SimpleGameService.getGameState();
 
         try {
           const clientId = await SimpleGameService.getClientId();
+          console.log(
+            "✅ Got client ID immediately:",
+            clientId.substring(0, 8)
+          );
           setMyPlayerId(clientId);
         } catch (err) {
           console.warn("Could not get client ID immediately:", err);
+          // Spróbuj ponownie po krótkim czasie
+          setTimeout(() => {
+            SimpleGameService.getClientId()
+              .then((clientId) => {
+                console.log(
+                  "✅ Got client ID after retry:",
+                  clientId.substring(0, 8)
+                );
+                setMyPlayerId(clientId);
+              })
+              .catch(console.warn);
+          }, 500);
         }
 
         setLoading(false);
@@ -530,6 +794,8 @@ export default function SimpleOnlineGame() {
   // Game update handler
   const handleGameUpdate = useCallback(
     (data: any) => {
+      console.log("🎮 handleGameUpdate received:", data);
+
       if (data.game_state) {
         setGameState(data.game_state);
 
@@ -550,7 +816,7 @@ export default function SimpleOnlineGame() {
           }
         }
 
-        // Convert players
+        // ✅ POPRAW konwersję graczy - zawsze sprawdź czy players istnieje
         if (data.game_state.players) {
           let playersData;
           if (Array.isArray(data.game_state.players)) {
@@ -570,6 +836,36 @@ export default function SimpleOnlineGame() {
           }));
 
           setPlayers(playersList);
+        } else {
+          console.log("❌ No players in game_state");
+        }
+      }
+
+      // Add history entries for actions
+      if (data.action && data.player_id) {
+        const playerName = getPlayerName(data.player_id);
+
+        switch (data.action) {
+          case "build_settlement":
+            addHistoryEntry(
+              data.player_id,
+              `${playerName} built a settlement`,
+              "🏠"
+            );
+            break;
+          case "build_city":
+            addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰");
+            break;
+          case "build_road":
+            addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️");
+            break;
+          case "end_turn":
+            addHistoryEntry(
+              data.player_id,
+              `${playerName} ended their turn`,
+              "⏭️"
+            );
+            break;
         }
       }
 
@@ -592,30 +888,56 @@ export default function SimpleOnlineGame() {
         setBuildMode(null);
       }
     },
-    [currentPlayerId, myPlayerId, gamePhase, showSuccessIndicator]
+    [
+      currentPlayerId,
+      myPlayerId,
+      gamePhase,
+      showSuccessIndicator,
+      addHistoryEntry,
+      getPlayerName,
+    ]
   );
 
   // Event handlers
   useEffect(() => {
     const handleGameState = (data: any) => {
+      console.log("📨 handleGameState received:", data);
       if (data.game_state) {
         handleGameUpdate(data);
       }
     };
 
     const handleClientId = (data: any) => {
+      console.log("🆔 handleClientId received:", data);
       if (data.player_id) {
         setMyPlayerId(data.player_id);
       }
     };
 
     const handlePlayerJoined = (data: any) => {
+      console.log("👥 handlePlayerJoined received:", data);
+      // Dodaj do historii
+      if (data.player_id) {
+        const playerName = getPlayerName(data.player_id);
+        addHistoryEntry(data.player_id, `${playerName} joined the game`, "👋");
+      }
+      // ✅ ZAWSZE pobierz najnowszy stan gry gdy ktoś dołączy
       SimpleGameService.getGameState();
     };
 
     const handleDiceRoll = (data: any) => {
-      if (data.total) {
+      console.log("🎲 handleDiceRoll received:", data);
+      if (data.total && data.player_id) {
         setDiceResult(data.total);
+
+        // Add to history
+        const playerName = getPlayerName(data.player_id);
+        addHistoryEntry(
+          data.player_id,
+          `${playerName} rolled ${data.total}`,
+          "🎲"
+        );
+
         if (data.player_id === myPlayerId) {
           showSuccessIndicator(`Rolled ${data.total}!`);
         }
@@ -646,6 +968,14 @@ export default function SimpleOnlineGame() {
       SimpleGameService.addEventHandler("dice_roll", handleDiceRoll);
       SimpleGameService.addEventHandler("error", handleError);
       SimpleGameService.addEventHandler("disconnect", handleDisconnect);
+      SimpleGameService.addEventHandler(
+        "trade_offer_received",
+        handleTradeOfferReceived
+      );
+      SimpleGameService.addEventHandler(
+        "trade_completed",
+        handleTradeCompleted
+      );
     }
 
     return () => {
@@ -660,9 +990,26 @@ export default function SimpleOnlineGame() {
         SimpleGameService.removeEventHandler("dice_roll", handleDiceRoll);
         SimpleGameService.removeEventHandler("error", handleError);
         SimpleGameService.removeEventHandler("disconnect", handleDisconnect);
+        SimpleGameService.removeEventHandler(
+          "trade_offer_received",
+          handleTradeOfferReceived
+        );
+        SimpleGameService.removeEventHandler(
+          "trade_completed",
+          handleTradeCompleted
+        );
       }
     };
-  }, [isConnected, handleGameUpdate, myPlayerId, showSuccessIndicator]);
+  }, [
+    isConnected,
+    handleGameUpdate,
+    myPlayerId,
+    showSuccessIndicator,
+    addHistoryEntry,
+    getPlayerName,
+    handleTradeOfferReceived,
+    handleTradeCompleted,
+  ]);
 
   // Helper functions
   const getMyResources = useCallback(() => {
@@ -834,44 +1181,72 @@ export default function SimpleOnlineGame() {
 
       <MainContent>
         <LeftPanel>
-          <Panel>
-            <Section>
-              <SectionHeader>Players ({players.length})</SectionHeader>
-              {players.map((player, index) => {
-                const isCurrentPlayer = player.id === currentPlayerId;
-                const isLeading =
-                  player.victory_points === maxVictoryPoints &&
-                  maxVictoryPoints > 0;
-                const displayName = player.id.substring(0, 8);
-                const totalResources = Object.values(
-                  player.resources || {}
-                ).reduce(
-                  (a: number, b: unknown) =>
-                    a + (typeof b === "number" ? b : 0),
-                  0
-                );
+          <PlayersSection>
+            <Panel>
+              <Section>
+                <SectionHeader>Players ({players.length})</SectionHeader>
+                {players.map((player, index) => {
+                  const isCurrentPlayer = player.id === currentPlayerId;
+                  const isLeading =
+                    player.victory_points === maxVictoryPoints &&
+                    maxVictoryPoints > 0;
+                  const displayName = player.id.substring(0, 8);
+                  const totalResources = Object.values(
+                    player.resources || {}
+                  ).reduce(
+                    (a: number, b: unknown) =>
+                      a + (typeof b === "number" ? b : 0),
+                    0
+                  );
 
-                return (
-                  <PlayerCard
-                    key={player.id}
-                    isActive={isCurrentPlayer}
-                    color={player.color}
-                  >
-                    <PlayerInfo>
-                      <PlayerDot color={player.color} />
-                      <PlayerName>{displayName}</PlayerName>
-                    </PlayerInfo>
-                    <PlayerStats>
-                      <span>{totalResources}</span>
-                      <VictoryPoints isLeading={isLeading}>
-                        {player.victory_points}
-                      </VictoryPoints>
-                    </PlayerStats>
-                  </PlayerCard>
-                );
-              })}
-            </Section>
-          </Panel>
+                  return (
+                    <PlayerCard
+                      key={player.id}
+                      isActive={isCurrentPlayer}
+                      color={player.color}
+                    >
+                      <PlayerInfo>
+                        <PlayerDotLarge color={player.color} />
+                        <PlayerName>{displayName}</PlayerName>
+                      </PlayerInfo>
+                      <PlayerStats>
+                        <span>{totalResources}</span>
+                        <VictoryPoints isLeading={isLeading}>
+                          {player.victory_points}
+                        </VictoryPoints>
+                      </PlayerStats>
+                    </PlayerCard>
+                  );
+                })}
+              </Section>
+            </Panel>
+          </PlayersSection>
+
+          <HistorySection>
+            <SectionHeader>Game History</SectionHeader>
+            <HistoryContainer>
+              {gameHistory.length > 0 ? (
+                gameHistory.map((entry) => (
+                  <HistoryEntry key={entry.id}>
+                    <PlayerDot color={entry.playerColor} />
+                    <HistoryIcon>{entry.icon}</HistoryIcon>
+                    <HistoryText>{entry.message}</HistoryText>
+                    <HistoryTime>
+                      {entry.timestamp.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </HistoryTime>
+                  </HistoryEntry>
+                ))
+              ) : (
+                <HistoryEntry>
+                  <HistoryIcon>📝</HistoryIcon>
+                  <HistoryText>Game starting...</HistoryText>
+                </HistoryEntry>
+              )}
+            </HistoryContainer>
+          </HistorySection>
         </LeftPanel>
 
         <GameBoard>
@@ -1010,7 +1385,11 @@ export default function SimpleOnlineGame() {
             <Section>
               <SectionHeader>Trade</SectionHeader>
               <ActionsGrid>
-                <ActionButton variant="disabled" disabled={true} compact>
+                <ActionButton
+                  onClick={() => setShowTradeModal(true)}
+                  disabled={!isMyTurn() || gamePhase === "setup"}
+                  compact
+                >
                   <ButtonIcon>🤝</ButtonIcon>
                   Trade
                 </ActionButton>
@@ -1037,6 +1416,30 @@ export default function SimpleOnlineGame() {
           </Panel>
         </RightPanel>
       </MainContent>
+
+      {/* Trade Modal */}
+      <TradeModal
+        isOpen={showTradeModal}
+        onClose={() => setShowTradeModal(false)}
+        myResources={getMyResources()}
+        players={players}
+        myPlayerId={myPlayerId}
+        onCreateOffer={handleCreateTradeOffer}
+      />
+
+      {/* Trade Offer Notifications */}
+      {activeTradeOffers.map((offer, index) => (
+        <div key={offer.id} style={{ top: `${100 + index * 200}px` }}>
+          <TradeOfferNotification
+            tradeOffer={offer}
+            onAccept={handleAcceptTrade}
+            onReject={handleRejectTrade}
+            getPlayerName={getPlayerName}
+            getPlayerColor={getPlayerColor}
+            myResources={getMyResources()}
+          />
+        </div>
+      ))}
 
       <SuccessIndicator show={showSuccess}>{successMessage}</SuccessIndicator>
 
