@@ -593,8 +593,9 @@ export default function SimpleOnlineGame() {
 
   // Get player name helper
   const getPlayerName = useCallback((playerId: string) => {
-    return playerId.substring(0, 8);
-  }, []);
+    const player = players.find(p => p.id === playerId);
+    return (player as any)?.display_name || playerId.substring(0, 8);
+  }, [players]);
 
   // Get player color helper
   const getPlayerColor = useCallback(
@@ -779,8 +780,7 @@ export default function SimpleOnlineGame() {
         setLoading(false);
       } catch (err) {
         setError(
-          `Connection error: ${
-            err instanceof Error ? err.message : "Unknown error"
+          `Connection error: ${err instanceof Error ? err.message : "Unknown error"
           }`
         );
         setIsConnected(false);
@@ -792,111 +792,91 @@ export default function SimpleOnlineGame() {
   }, [roomId, navigate]);
 
   // Game update handler
-  const handleGameUpdate = useCallback(
-    (data: any) => {
-      console.log("🎮 handleGameUpdate received:", data);
+  const handleGameUpdate = useCallback((data: any) => {
+    console.log("📥 Game update:", data);
 
-      if (data.game_state) {
-        setGameState(data.game_state);
+    // Update game state
+    setGameState(data.game_state);
 
-        if (data.game_state.phase) {
-          setGamePhase(data.game_state.phase);
-        }
+    // Update players list
+    const playersData = Object.values(data.game_state.players);
+    const playersList = playersData.map((p: any) => ({
+      id: p.player_id,
+      color: p.color,
+      display_name: p.display_name,  // Added display_name
+      resources: p.resources || {},
+      victory_points: p.victory_points || 0,
+      settlements_left: p.settlements_left || 5,
+      cities_left: p.cities_left || 4,
+      roads_left: p.roads_left || 15,
+    }));
 
-        // Set current player
-        if (
-          data.game_state.current_player_index !== undefined &&
-          data.game_state.player_order &&
-          data.game_state.player_order.length > 0
-        ) {
-          const newCurrentPlayerId =
-            data.game_state.player_order[data.game_state.current_player_index];
-          if (newCurrentPlayerId && newCurrentPlayerId !== currentPlayerId) {
-            setCurrentPlayerId(newCurrentPlayerId);
-          }
-        }
+    setPlayers(playersList);
 
-        // ✅ POPRAW konwersję graczy - zawsze sprawdź czy players istnieje
-        if (data.game_state.players) {
-          let playersData;
-          if (Array.isArray(data.game_state.players)) {
-            playersData = data.game_state.players;
-          } else {
-            playersData = Object.values(data.game_state.players);
-          }
+    // Handle turn advancement
+    if (data.turn_advanced) {
+      setCurrentPlayerId(data.new_current_player);
+    }
 
-          const playersList = playersData.map((p: any) => ({
-            id: p.player_id,
-            color: p.color,
-            resources: p.resources || {},
-            victory_points: p.victory_points || 0,
-            settlements_left: p.settlements_left || 5,
-            cities_left: p.cities_left || 4,
-            roads_left: p.roads_left || 15,
-          }));
+    // Handle setup completion
+    if (data.setup_complete) {
+      setGamePhase('playing');
+    }
 
-          setPlayers(playersList);
-        } else {
-          console.log("❌ No players in game_state");
-        }
+    // Add history entries for actions
+    if (data.action && data.player_id) {
+      const playerName = getPlayerName(data.player_id);
+
+      switch (data.action) {
+        case "build_settlement":
+          addHistoryEntry(
+            data.player_id,
+            `${playerName} built a settlement`,
+            "🏠"
+          );
+          break;
+        case "build_city":
+          addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰");
+          break;
+        case "build_road":
+          addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️");
+          break;
+        case "end_turn":
+          addHistoryEntry(
+            data.player_id,
+            `${playerName} ended their turn`,
+            "⏭️"
+          );
+          break;
       }
+    }
 
-      // Add history entries for actions
-      if (data.action && data.player_id) {
-        const playerName = getPlayerName(data.player_id);
+    // Action messages
+    if (data.action) {
+      const actionMessages: { [key: string]: string } = {
+        build_settlement: "Settlement built!",
+        build_city: "City built!",
+        build_road: "Road built!",
+        end_turn: "Turn ended",
+      };
 
-        switch (data.action) {
-          case "build_settlement":
-            addHistoryEntry(
-              data.player_id,
-              `${playerName} built a settlement`,
-              "🏠"
-            );
-            break;
-          case "build_city":
-            addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰");
-            break;
-          case "build_road":
-            addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️");
-            break;
-          case "end_turn":
-            addHistoryEntry(
-              data.player_id,
-              `${playerName} ended their turn`,
-              "⏭️"
-            );
-            break;
-        }
+      if (actionMessages[data.action] && data.player_id === myPlayerId) {
+        showSuccessIndicator(actionMessages[data.action]);
       }
+    }
 
-      // Action messages
-      if (data.action) {
-        const actionMessages: { [key: string]: string } = {
-          build_settlement: "Settlement built!",
-          build_city: "City built!",
-          build_road: "Road built!",
-          end_turn: "Turn ended",
-        };
-
-        if (actionMessages[data.action] && data.player_id === myPlayerId) {
-          showSuccessIndicator(actionMessages[data.action]);
-        }
-      }
-
-      // Auto clear build mode
-      if (data.action === "build_road" && gamePhase === "setup") {
-        setBuildMode(null);
-      }
-    },
-    [
-      currentPlayerId,
-      myPlayerId,
-      gamePhase,
-      showSuccessIndicator,
-      addHistoryEntry,
-      getPlayerName,
-    ]
-  );
+    // Auto clear build mode
+    if (data.action === "build_road" && gamePhase === "setup") {
+      setBuildMode(null);
+    }
+  }, [
+    currentPlayerId,
+    myPlayerId,
+    gamePhase,
+    showSuccessIndicator,
+    addHistoryEntry,
+    getPlayerName,
+  ]);
 
   // Event handlers
   useEffect(() => {

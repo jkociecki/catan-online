@@ -7,6 +7,8 @@ interface User {
   first_name: string;
   last_name: string;
   is_authenticated: boolean;
+  display_name?: string;
+  preferred_color?: string;
 }
 
 interface AuthContextType {

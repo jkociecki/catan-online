@@ -114,6 +114,7 @@ class SimplePlayer:
     settlements_left: int = 5
     cities_left: int = 4
     roads_left: int = 15
+    display_name: str = ""
     
     def can_afford_settlement(self) -> bool:
         cost = {Resource.WOOD: 1, Resource.BRICK: 1, Resource.SHEEP: 1, Resource.WHEAT: 1}
@@ -265,26 +266,29 @@ class SimpleGameState:
     
     # WSZYSTKIE POZOSTAŁE METODY BEZ ZMIAN - w tym place_road!
     
-    def add_player(self, player_id: str, color: str):
-      """Dodaj gracza do gry"""
-      self.players[player_id] = SimplePlayer(
-          player_id=player_id,
-          color=color, 
-          resources=PlayerResources()
-      )
-      self.player_order.append(player_id)
-      self.setup_progress[player_id] = {"settlements": 0, "roads": 0}
-      
-      # ✅ DODAJ INICJALIZACJĘ player_settlements_order
-      self.player_settlements_order[player_id] = []
-      
-      # Ustaw pierwszego gracza jako aktualnego
-      if len(self.players) == 1:
-          self.current_player_index = 0
-          print(f"👑 Set first player {player_id[:8]} as current player (index 0)")
-      
-      print(f"📋 Player order: {[p[:8] for p in self.player_order]}")
-      print(f"👑 Current player index: {self.current_player_index}")
+    def add_player(self, player_id: str, color: str, display_name: str = ""):
+        """Dodaj gracza do gry"""
+        final_display_name = display_name or f"Player_{player_id[:6]}"
+        
+        self.players[player_id] = SimplePlayer(
+            player_id=player_id,
+            color=color, 
+            resources=PlayerResources(),
+            display_name=final_display_name
+        )
+        
+        print(f"🔍 Created player: id={player_id[:8]}, color={color}, display_name='{final_display_name}'")
+        
+        self.player_order.append(player_id)
+        self.setup_progress[player_id] = {"settlements": 0, "roads": 0}
+        self.player_settlements_order[player_id] = []
+        
+        if len(self.players) == 1:
+            self.current_player_index = 0
+            print(f"👑 Set first player {player_id[:8]} as current player (index 0)")
+        
+        print(f"📋 Player order: {[p[:8] for p in self.player_order]}")
+        print(f"👑 Current player index: {self.current_player_index}")
     
     def get_current_player(self) -> SimplePlayer:
         player_id = self.player_order[self.current_player_index]
@@ -416,9 +420,12 @@ class SimpleGameState:
         # ZAWSZE używaj obiektu (nie tablicy) dla zgodności z frontendem
         players_dict = {}
         for pid, p in self.players.items():
+            print(f"🔍 Serializing player {pid[:8]}: display_name='{p.display_name}', color='{p.color}'")
+            
             players_dict[pid] = {
-                "player_id": p.player_id,  # ✅ Jednolite nazewnictwo
+                "player_id": p.player_id,
                 "color": p.color,
+                "display_name": p.display_name,
                 "resources": {
                     "wood": p.resources.wood,
                     "brick": p.resources.brick,
@@ -447,15 +454,14 @@ class SimpleGameState:
                     "player_id": e.player_id
                 } for eid, e in self.edges.items() if e.has_road
             },
-            "players": players_dict,  # ✅ Zawsze obiekt
+            "players": players_dict,
             "phase": self.phase.value,
             "current_player_index": self.current_player_index,
             "player_order": self.player_order,
             "setup_round": self.setup_round
         }
         
-        print(f"   Serialized players: {list(players_dict.keys())}")
-        print(f"   Current player index: {self.current_player_index}")
+        print(f"   Serialized players dict: {players_dict}")
         print(f"   Player order: {self.player_order}")
         
         return serialized
@@ -779,3 +785,33 @@ class SimpleGameState:
 
     # UŻYCIE w kodzie serwera:
     # game_state.debug_vertex_mapping()
+
+    def resolve_name_conflict(self, desired_name: str) -> str:
+        """Rozwiąż konflikt nazwy gracza"""
+        existing_names = [p.display_name for p in self.players.values() if hasattr(p, 'display_name')]
+        
+        if desired_name not in existing_names:
+            return desired_name
+        
+        counter = 1
+        while f"{desired_name}_{counter}" in existing_names:
+            counter += 1
+        
+        return f"{desired_name}_{counter}"
+
+    def resolve_color_conflict(self, desired_color: str) -> str:
+        """Rozwiąż konflikt koloru gracza"""
+        used_colors = [p.color for p in self.players.values()]
+        
+        if desired_color not in used_colors:
+            return desired_color
+        
+        # Lista dostępnych kolorów
+        available_colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple', 'pink', 'brown']
+        
+        for color in available_colors:
+            if color not in used_colors:
+                return color
+        
+        # Jeśli wszystkie kolory zajęte, dodaj numer
+        return f"{desired_color}_{len(used_colors)}"

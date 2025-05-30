@@ -153,19 +153,19 @@ const PlayersList = styled.div`
   }
 `;
 
-const PlayerCard = styled.div<{ color: string; isActive: boolean }>`
+const PlayerCard = styled.div<{ $isActive: boolean; $color: string }>`
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid ${(props) => (props.isActive ? props.color : "#e2e8f0")};
-  background: ${(props) => (props.isActive ? `${props.color}08` : "white")};
+  border: 1px solid ${(props) => (props.$isActive ? props.$color : "#e2e8f0")};
+  background: ${(props) => (props.$isActive ? `${props.$color}08` : "white")};
   transition: all 0.2s;
 
   &:hover {
-    border-color: ${(props) => props.color};
-    background: ${(props) => `${props.color}05`};
+    border-color: ${(props) => props.$color};
+    background: ${(props) => `${props.$color}05`};
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   }
@@ -174,15 +174,7 @@ const PlayerCard = styled.div<{ color: string; isActive: boolean }>`
 const PlayerInfo = styled.div`
   display: flex;
   align-items: center;
-  gap: 10px;
-`;
-
-const PlayerDotLarge = styled.div<{ color: string }>`
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: ${(props) => props.color};
-  box-shadow: 0 0 0 2px white, 0 0 0 3px ${(props) => props.color}30;
+  gap: 8px;
 `;
 
 const PlayerName = styled.div`
@@ -191,13 +183,19 @@ const PlayerName = styled.div`
   color: #1e293b;
 `;
 
-const PlayerBadge = styled.div`
+const PlayerColor = styled.div<{ color: string }>`
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: ${props => props.color};
+`;
+
+const YouLabel = styled.div`
   color: #64748b;
   font-size: 10px;
-  font-weight: 600;
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 8px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 `;
 
 const StatusMessage = styled.div<{ type?: "success" | "info" }>`
@@ -326,6 +324,7 @@ interface RoomLobbyProps {
 interface Player {
   id: string;
   color: string;
+  display_name?: string;
 }
 
 export default function RoomLobby({
@@ -379,8 +378,7 @@ export default function RoomLobby({
           const playerExists = prevPlayers.some((p) => p.id === data.player_id);
           if (!playerExists) {
             setStatus(
-              `Player ${data.player_id.substring(0, 6)}... joined (${
-                data.player_count
+              `Player ${data.player_id.substring(0, 6)}... joined (${data.player_count
               }/4 players)`
             );
             return [
@@ -402,8 +400,7 @@ export default function RoomLobby({
         setPlayers((prevPlayers) => {
           const filtered = prevPlayers.filter((p) => p.id !== data.player_id);
           setStatus(
-            `Player ${data.player_id.substring(0, 6)}... left (${
-              data.player_count
+            `Player ${data.player_id.substring(0, 6)}... left (${data.player_count
             }/4 players)`
           );
           return filtered;
@@ -444,12 +441,14 @@ export default function RoomLobby({
           playersList = data.game_state.players.map((p: any) => ({
             id: p.id || p.player_id,
             color: p.color || "#64748b",
+            display_name: p.display_name || `Player ${(p.id || p.player_id).substring(0, 8)}`
           }));
         } else {
           playersList = Object.values(data.game_state.players).map(
             (p: any) => ({
               id: p.id || p.player_id,
               color: p.color || "#64748b",
+              display_name: p.display_name || `Player ${(p.id || p.player_id).substring(0, 8)}`
             })
           );
         }
@@ -561,16 +560,14 @@ export default function RoomLobby({
                 players.map((player) => (
                   <PlayerCard
                     key={player.id}
-                    color={player.color}
-                    isActive={player.id === myPlayerId}
+                    $color={player.color}
+                    $isActive={player.id === myPlayerId}
                   >
                     <PlayerInfo>
-                      <PlayerDotLarge color={player.color} />
-                      <PlayerName>
-                        Player {player.id.substring(0, 8)}
-                      </PlayerName>
+                      <PlayerName>{player.display_name || player.id}</PlayerName>
+                      <PlayerColor color={player.color} />
                     </PlayerInfo>
-                    {player.id === myPlayerId && <PlayerBadge>You</PlayerBadge>}
+                    {player.id === myPlayerId && <YouLabel>You</YouLabel>}
                   </PlayerCard>
                 ))
               )}

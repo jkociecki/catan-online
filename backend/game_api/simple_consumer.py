@@ -11,120 +11,46 @@ game_rooms = {}
 class SimpleGameConsumer(AsyncWebsocketConsumer):
     
     async def connect(self):
-      self.room_id = self.scope['url_route']['kwargs']['room_id'] 
-      self.room_group_name = f'simple_game_{self.room_id}'
-      self.player_id = str(uuid.uuid4())
-      
-      print(f"🔍 Player {self.player_id[:8]} connecting to room {self.room_id}")
-      
-      # Join room group
-      await self.channel_layer.group_add(
-          self.room_group_name,
-          self.channel_name
-      )
-      
-      await self.accept()
-      
-      # Initialize game room if it doesn't exist
-      if self.room_id not in game_rooms:
-          game_rooms[self.room_id] = {
-              'game_state': SimpleGameState(),
-              'connected_players': [],
-              'max_players': 4
-          }
-          print(f"🏠 Created new room {self.room_id}")
-      
-      room = game_rooms[self.room_id]
-      print(f"🎯 Room {self.room_id} currently has {len(room['connected_players'])} players")
-      
-      # Add player to the room
-      if len(room['connected_players']) < room['max_players']:
-          colors = ['red', 'blue', 'green', 'yellow']
-          used_colors = [p['color'] for p in room['connected_players']]
-          available_colors = [c for c in colors if c not in used_colors]
-          
-          if available_colors:
-              player_color = available_colors[0]
-              
-              # Add to connected players
-              room['connected_players'].append({
-                  'player_id': self.player_id,
-                  'color': player_color
-              })
-              
-              # Add to game state
-              room['game_state'].add_player(self.player_id, player_color)
-              
-              print(f"✅ Added player {self.player_id[:8]} with color {player_color}")
-              print(f"🔢 Room now has {len(room['connected_players'])} players:")
-              for p in room['connected_players']:
-                  print(f"   - {p['player_id'][:8]} ({p['color']})")
-              
-              # ✅ NAJPIERW wyślij client_id
-              await self.send(text_data=json.dumps({
-                  'type': 'client_id',
-                  'player_id': self.player_id
-              }))
-              
-              # ✅ POCZEKAJ krótko i wyślij stan gry
-              import asyncio
-              await asyncio.sleep(0.1)
-              
-              game_state_data = room['game_state'].serialize()
-              print(f"📤 Sending game_state to new player {self.player_id[:8]}")
-              print(f"   Players in serialized state: {len(game_state_data.get('players', {}))}")
-              
-              await self.send(text_data=json.dumps({
-                  'type': 'game_state',
-                  'game_state': game_state_data
-              }))
-              
-              # ✅ Powiadom innych o nowym graczu
-              await self.channel_layer.group_send(
-                  self.room_group_name,
-                  {
-                      'type': 'player_joined_notification',
-                      'player_id': self.player_id,
-                      'player_color': player_color,
-                      'player_count': len(room['connected_players'])
-                  }
-              )
-              
-              # ✅ NOWA LOGIKA: Automatycznie rozpocznij grę przy 4 graczach
-              if len(room['connected_players']) == 4:
-                  print("🏁 AUTO-STARTING game with 4 players")
-                  await asyncio.sleep(0.3)  # Krótka pauza żeby wszyscy się połączyli
-                  
-                  # Rozpocznij grę
-                  await self.channel_layer.group_send(
-                      self.room_group_name,
-                      {
-                          'type': 'game_start_notification',
-                          'game_state': room['game_state'].serialize()
-                      }
-                  )
-              
-              # ✅ POCZEKAJ i wyślij zaktualizowany stan do WSZYSTKICH
-              await asyncio.sleep(0.2)
-              
-              await self.channel_layer.group_send(
-                  self.room_group_name,
-                  {
-                      'type': 'broadcast_game_state',
-                      'game_state': room['game_state'].serialize()
-                  }
-              )
-              
-          else:
-              await self.send(text_data=json.dumps({
-                  'type': 'error',
-                  'message': 'No colors available'
-              }))
-      else:
-          await self.send(text_data=json.dumps({
-              'type': 'error', 
-              'message': 'Room is full'
-          }))
+        self.room_id = self.scope['url_route']['kwargs']['room_id']
+        self.room_group_name = f'game_{self.room_id}'
+        self.player_id = str(uuid.uuid4())
+        
+        # Join room group
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        
+        # Accept the connection
+        await self.accept()
+        
+        # Initialize or get room
+        if self.room_id not in game_rooms:
+            game_rooms[self.room_id] = {
+                'connected_players': [],
+                'max_players': 4,
+                'game_state': SimpleGameState(),
+                'is_started': False
+            }
+            print(f"🏠 Created new room {self.room_id}")
+        
+        room = game_rooms[self.room_id]
+        print(f"🎯 Room {self.room_id} currently has {len(room['connected_players'])} players")
+        
+        # Wait for user data - don't add player yet
+        print(f"✅ Player {self.player_id[:8]} connected, waiting for user data")
+        
+        # Send client_id immediately
+        await self.send(text_data=json.dumps({
+            'type': 'client_id',
+            'player_id': self.player_id
+        }))
+        
+        # Send current game state
+        await self.send(text_data=json.dumps({
+            'type': 'game_state',
+            'game_state': room['game_state'].serialize()
+        }))
     
     async def broadcast_game_state(self, event):
       """Wyślij stan gry do tego gracza"""
@@ -181,6 +107,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             message_type = data.get('type')
             
             print(f"📨 Received {message_type} from player {self.player_id[:8]}")
+            print(f"📨 Data: {data}")  # Added debug
             
             if self.room_id not in game_rooms:
                 await self.send(text_data=json.dumps({
@@ -205,8 +132,55 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             elif message_type == 'get_client_id':
                 await self.send(text_data=json.dumps({
                     'type': 'client_id',
-                    'player_id': self.player_id
+                    'client_id': self.player_id
                 }))
+            
+            elif message_type == 'set_user_data':
+                print(f"🎯 Processing set_user_data for {self.player_id[:8]}")
+                
+                display_name = data.get('display_name', f'Player_{self.player_id[:6]}')
+                desired_color = data.get('color', 'blue')
+                
+                print(f"📋 User data: name='{display_name}', color='{desired_color}'")
+                
+                # Rozwiąż konflikty
+                final_name = game_state.resolve_name_conflict(display_name)
+                final_color = game_state.resolve_color_conflict(desired_color)
+                
+                print(f"✅ Final data: name='{final_name}', color='{final_color}'")
+                
+                # Dodaj gracza do gry (TYLKO TUTAJ!)
+                game_state.add_player(self.player_id, final_color, final_name)
+                
+                # Dodaj do connected_players
+                room['connected_players'].append({
+                    'player_id': self.player_id,
+                    'color': final_color,
+                    'display_name': final_name
+                })
+                
+                print(f"🎮 Added player to game: {len(game_state.players)} total players")
+                
+                # Wyślij zaktualizowany stan
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'broadcast_game_state',
+                        'game_state': game_state.serialize()
+                    }
+                )
+                
+                # Powiadom o dołączeniu gracza
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'player_joined_notification',
+                        'player_id': self.player_id,
+                        'player_color': final_color,
+                        'player_name': final_name,
+                        'player_count': len(room['connected_players'])
+                    }
+                )
             
             # ✅ NOWA AKCJA: start_game_manual - pozwala każdemu graczowi rozpocząć grę
             elif message_type == 'start_game_manual':
@@ -457,6 +431,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 'type': 'player_joined',
                 'player_id': event['player_id'],
                 'player_color': event['player_color'],
+                'player_name': event['player_name'],
                 'player_count': event['player_count']
             }))
     
@@ -491,7 +466,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             'game_state': event['game_state']
         }))
 
-        # Trade handling methods
+    # Trade handling methods
     async def handle_create_trade_offer(self, data):
         """Gracz tworzy ofertę handlową"""
         try:

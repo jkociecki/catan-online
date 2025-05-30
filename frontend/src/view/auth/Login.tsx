@@ -1,22 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import SimpleGameService from '../board/SimpleGameService';
 
 // Mock function for Google Sign-In
 // In a real implementation, you'd use a library like react-google-login
 const mockGoogleSignIn = () => {
-    return new Promise((resolve) => {
-        // Simulate Google auth response
-        setTimeout(() => {
-            resolve({
-                provider: 'google',
-                external_id: 'google_123456789',
-                email: 'user@example.com',
-                name: 'Google User',
-                avatar_url: 'https://via.placeholder.com/150'
-            });
-        }, 1000);
-    });
+  return new Promise((resolve) => {
+    // Simulate Google auth response
+    setTimeout(() => {
+      resolve({
+        provider: 'google',
+        external_id: 'google_123456789',
+        email: 'user@example.com',
+        name: 'Google User',
+        avatar_url: 'https://via.placeholder.com/150'
+      });
+    }, 1000);
+  });
 };
 
 const AUTH_API_URL = 'http://localhost:8000/api/auth';
@@ -234,223 +235,234 @@ const ColorOption = styled.div<{ color: string; selected: boolean }>`
 `;
 
 export default function Login() {
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [guestName, setGuestName] = useState('');
-    const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [selectedColor, setSelectedColor] = useState('red');
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [userData, setUserData] = useState<any>(null);
-    const navigate = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [guestName, setGuestName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [selectedColor, setSelectedColor] = useState('red');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userData, setUserData] = useState<any>(null);
+  const navigate = useNavigate();
 
-    const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
+  const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
 
-    useEffect(() => {
-        // Check if user is already logged in
-        const token = localStorage.getItem('auth_token');
-        const userDataStr = localStorage.getItem('user_data');
-        
-        if (token && userDataStr) {
-            try {
-                const parsedUserData = JSON.parse(userDataStr);
-                setIsLoggedIn(true);
-                setUserData(parsedUserData);
-            } catch (e) {
-                console.error("Error parsing user data", e);
-                localStorage.removeItem('user_data');
-                localStorage.removeItem('auth_token');
-            }
-        }
-    }, []);
+  useEffect(() => {
+    // Check if user is already logged in
+    const token = localStorage.getItem('auth_token');
+    const userDataStr = localStorage.getItem('user_data');
 
-    const handleLogout = () => {
-        localStorage.removeItem('auth_token');
+    if (token && userDataStr) {
+      try {
+        const parsedUserData = JSON.parse(userDataStr);
+        setIsLoggedIn(true);
+        setUserData(parsedUserData);
+      } catch (e) {
+        console.error("Error parsing user data", e);
         localStorage.removeItem('user_data');
-        setIsLoggedIn(false);
-        setUserData(null);
-        window.location.reload();
-    };
+        localStorage.removeItem('auth_token');
+      }
+    }
+  }, []);
 
-    const handleRegularLogin = async (e: React.FormEvent) => {
-        e.preventDefault();
+  const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_data');
+    setIsLoggedIn(false);
+    setUserData(null);
+    window.location.reload();
+  };
 
-        if (!username || !password) {
-            setError('Please enter both username and password');
-            return;
-        }
+  const handleRegularLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-        setLoading(true);
-        setError(null);
+    if (!username || !password) {
+      setError('Please enter both username and password');
+      return;
+    }
 
-        try {
-            const response = await fetch(`${AUTH_API_URL}/users/login/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ username, password }),
-            });
+    setLoading(true);
+    setError(null);
 
-            const data = await response.json();
+    try {
+      const response = await fetch(`${AUTH_API_URL}/users/login/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Login failed');
-            }
+      const data = await response.json();
 
-            // Store authentication token and user data
-            localStorage.setItem('auth_token', data.token);
-            localStorage.setItem('user_data', JSON.stringify(data.user));
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
 
-            // Redirect to home
-            navigate('/');
+      // Store authentication token and user data
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('user_data', JSON.stringify(data.user));
 
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Login failed');
-        } finally {
-            setLoading(false);
-        }
-    };
+      // Redirect to home
+      navigate('/');
 
-    const handleGoogleSignIn = () => {
-        // Redirect to Django's Google login URL from allauth
-        window.location.href = 'http://localhost:8000/accounts/google/login/';
-    };
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleGuestLogin = async () => {
-        setLoading(true);
-        setError(null);
+  const handleGoogleSignIn = () => {
+    // Redirect to Django's Google login URL from allauth
+    window.location.href = 'http://localhost:8000/accounts/google/login/';
+  };
 
-        try {
-            const guestData = {
-                guest_name: guestName || undefined,  // Let backend generate a name if empty
-                preferred_color: selectedColor
-            };
+  const handleGuestLogin = async () => {
+    if (!guestName) {
+      setError('Please enter a name');
+      return;
+    }
 
-            const response = await fetch(`${AUTH_API_URL}/users/guest_login/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(guestData),
-            });
+    try {
+      setLoading(true);
+      setError(null);
 
-            const data = await response.json();
+      const response = await fetch(`${AUTH_API_URL}/users/guest_login/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          username: guestName,
+          preferred_color: selectedColor
+        }),
+      });
 
-            if (!response.ok) {
-                throw new Error(data.error || 'Guest login failed');
-            }
+      if (!response.ok) {
+        throw new Error('Guest login failed');
+      }
 
-            // Store authentication token and user data
-            localStorage.setItem('auth_token', data.token);
-            localStorage.setItem('user_data', JSON.stringify(data.user));
+      const data = await response.json();
+      localStorage.setItem('auth_token', data.token);
+      localStorage.setItem('user_data', JSON.stringify(data.user));
 
-            // Redirect to home
-            navigate('/');
+      SimpleGameService.setUserData(
+        guestName || data.user.display_name || data.user.username,
+        selectedColor
+      );
 
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Guest login failed');
-        } finally {
-            setLoading(false);
-        }
-    };
+      navigate('/room/new');
+    } catch (err) {
+      setError('Failed to login as guest');
+      console.error('Guest login error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleSkipLogin = () => {
-        navigate('/room/new');  // Przekierowanie do tworzenia nowego pokoju
-    };
+  const handleSkipLogin = () => {
+    // Generuj losową nazwę i kolor
+    const randomName = `Player_${Math.random().toString(36).substr(2, 6)}`;
+    const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
-    return (
-        <AuthContainer>
-            <Title>Welcome to Catan</Title>
+    SimpleGameService.setUserData(randomName, randomColor);
+    navigate('/room/new');
+  };
 
-            {error && <ErrorMessage>{error}</ErrorMessage>}
+  return (
+    <AuthContainer>
+      <Title>Welcome to Catan</Title>
 
-            {isLoggedIn && userData ? (
-                <UserInfoBox>
-                    <UserAvatar 
-                        src={userData.avatar_url || `https://ui-avatars.com/api/?name=${userData.display_name || userData.username}&background=random`}
-                        alt="User avatar"
-                    />
-                    <UserName>Welcome back, {userData.display_name || userData.username}!</UserName>
-                    <UserStatus>You are already logged in</UserStatus>
-                    <PlayButton onClick={() => navigate('/room/new')}>
-                        Play Game
-                    </PlayButton>
-                    <LogoutButton onClick={handleLogout}>
-                        Logout
-                    </LogoutButton>
-                </UserInfoBox>
-            ) : (
-                <>
-                    <GoogleButton onClick={() => navigate('/google-login')}>
-                        <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
-                        Continue with Google
-                    </GoogleButton>
+      {error && <ErrorMessage>{error}</ErrorMessage>}
 
-                    <Divider><span>OR</span></Divider>
+      {isLoggedIn && userData ? (
+        <UserInfoBox>
+          <UserAvatar
+            src={userData.avatar_url || `https://ui-avatars.com/api/?name=${userData.display_name || userData.username}&background=random`}
+            alt="User avatar"
+          />
+          <UserName>Welcome back, {userData.display_name || userData.username}!</UserName>
+          <UserStatus>You are already logged in</UserStatus>
+          <PlayButton onClick={() => navigate('/room/new')}>
+            Play Game
+          </PlayButton>
+          <LogoutButton onClick={handleLogout}>
+            Logout
+          </LogoutButton>
+        </UserInfoBox>
+      ) : (
+        <>
+          <GoogleButton onClick={() => navigate('/google-login')}>
+            <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
+            Continue with Google
+          </GoogleButton>
 
-                    <Form onSubmit={handleRegularLogin}>
-                        <Input
-                            type="text"
-                            placeholder="Username"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            disabled={loading}
-                        />
-                        <Input
-                            type="password"
-                            placeholder="Password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            disabled={loading}
-                        />
-                        <Button type="submit" disabled={loading}>
-                            Login
-                        </Button>
-                    </Form>
+          <Divider><span>OR</span></Divider>
 
-                    <Divider><span>OR</span></Divider>
+          <Form onSubmit={handleRegularLogin}>
+            <Input
+              type="text"
+              placeholder="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={loading}
+            />
+            <Input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+            />
+            <Button type="submit" disabled={loading}>
+              Login
+            </Button>
+          </Form>
 
-                    <GuestOptions>
-                        <Input
-                            type="text"
-                            placeholder="Guest Name (optional)"
-                            value={guestName}
-                            onChange={(e) => setGuestName(e.target.value)}
-                            disabled={loading}
-                        />
+          <Divider><span>OR</span></Divider>
 
-                        <div>
-                            <p>Choose your color:</p>
-                            <ColorOptions>
-                                {colors.map(color => (
-                                    <ColorOption
-                                        key={color}
-                                        color={color}
-                                        selected={selectedColor === color}
-                                        onClick={() => setSelectedColor(color)}
-                                    />
-                                ))}
-                            </ColorOptions>
-                        </div>
+          <GuestOptions>
+            <Input
+              type="text"
+              placeholder="Guest Name (optional)"
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value)}
+              disabled={loading}
+            />
 
-                        <Button
-                            onClick={handleGuestLogin}
-                            disabled={loading}
-                            type="button"
-                        >
-                            Play as Guest
-                        </Button>
-                    </GuestOptions>
+            <div>
+              <p>Choose your color:</p>
+              <ColorOptions>
+                {colors.map(color => (
+                  <ColorOption
+                    key={color}
+                    color={color}
+                    selected={selectedColor === color}
+                    onClick={() => setSelectedColor(color)}
+                  />
+                ))}
+              </ColorOptions>
+            </div>
 
-                    <SkipLoginButton
-                        onClick={handleSkipLogin}
-                        type="button"
-                    >
-                        Skip Login and Create Game
-                    </SkipLoginButton>
-                </>
-            )}
-        </AuthContainer>
-    );
+            <Button
+              onClick={handleGuestLogin}
+              disabled={loading}
+              type="button"
+            >
+              Play as Guest
+            </Button>
+          </GuestOptions>
+
+          <SkipLoginButton
+            onClick={handleSkipLogin}
+            type="button"
+          >
+            Skip Login and Create Game
+          </SkipLoginButton>
+        </>
+      )}
+    </AuthContainer>
+  );
 }

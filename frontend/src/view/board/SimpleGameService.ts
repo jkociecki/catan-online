@@ -6,6 +6,7 @@ class SimpleGameService {
   private callbacks: { [key: string]: ((data: any) => void)[] } = {};
   private clientId: string | null = null;
   private currentRoomId: string | null = null; // ✅ DODAJ TO
+  private userData: { displayName: string; color: string } | null = null;
 
   // NOWY URL - simple-game zamiast game
   private static readonly API_URL = "http://localhost:8000/api";
@@ -48,10 +49,15 @@ class SimpleGameService {
     }
   }
 
+  public setUserData(displayName: string, color: string): void {
+    this.userData = { displayName, color };
+    console.log("Set user data:", this.userData);
+  }
+
   public connectToRoom(roomId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       this.disconnectFromRoom();
-      this.currentRoomId = roomId; // ✅ DODAJ TO
+      this.currentRoomId = roomId;
 
       try {
         const wsUrl = `${SimpleGameService.WS_URL}/game/${roomId}/`;
@@ -63,6 +69,14 @@ class SimpleGameService {
           this.sendMessage({
             type: "get_client_id",
           });
+          if (this.userData) {
+            console.log("Sending user data:", this.userData);
+            this.sendMessage({
+              type: "set_user_data",
+              display_name: this.userData.displayName,
+              color: this.userData.color,
+            });
+          }
           resolve();
         };
 
