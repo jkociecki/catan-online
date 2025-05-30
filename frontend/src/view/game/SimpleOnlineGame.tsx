@@ -574,13 +574,13 @@ export default function SimpleOnlineGame() {
 
   // Helper function to add history entry
   const addHistoryEntry = useCallback(
-    (playerId: string, message: string, icon: string) => {
-      const playerColor =
-        players.find((p) => p.id === playerId)?.color || "#64748b";
+    (playerId: string, message: string, icon: string, playerColor?: string) => {
+      const finalPlayerColor = playerColor || players.find((p) => p.id === playerId)?.color || "#64748b";
+
       const newEntry: HistoryItem = {
         id: `${Date.now()}-${Math.random()}`,
         playerId,
-        playerColor,
+        playerColor: finalPlayerColor,
         message,
         timestamp: new Date(),
         icon,
@@ -667,7 +667,8 @@ export default function SimpleOnlineGame() {
         addHistoryEntry(
           data.trade_offer.from_player_id,
           `${playerName} sent a trade offer`,
-          "🤝"
+          "🤝",
+          data.trade_offer.from_player_color
         );
       }
     },
@@ -697,7 +698,8 @@ export default function SimpleOnlineGame() {
         addHistoryEntry(
           data.accepting_player_id,
           `${toPlayerName} accepted trade from ${fromPlayerName}`,
-          "✅"
+          "✅",
+          data.accepting_player_color
         );
       }
 
@@ -752,8 +754,10 @@ export default function SimpleOnlineGame() {
           setIsConnected(true);
         }
 
-        // ✅ NATYCHMIAST pobierz stan gry i client ID
-        SimpleGameService.getGameState();
+        // ✅ WYMUŚ NATYCHMIASTOWE POBRANIE STANU
+        setTimeout(() => {
+          SimpleGameService.getGameState();
+        }, 100);
 
         try {
           const clientId = await SimpleGameService.getClientId();
@@ -863,22 +867,24 @@ export default function SimpleOnlineGame() {
         setGamePhase('playing');
       }
 
-      // ✅ PRZENIESIONE NA KONIEC - obsługa historii
+      // ✅ ZMIENIONE - obsługa historii z kolorami
       if (data.action && data.player_id) {
-        const playerName = newPlayersList.find(p => p.id === data.player_id)?.display_name || data.player_id.substring(0, 8);
+        const player = newPlayersList.find(p => p.id === data.player_id);
+        const playerName = player?.display_name || data.player_id.substring(0, 8);
+        const playerColor = player?.color || "#64748b";
 
         switch (data.action) {
           case "build_settlement":
-            addHistoryEntry(data.player_id, `${playerName} built a settlement`, "🏠");
+            addHistoryEntry(data.player_id, `${playerName} built a settlement`, "🏠", playerColor);
             break;
           case "build_city":
-            addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰");
+            addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰", playerColor);
             break;
           case "build_road":
-            addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️");
+            addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️", playerColor);
             break;
           case "end_turn":
-            addHistoryEntry(data.player_id, `${playerName} ended their turn`, "⏭️");
+            addHistoryEntry(data.player_id, `${playerName} ended their turn`, "⏭️", playerColor);
             break;
         }
       }
@@ -926,7 +932,7 @@ export default function SimpleOnlineGame() {
       // Dodaj do historii
       if (data.player_id) {
         const playerName = getPlayerName(data.player_id);
-        addHistoryEntry(data.player_id, `${playerName} joined the game`, "👋");
+        addHistoryEntry(data.player_id, `${playerName} joined the game`, "👋", data.player_color);
       }
       // ✅ ZAWSZE pobierz najnowszy stan gry gdy ktoś dołączy
       SimpleGameService.getGameState();
@@ -942,7 +948,8 @@ export default function SimpleOnlineGame() {
         addHistoryEntry(
           data.player_id,
           `${playerName} rolled ${data.total}`,
-          "🎲"
+          "🎲",
+          data.player_color
         );
 
         if (data.player_id === myPlayerId) {
