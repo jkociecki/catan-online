@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import SimpleGameService from "../board/SimpleGameService";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
@@ -257,13 +257,141 @@ const LoadingSpinner = styled.div`
   }
 `;
 
+const SettingsButton = styled.button<{ primary?: boolean }>`
+  background: ${props => props.primary ? '#3b82f6' : 'white'};
+  color: ${props => props.primary ? 'white' : '#64748b'};
+  border: 1px solid ${props => props.primary ? '#3b82f6' : '#e2e8f0'};
+  padding: ${props => props.primary ? '8px 16px' : '4px 6px'};
+  border-radius: ${props => props.primary ? '6px' : '4px'};
+  font-size: ${props => props.primary ? '12px' : '14px'};
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: ${props => props.primary ? '#2563eb' : '#f8fafc'};
+    transform: translateY(-1px);
+  }
+`;
+
+const SettingsModal = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+`;
+
+const SettingsContent = styled.div`
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+`;
+
+const SettingsHeader = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+`;
+
+const CloseButton = styled.button`
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #64748b;
+
+  &:hover {
+    color: #ef4444;
+  }
+`;
+
+const SettingsSection = styled.div`
+  margin-bottom: 20px;
+`;
+
+const SettingsSectionTitle = styled.h4`
+  margin: 0 0 12px 0;
+  color: #1e293b;
+  font-size: 14px;
+`;
+
+const ColorGrid = styled.div`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+`;
+
+const ColorOption = styled.div<{ color: string; selected: boolean }>`
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: ${props => props.color};
+  cursor: pointer;
+  border: 3px solid ${props => props.selected ? '#333' : 'transparent'};
+  transition: all 0.2s;
+  
+  &:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+`;
+
+const SettingsButtons = styled.div`
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+`;
+
 export default function RoomJoin() {
+  const navigate = useNavigate();
+  const { user, setUser, logout } = useAuth();
   const [roomId, setRoomId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const [showSettings, setShowSettings] = useState(false);
+  const [selectedSettingsColor, setSelectedSettingsColor] = useState(user?.preferred_color || 'red');
+  const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
+
+  useEffect(() => {
+    if (user?.preferred_color) {
+      setSelectedSettingsColor(user.preferred_color);
+    }
+  }, [user]);
+
+  const updateUserSettings = () => {
+    if (user) {
+      const updatedUser = {
+        ...user,
+        preferred_color: selectedSettingsColor
+      };
+
+      // Update AuthContext
+      setUser(updatedUser);
+
+      // Update localStorage
+      localStorage.setItem('user_data', JSON.stringify(updatedUser));
+
+      // Update SimpleGameService
+      SimpleGameService.setUserData(
+        user.display_name || user.username,
+        selectedSettingsColor
+      );
+
+      setShowSettings(false);
+    }
+  };
 
   const handleCreate = async () => {
     setIsLoading(true);
@@ -323,9 +451,8 @@ export default function RoomJoin() {
     <AppContainer>
       <TopBar>
         <LeftSection>
-          <Title>Catan</Title>
+          <Title>Catan Online</Title>
         </LeftSection>
-
         {user && (
           <RightSection>
             <UserInfo>
@@ -337,6 +464,9 @@ export default function RoomJoin() {
                 {user.display_name || user.username}
                 {user.is_guest && <GuestBadge>Guest</GuestBadge>}
               </UserName>
+              <SettingsButton onClick={() => setShowSettings(true)}>
+                ⚙️
+              </SettingsButton>
               <LogoutButton onClick={() => { logout(); navigate('/'); }}>Logout</LogoutButton>
             </UserInfo>
           </RightSection>
@@ -401,6 +531,41 @@ export default function RoomJoin() {
           {error && <ErrorMessage>{error}</ErrorMessage>}
         </Container>
       </MainContent>
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal onClick={() => setShowSettings(false)}>
+          <SettingsContent onClick={(e) => e.stopPropagation()}>
+            <SettingsHeader>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>⚙️ Settings</h3>
+              <CloseButton onClick={() => setShowSettings(false)}>×</CloseButton>
+            </SettingsHeader>
+
+            <SettingsSection>
+              <SettingsSectionTitle>Preferred Color</SettingsSectionTitle>
+              <ColorGrid>
+                {colors.map(color => (
+                  <ColorOption
+                    key={color}
+                    color={color}
+                    selected={selectedSettingsColor === color}
+                    onClick={() => setSelectedSettingsColor(color)}
+                  />
+                ))}
+              </ColorGrid>
+            </SettingsSection>
+
+            <SettingsButtons>
+              <SettingsButton onClick={() => setShowSettings(false)}>
+                Cancel
+              </SettingsButton>
+              <SettingsButton primary onClick={updateUserSettings}>
+                Save Changes
+              </SettingsButton>
+            </SettingsButtons>
+          </SettingsContent>
+        </SettingsModal>
+      )}
     </AppContainer>
   );
 }

@@ -52,20 +52,24 @@ class UserViewSet(viewsets.ModelViewSet):
     def guest_login(self, request):
         # Create a unique guest username
         guest_name = request.data.get('guest_name', f"Guest_{uuid.uuid4().hex[:8]}")
+        preferred_color = request.data.get('preferred_color', random.choice(['red', 'blue', 'green', 'yellow', 'orange', 'purple']))
+        
+        # Ensure unique username
+        base_username = guest_name
+        counter = 1
+        while User.objects.filter(username=base_username).exists():
+            base_username = f"{guest_name}_{counter}"
+            counter += 1
         
         # Create random password for the guest user
         random_password = uuid.uuid4().hex
         
-        # Available colors for random assignment
-        colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple']
-        preferred_color = request.data.get('preferred_color', random.choice(colors))
-        
         # Create the guest user
         user = User.objects.create_user(
-            username=guest_name,
+            username=base_username,  # Use unique username
             password=random_password,
             is_guest=True,
-            display_name=guest_name,
+            display_name=guest_name,  # Keep original name for display
             preferred_color=preferred_color
         )
         
