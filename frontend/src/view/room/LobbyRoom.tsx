@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import SimpleGameService from "../../view/board/SimpleGameService";
+import { useAuth } from "../../context/AuthContext";
 
 // ✅ DOKŁADNIE jak SimpleOnlineGame - bez scrollowania, kompaktowo
 const AppContainer = styled.div`
@@ -49,6 +50,64 @@ const GameInfo = styled.div`
   font-size: 13px;
   color: #64748b;
   font-weight: 500;
+`;
+
+const RightSection = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+`;
+
+const UserInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+`;
+
+const UserAvatar = styled.img`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+`;
+
+const UserName = styled.div`
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+`;
+
+const GuestBadge = styled.span`
+  background-color: #f1f5f9;
+  color: #64748b;
+  padding: 1px 4px;
+  border-radius: 6px;
+  font-size: 9px;
+  margin-left: 4px;
+  font-weight: 500;
+`;
+
+const LogoutButton = styled.button`
+  background: #64748b;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #475569;
+    transform: translateY(-1px);
+  }
 `;
 
 const LeaveButton = styled.button`
@@ -339,6 +398,7 @@ export default function RoomLobby({
   const [error, setError] = useState<string | null>(null);
   const [myPlayerId, setMyPlayerId] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     const connectToRoom = async () => {
@@ -520,7 +580,23 @@ export default function RoomLobby({
             </GameInfo>
           </GameTitle>
         </LeftSection>
-        <LeaveButton onClick={handleLeaveRoom}>Leave Room</LeaveButton>
+
+        <RightSection>
+          {user && (
+            <UserInfo>
+              <UserAvatar
+                src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.display_name || user.username}&background=random`}
+                alt="User avatar"
+              />
+              <UserName>
+                {user.display_name || user.username}
+                {user.is_guest && <GuestBadge>Guest</GuestBadge>}
+              </UserName>
+              <LogoutButton onClick={logout}>Logout</LogoutButton>
+            </UserInfo>
+          )}
+          <LeaveButton onClick={handleLeaveRoom}>Leave Room</LeaveButton>
+        </RightSection>
       </TopBar>
 
       <MainContent>

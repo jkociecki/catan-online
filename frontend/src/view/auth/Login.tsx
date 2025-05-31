@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import SimpleGameService from '../board/SimpleGameService';
+import { useAuth } from "../../context/AuthContext";
 
 // Mock function for Google Sign-In
 // In a real implementation, you'd use a library like react-google-login
@@ -23,19 +24,59 @@ const mockGoogleSignIn = () => {
 const AUTH_API_URL = 'http://localhost:8000/api/auth';
 
 const AuthContainer = styled.div`
-  max-width: 400px;
-  margin: 50px auto;
-  padding: 30px;
-  background-color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: #fafafa;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
+    sans-serif;
+  color: #1e293b;
+  overflow: hidden;
 `;
 
-const Title = styled.h2`
-  text-align: center;
-  color: #2c3e50;
-  margin-bottom: 30px;
-  font-size: 28px;
+const TopBar = styled.div`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 24px;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  flex-shrink: 0;
+`;
+
+const Title = styled.h1`
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  color: #1e293b;
+`;
+
+const MainContent = styled.div`
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+`;
+
+const LoginContainer = styled.div`
+  max-width: 450px;
+  width: 100%;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+`;
+
+const Section = styled.div`
+  padding: 20px;
+  border-bottom: 1px solid #f1f5f9;
+
+  &:last-child {
+    border-bottom: none;
+  }
 `;
 
 const UserInfoBox = styled.div`
@@ -234,9 +275,17 @@ const ColorOption = styled.div<{ color: string; selected: boolean }>`
   }
 `;
 
+const GuestBadge = styled.span`
+  background-color: #f1f5f9;
+  color: #64748b;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  margin-left: 6px;
+  font-weight: 500;
+`;
+
 export default function Login() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [guestName, setGuestName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -244,6 +293,7 @@ export default function Login() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const navigate = useNavigate();
+  const { setUser, setToken } = useAuth();
 
   const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
 
@@ -273,46 +323,6 @@ export default function Login() {
     window.location.reload();
   };
 
-  const handleRegularLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!username || !password) {
-      setError('Please enter both username and password');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`${AUTH_API_URL}/users/login/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Login failed');
-      }
-
-      // Store authentication token and user data
-      localStorage.setItem('auth_token', data.token);
-      localStorage.setItem('user_data', JSON.stringify(data.user));
-
-      // Redirect to home
-      navigate('/');
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleGoogleSignIn = () => {
     // Redirect to Django's Google login URL from allauth
     window.location.href = 'http://localhost:8000/accounts/google/login/';
@@ -334,7 +344,7 @@ export default function Login() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: guestName,
+          guest_name: guestName,
           preferred_color: selectedColor
         }),
       });
@@ -344,11 +354,20 @@ export default function Login() {
       }
 
       const data = await response.json();
+
+      // Nadpisz display_name podaną nazwą
+      data.user.display_name = guestName;
+      data.user.is_guest = true;
+
       localStorage.setItem('auth_token', data.token);
       localStorage.setItem('user_data', JSON.stringify(data.user));
 
+      // Update AuthContext
+      setUser(data.user);
+      setToken(data.token);
+
       SimpleGameService.setUserData(
-        guestName || data.user.display_name || data.user.username,
+        guestName,
         selectedColor
       );
 
@@ -362,10 +381,30 @@ export default function Login() {
   };
 
   const handleSkipLogin = () => {
-    // Generuj losową nazwę i kolor
     const randomName = `Player_${Math.random().toString(36).substr(2, 6)}`;
-    const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    // Create mock user data for skip login
+    const mockUser = {
+      id: Date.now(),
+      username: randomName,
+      email: '',
+      first_name: '',
+      last_name: '',
+      is_authenticated: true,
+      display_name: randomName,
+      preferred_color: randomColor,
+      avatar_url: `https://ui-avatars.com/api/?name=${randomName}&background=random`,
+      is_guest: true
+    };
+
+    const mockToken = `skip_${Date.now()}`;
+
+    // Save to localStorage and AuthContext
+    localStorage.setItem('auth_token', mockToken);
+    localStorage.setItem('user_data', JSON.stringify(mockUser));
+    setUser(mockUser);
+    setToken(mockToken);
 
     SimpleGameService.setUserData(randomName, randomColor);
     navigate('/room/new');
@@ -373,96 +412,93 @@ export default function Login() {
 
   return (
     <AuthContainer>
-      <Title>Welcome to Catan</Title>
+      <TopBar>
+        <Title>Catan</Title>
+      </TopBar>
 
-      {error && <ErrorMessage>{error}</ErrorMessage>}
+      <MainContent>
+        <LoginContainer>
+          {error && (
+            <Section>
+              <ErrorMessage>{error}</ErrorMessage>
+            </Section>
+          )}
 
-      {isLoggedIn && userData ? (
-        <UserInfoBox>
-          <UserAvatar
-            src={userData.avatar_url || `https://ui-avatars.com/api/?name=${userData.display_name || userData.username}&background=random`}
-            alt="User avatar"
-          />
-          <UserName>Welcome back, {userData.display_name || userData.username}!</UserName>
-          <UserStatus>You are already logged in</UserStatus>
-          <PlayButton onClick={() => navigate('/room/new')}>
-            Play Game
-          </PlayButton>
-          <LogoutButton onClick={handleLogout}>
-            Logout
-          </LogoutButton>
-        </UserInfoBox>
-      ) : (
-        <>
-          <GoogleButton onClick={() => navigate('/google-login')}>
-            <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
-            Continue with Google
-          </GoogleButton>
+          {isLoggedIn && userData ? (
+            <Section>
+              <UserInfoBox>
+                <UserAvatar
+                  src={userData.avatar_url || `https://ui-avatars.com/api/?name=${userData.display_name || userData.username}&background=random`}
+                  alt="User avatar"
+                />
+                <UserName>
+                  Welcome back, {userData.display_name || userData.username}!
+                  {userData.is_guest && <GuestBadge>Guest</GuestBadge>}
+                </UserName>
+                <UserStatus>You are already logged in</UserStatus>
+                <PlayButton onClick={() => navigate('/room/new')}>
+                  Play Game
+                </PlayButton>
+                <LogoutButton onClick={handleLogout}>
+                  Logout
+                </LogoutButton>
+              </UserInfoBox>
+            </Section>
+          ) : (
+            <>
+              <Section>
+                <GoogleButton onClick={() => navigate('/google-login')}>
+                  <GoogleIcon src="https://www.google.com/favicon.ico" alt="Google" />
+                  Continue with Google
+                </GoogleButton>
+              </Section>
 
-          <Divider><span>OR</span></Divider>
+              <Section>
+                <Divider><span>OR</span></Divider>
 
-          <Form onSubmit={handleRegularLogin}>
-            <Input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={loading}
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={loading}
-            />
-            <Button type="submit" disabled={loading}>
-              Login
-            </Button>
-          </Form>
-
-          <Divider><span>OR</span></Divider>
-
-          <GuestOptions>
-            <Input
-              type="text"
-              placeholder="Guest Name (optional)"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              disabled={loading}
-            />
-
-            <div>
-              <p>Choose your color:</p>
-              <ColorOptions>
-                {colors.map(color => (
-                  <ColorOption
-                    key={color}
-                    color={color}
-                    selected={selectedColor === color}
-                    onClick={() => setSelectedColor(color)}
+                <GuestOptions>
+                  <Input
+                    type="text"
+                    placeholder="Enter your name"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    disabled={loading}
                   />
-                ))}
-              </ColorOptions>
-            </div>
 
-            <Button
-              onClick={handleGuestLogin}
-              disabled={loading}
-              type="button"
-            >
-              Play as Guest
-            </Button>
-          </GuestOptions>
+                  <div>
+                    <p>Choose your color:</p>
+                    <ColorOptions>
+                      {colors.map(color => (
+                        <ColorOption
+                          key={color}
+                          color={color}
+                          selected={selectedColor === color}
+                          onClick={() => setSelectedColor(color)}
+                        />
+                      ))}
+                    </ColorOptions>
+                  </div>
 
-          <SkipLoginButton
-            onClick={handleSkipLogin}
-            type="button"
-          >
-            Skip Login and Create Game
-          </SkipLoginButton>
-        </>
-      )}
+                  <Button
+                    onClick={handleGuestLogin}
+                    disabled={loading}
+                    type="button"
+                  >
+                    Play as Guest
+                  </Button>
+                </GuestOptions>
+
+                <SkipLoginButton
+                  onClick={handleSkipLogin}
+                  type="button"
+                >
+                  Skip Login and Create Game
+                </SkipLoginButton>
+              </Section>
+            </>
+          )}
+        </LoginContainer>
+      </MainContent>
     </AuthContainer>
   );
 }

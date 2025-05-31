@@ -1,5 +1,5 @@
 // frontend/src/view/game/SimpleOnlineGame.tsx - Z HANDLEM
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import SimpleGameService from "../../view/board/SimpleGameService";
 import OnlineCatanSVGBoard from "../board/OnlineCatanSVGBoard";
@@ -8,6 +8,7 @@ import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
 import TradeModal from "../trade/TradeModal";
 import TradeOfferNotification from "../trade/TradeOfferNotification";
+import { useAuth } from "../../context/AuthContext";
 
 const AppContainer = styled.div`
   display: flex;
@@ -525,6 +526,64 @@ const DiceResult = styled.div`
   border: 2px solid #3b82f6;
 `;
 
+const RightSection = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 16px;
+`;
+
+const UserInfo = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+`;
+
+const UserAvatar = styled.img`
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+`;
+
+const UserName = styled.div`
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+`;
+
+const GuestBadge = styled.span`
+  background-color: #f1f5f9;
+  color: #64748b;
+  padding: 1px 4px;
+  border-radius: 6px;
+  font-size: 9px;
+  margin-left: 4px;
+  font-weight: 500;
+`;
+
+const LogoutButton = styled.button`
+  background: #64748b;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: #475569;
+    transform: translateY(-1px);
+  }
+`;
+
 interface HistoryItem {
   id: string;
   playerId: string;
@@ -562,7 +621,11 @@ export default function SimpleOnlineGame() {
   const [showTradeModal, setShowTradeModal] = useState<boolean>(false);
   const [activeTradeOffers, setActiveTradeOffers] = useState<any[]>([]);
 
-  const myColor = players.find((p) => p.id === myPlayerId)?.color || "red";
+  const { user, logout } = useAuth();
+
+  const myColor = useMemo(() => {
+    return players.find((p) => p.id === myPlayerId)?.color || "red";
+  }, [players, myPlayerId]);
 
   const showSuccessIndicator = useCallback((message: string) => {
     setSuccessMessage(message);
@@ -1200,7 +1263,23 @@ export default function SimpleOnlineGame() {
             {isMyTurn() ? "✨ Your Turn" : "⏳Waiting..."}
           </TurnIndicator>
         </LeftSection>
-        <LeaveButton onClick={handleLeaveGame}>Leave Game</LeaveButton>
+
+        <RightSection>
+          {user && (
+            <UserInfo>
+              <UserAvatar
+                src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.display_name || user.username}&background=random`}
+                alt="User avatar"
+              />
+              <UserName>
+                {user.display_name || user.username}
+                {user.is_guest && <GuestBadge>Guest</GuestBadge>}
+              </UserName>
+              <LogoutButton onClick={logout}>Logout</LogoutButton>
+            </UserInfo>
+          )}
+          <LeaveButton onClick={handleLeaveGame}>Leave Game</LeaveButton>
+        </RightSection>
       </TopBar>
 
       <MainContent>
