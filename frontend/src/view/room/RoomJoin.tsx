@@ -3,6 +3,7 @@ import SimpleGameService from "../board/SimpleGameService";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { useAuth } from "../../context/AuthContext";
+import NavBar from "../../navigation/NavigationBar";
 
 // ✅ DOKŁADNIE jak SimpleOnlineGame - kompaktowo, profesjonalnie
 const AppContainer = styled.div`
@@ -449,29 +450,9 @@ export default function RoomJoin() {
 
   return (
     <AppContainer>
-      <TopBar>
-        <LeftSection>
-          <Title>Catan Online</Title>
-        </LeftSection>
-        {user && (
-          <RightSection>
-            <UserInfo>
-              <UserAvatar
-                src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.display_name || user.username}&background=random`}
-                alt="User avatar"
-              />
-              <UserName>
-                {user.display_name || user.username}
-                {user.is_guest && <GuestBadge>Guest</GuestBadge>}
-              </UserName>
-              <SettingsButton onClick={() => setShowSettings(true)}>
-                ⚙️
-              </SettingsButton>
-              <LogoutButton onClick={() => { logout(); navigate('/'); }}>Logout</LogoutButton>
-            </UserInfo>
-          </RightSection>
-        )}
-      </TopBar>
+
+      <NavBar />
+
 
       <MainContent>
         <Container>

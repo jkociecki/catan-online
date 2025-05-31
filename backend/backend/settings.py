@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "corsheaders",
     'channels',
+    'rest_framework',  # ← DODAJ TO
     'game_api',
     'users',
     'allauth',
@@ -56,7 +57,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
+        'rest_framework.permissions.AllowAny',
     ],
 }
 
@@ -131,9 +132,13 @@ CHANNEL_LAYERS = {
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'postgres',           # nazwa bazy danych
+        'USER': 'postgres',           # użytkownik bazy
+        'PASSWORD': 'password',    # hasło użytkownika postgres
+        'HOST': 'localhost',          # lub inny adres, jeśli zdalna baza
+        'PORT': '5432',               # domyślny port PostgreSQL
     }
 }
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styled from 'styled-components';
+import Navbar from '../auth/NavBar';
 
 interface Player {
     id: string;
@@ -12,6 +13,12 @@ const PlayerName = styled.div`
     font-size: 13px;
     font-weight: 600;
     color: #1e293b;
+`;
+
+const Container = styled.div`
+  min-height: 100vh;
+  background: #fafafa;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
 `;
 
 const RoomLobby: React.FC = () => {
@@ -47,6 +54,9 @@ const RoomLobby: React.FC = () => {
     };
 
     return (
+    <Container>
+
+        <Navbar />
         <div>
             {players.map((player) => (
                 <div key={player.id}>
@@ -56,6 +66,8 @@ const RoomLobby: React.FC = () => {
                 </div>
             ))}
         </div>
+        </Container>
+
     );
 };
 
