@@ -11,6 +11,7 @@ interface PlayerListProps {
     settlements_left?: number;
     cities_left?: number;
     roads_left?: number;
+    display_name?: string;
   }>;
   currentPlayerId: string;
   isMyTurn: boolean;
@@ -162,7 +163,7 @@ export default function PlayersList({
             const isLeading =
               player.victory_points === maxVictoryPoints &&
               maxVictoryPoints > 0;
-            const displayName = player.id.substring(0, 8);
+            const displayName = (player as any).display_name || player.id.substring(0, 8);
             const totalResources = Object.values(player.resources || {}).reduce(
               (a: number, b: number) => a + b,
               0

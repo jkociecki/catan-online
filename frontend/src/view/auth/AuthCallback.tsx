@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import styled from 'styled-components';
 import { useAuth } from '../../context/AuthContext';
+import SimpleGameService from '../board/SimpleGameService';
 
 const Container = styled.div`
   display: flex;
@@ -54,7 +55,7 @@ const AuthCallback: React.FC = () => {
       try {
         // Save token to localStorage first
         localStorage.setItem('auth_token', token);
-        
+
         // First verify the token is valid
         const testResponse = await fetch('http://localhost:8000/api/auth/test-token/', {
           headers: {
@@ -78,14 +79,20 @@ const AuthCallback: React.FC = () => {
         if (response.ok) {
           const userData = await response.json();
           console.log('User data fetched successfully:', userData);
-          
+
           // Save user data to localStorage
           localStorage.setItem('user_data', JSON.stringify(userData));
-          
+
           // Update auth context
           setUser(userData);
           setToken(token);
-          
+
+          // Set user data in SimpleGameService
+          SimpleGameService.setUserData(
+            userData.display_name || userData.username,
+            userData.preferred_color || 'blue'
+          );
+
           // Redirect to game room
           navigate('/room/new');
         } else {
