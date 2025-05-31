@@ -592,7 +592,7 @@ export default function RoomLobby({
                 {user.display_name || user.username}
                 {user.is_guest && <GuestBadge>Guest</GuestBadge>}
               </UserName>
-              <LogoutButton onClick={logout}>Logout</LogoutButton>
+              <LogoutButton onClick={() => { logout(); navigate('/'); }}>Logout</LogoutButton>
             </UserInfo>
           )}
           <LeaveButton onClick={handleLeaveRoom}>Leave Room</LeaveButton>

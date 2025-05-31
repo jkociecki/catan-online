@@ -337,7 +337,7 @@ export default function RoomJoin() {
                 {user.display_name || user.username}
                 {user.is_guest && <GuestBadge>Guest</GuestBadge>}
               </UserName>
-              <LogoutButton onClick={logout}>Logout</LogoutButton>
+              <LogoutButton onClick={() => { logout(); navigate('/'); }}>Logout</LogoutButton>
             </UserInfo>
           </RightSection>
         )}

@@ -293,7 +293,7 @@ export default function Login() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [userData, setUserData] = useState<any>(null);
   const navigate = useNavigate();
-  const { setUser, setToken } = useAuth();
+  const { setUser, setToken, logout } = useAuth();
 
   const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'purple'];
 
@@ -320,7 +320,7 @@ export default function Login() {
     localStorage.removeItem('user_data');
     setIsLoggedIn(false);
     setUserData(null);
-    window.location.reload();
+    logout();
   };
 
   const handleGoogleSignIn = () => {
