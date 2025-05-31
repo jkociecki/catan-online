@@ -8,6 +8,7 @@ import PlayersList from "./PlayerList";
 import GameActions from "./GameActions";
 import TradeModal from "../trade/TradeModal";
 import TradeOfferNotification from "../trade/TradeOfferNotification";
+import BankTradeModal from "../trade/BankTradeModal";
 
 const AppContainer = styled.div`
   display: flex;
@@ -561,6 +562,8 @@ export default function SimpleOnlineGame() {
   // Trade states
   const [showTradeModal, setShowTradeModal] = useState<boolean>(false);
   const [activeTradeOffers, setActiveTradeOffers] = useState<any[]>([]);
+  const [hasRolledDice, setHasRolledDice] = useState<boolean>(false);
+  const [showBankTradeModal, setShowBankTradeModal] = useState<boolean>(false);
 
   const myColor = players.find((p) => p.id === myPlayerId)?.color || "red";
 
@@ -652,6 +655,28 @@ export default function SimpleOnlineGame() {
       prev.filter((offer) => offer.id !== offerId)
     );
   }, []);
+
+  const handleBankTrade = useCallback(
+    (
+      givingResource: string,
+      givingAmount: number,
+      requestingResource: string
+    ) => {
+      console.log("Bank trade:", {
+        givingResource,
+        givingAmount,
+        requestingResource,
+      });
+      SimpleGameService.sendMessage({
+        type: "bank_trade",
+        giving_resource: givingResource,
+        giving_amount: givingAmount,
+        requesting_resource: requestingResource,
+      });
+      showSuccessIndicator("Trading with bank...");
+    },
+    [showSuccessIndicator]
+  );
 
   // Trade event handlers
   const handleTradeOfferReceived = useCallback(
@@ -898,6 +923,32 @@ export default function SimpleOnlineGame() {
     ]
   );
 
+  const handleBankTradeCompleted = useCallback(
+    (data: any) => {
+      console.log("📨 Bank trade completed:", data);
+
+      // Aktualizuj stan gry
+      if (data.game_state) {
+        handleGameUpdate(data);
+      }
+
+      // Dodaj do historii
+      if (data.player_id) {
+        const playerName = getPlayerName(data.player_id);
+        const giving = `${data.giving_amount} ${data.giving_resource}`;
+        const getting = `1 ${data.requesting_resource}`;
+        addHistoryEntry(
+          data.player_id,
+          `${playerName} traded ${giving} for ${getting} with bank`,
+          "🏪"
+        );
+      }
+
+      showSuccessIndicator("Bank trade completed!");
+    },
+    [handleGameUpdate, addHistoryEntry, getPlayerName, showSuccessIndicator]
+  );
+
   // Event handlers
   useEffect(() => {
     const handleGameState = (data: any) => {
@@ -976,6 +1027,10 @@ export default function SimpleOnlineGame() {
         "trade_completed",
         handleTradeCompleted
       );
+      SimpleGameService.addEventHandler(
+        "bank_trade_completed",
+        handleBankTradeCompleted
+      );
     }
 
     return () => {
@@ -997,6 +1052,10 @@ export default function SimpleOnlineGame() {
         SimpleGameService.removeEventHandler(
           "trade_completed",
           handleTradeCompleted
+        );
+        SimpleGameService.removeEventHandler(
+          "bank_trade_completed",
+          handleBankTradeCompleted
         );
       }
     };
@@ -1394,9 +1453,13 @@ export default function SimpleOnlineGame() {
                   Trade
                 </ActionButton>
 
-                <ActionButton variant="disabled" disabled={true} compact>
+                <ActionButton
+                  onClick={() => setShowBankTradeModal(true)}
+                  disabled={!isMyTurn() || gamePhase === "setup"}
+                  compact
+                >
                   <ButtonIcon>🏪</ButtonIcon>
-                  Maritime
+                  Bank
                 </ActionButton>
               </ActionsGrid>
             </Section>
@@ -1425,6 +1488,14 @@ export default function SimpleOnlineGame() {
         players={players}
         myPlayerId={myPlayerId}
         onCreateOffer={handleCreateTradeOffer}
+      />
+
+      {/* Bank Trade Modal */}
+      <BankTradeModal
+        isOpen={showBankTradeModal}
+        onClose={() => setShowBankTradeModal(false)}
+        myResources={getMyResources()}
+        onBankTrade={handleBankTrade}
       />
 
       {/* Trade Offer Notifications */}
