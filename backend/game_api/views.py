@@ -3,12 +3,15 @@ import uuid
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Avg, Count, Sum, Q
+from django.contrib.auth import get_user_model
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import User, Game, GamePlayer, PlayerResource
+from .models import Game, GamePlayer, PlayerResource
 from .serializers import UserSerializer, GameSerializer, GamePlayerSerializer, PlayerResourceSerializer
 
+# ✅ Używaj właściwego modelu User
+User = get_user_model()
 
 @csrf_exempt
 def create_room(request):

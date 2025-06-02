@@ -60,8 +60,11 @@ class SimpleGameService {
       this.currentRoomId = roomId;
 
       try {
-        const wsUrl = `${SimpleGameService.WS_URL}/game/${roomId}/`;
+        const token = localStorage.getItem("auth_token");
+
+        const wsUrl = `${SimpleGameService.WS_URL}/game/${roomId}/?token=${token}`;
         console.log(`Connecting to WebSocket: ${wsUrl}`);
+
         this.socket = new WebSocket(wsUrl);
 
         this.socket.onopen = () => {

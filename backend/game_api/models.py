@@ -1,15 +1,8 @@
 # backend/game_api/models.py
 from django.db import models
+from django.conf import settings  # Import dla AUTH_USER_MODEL
 
-
-class User(models.Model):
-    username = models.CharField(max_length=50, unique=True)
-    email = models.CharField(max_length=100, unique=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'users'
-
+# Usuń duplikowany model User - używaj users.User!
 
 class Game(models.Model):
     start_time = models.DateTimeField(auto_now_add=True)
@@ -26,7 +19,8 @@ class Game(models.Model):
 
 class GamePlayer(models.Model):
     game = models.ForeignKey(Game, on_delete=models.CASCADE, db_column='game_id')
-    user = models.ForeignKey(User, on_delete=models.CASCADE, db_column='user_id')
+    # ✅ Używaj settings.AUTH_USER_MODEL zamiast lokalnego User
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column='user_id')
     victory_points = models.IntegerField()
     roads_built = models.IntegerField(default=0)
     settlements_built = models.IntegerField(default=0)

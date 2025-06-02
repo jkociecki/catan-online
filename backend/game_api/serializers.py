@@ -1,11 +1,14 @@
 from rest_framework import serializers
-from game_api.models import User, GamePlayer, Game, PlayerResource
+from django.contrib.auth import get_user_model
+from game_api.models import GamePlayer, Game, PlayerResource
 
+# ✅ Używaj właściwego modelu User
+User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = '__all__'
+        fields = ['id', 'username', 'email', 'display_name', 'avatar_url', 'is_guest']
 
 class GameSerializer(serializers.ModelSerializer):
     class Meta:
