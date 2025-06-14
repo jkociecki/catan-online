@@ -1169,14 +1169,29 @@ export default function SimpleOnlineGame() {
   }, [isMyTurn, gamePhase, showSuccessIndicator]);
 
   // Click handlers
+  // const handleVertexClick = useCallback(
+  //   (vertexId: number) => {
+  //     if (!isMyTurn() || buildMode !== "settlement") return;
+  //     SimpleGameService.buildSettlement(vertexId);
+  //     showSuccessIndicator("Building settlement...");
+  //   },
+  //   [isMyTurn, buildMode, showSuccessIndicator]
+  // );
+
   const handleVertexClick = useCallback(
-    (vertexId: number) => {
-      if (!isMyTurn() || buildMode !== "settlement") return;
+  (vertexId: number) => {
+    if (!isMyTurn()) return;
+    
+    if (buildMode === "settlement") {
       SimpleGameService.buildSettlement(vertexId);
       showSuccessIndicator("Building settlement...");
-    },
-    [isMyTurn, buildMode, showSuccessIndicator]
-  );
+    } else if (buildMode === "city") {
+      SimpleGameService.buildCity(vertexId);
+      showSuccessIndicator("Building city...");
+    }
+  },
+  [isMyTurn, buildMode, showSuccessIndicator]
+);
 
   const handleEdgeClick = useCallback(
     (edgeId: number) => {
@@ -1229,7 +1244,10 @@ export default function SimpleOnlineGame() {
     ORE: "⛰️",
     ore: "⛰️",
   };
-
+const handleSeedResources = () => {
+  SimpleGameService.seedResources();
+  showSuccessIndicator("Resources seeded! 🎯");
+};
   if (loading) {
     return (
       <LoadingMessage>
@@ -1397,6 +1415,15 @@ export default function SimpleOnlineGame() {
               <ActionsGrid>
                 {gamePhase === "setup" ? (
                   <>
+                  <ActionButton
+      onClick={handleSeedResources}
+      variant="secondary" 
+      compact
+      style={{ backgroundColor: '#f59e0b', color: 'white' }}
+    >
+      <ButtonIcon>🎯</ButtonIcon>
+      Seed
+    </ActionButton>
                     <ActionButton variant="secondary" disabled={true} compact>
                       <ButtonIcon>🎲</ButtonIcon>
                       Roll

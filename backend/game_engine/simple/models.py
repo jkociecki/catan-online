@@ -815,3 +815,44 @@ class SimpleGameState:
         
         # Jeśli wszystkie kolory zajęte, dodaj numer
         return f"{desired_color}_{len(used_colors)}"
+
+
+    def place_city(self, vertex_id: int, player_id: str) -> bool:
+        """Zbuduj miasto na miejscu osady (upgrade osady na miasto)"""
+        if vertex_id not in self.vertices:
+            return False
+        
+        vertex = self.vertices[vertex_id]
+        
+        # Musi być osada tego gracza
+        if vertex.building_type != BuildingType.SETTLEMENT or vertex.player_id != player_id:
+            return False
+        
+        player = self.players[player_id]
+        
+        # Sprawdź czy gracz może sobie pozwolić na miasto
+        if not player.can_afford_city():
+            return False
+        
+        # Zapłać za miasto
+        player.pay_for_city()
+        
+        # Zmień budynek na miasto
+        vertex.building_type = BuildingType.CITY
+        
+        print(f"✅ Player {player_id} upgraded settlement to city at vertex {vertex_id}")
+        return True
+
+    def seed_resources_for_testing(self):
+        """Daj wszystkim graczom sporo zasobów do testowania"""
+        print("🎯 SEEDING RESOURCES FOR TESTING")
+        
+        for player_id, player in self.players.items():
+            # Daj po 5 każdego zasobu
+            player.resources.wood += 5
+            player.resources.brick += 5  
+            player.resources.sheep += 5
+            player.resources.wheat += 5
+            player.resources.ore += 5
+            
+            print(f"   Player {player_id[:8]} received 5 of each resource")

@@ -1,4 +1,4 @@
-// frontend/src/view/board/OnlineCatanSVGBoard.tsx - MINIMALISTYCZNA WERSJA Z DEBUG
+// frontend/src/view/board/OnlineCatanSVGBoard.tsx - POPRAWIONA WERSJA Z MIASTAMI
 import React, { useState, useCallback, useEffect } from "react";
 import styled from "styled-components";
 
@@ -40,10 +40,12 @@ const Hexagon = styled.polygon<{ resource?: string }>`
   }
 `;
 
+// ✅ POPRAWIONY Vertex component z obsługą miast
 const Vertex = styled.circle<{
   active?: boolean;
   hasSettlement?: boolean;
   playerColor?: string;
+  buildingType?: string; 
 }>`
   fill: ${(props) => {
     if (props.hasSettlement) return props.playerColor || "#ef4444";
@@ -62,7 +64,12 @@ const Vertex = styled.circle<{
   &:hover {
     stroke-width: 3;
     transform-origin: center;
-    r: ${(props) => (props.hasSettlement ? 12 : 10)};
+    // ✅ POPRAWIONE - różne rozmiary przy hover
+    r: ${(props) => {
+      if (props.buildingType === "city") return 16; // Duże miasto przy hover
+      if (props.hasSettlement) return 12; // Osada przy hover
+      return 10; // Pusty przy hover
+    }};
     filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.15));
   }
 `;
@@ -214,7 +221,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
   isMyTurn = false,
 }) => {
   const [builtSettlements, setBuiltSettlements] = useState<
-    Map<number, { playerId: string; color: string }>
+    Map<number, { playerId: string; color: string; buildingType?: string }>
   >(new Map());
   const [builtRoads, setBuiltRoads] = useState<
     Map<number, { playerId: string; color: string }>
@@ -264,7 +271,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
     [getHexagonVertices]
   );
 
-  // Ładowanie stanu gry z gameState prop
+  // ✅ POPRAWIONE - ładowanie stanu gry z buildingType
   useEffect(() => {
     if (gameState) {
       console.log("Loading game state:", gameState);
@@ -277,6 +284,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
             newSettlements.set(parseInt(vertexId), {
               playerId: vertexData.player_id,
               color: getPlayerColor(vertexData.player_id),
+              buildingType: vertexData.building_type, // ✅ DODANE
             });
           }
         );
@@ -322,7 +330,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
         `Vertex ${vertexId} clicked - MyTurn: ${isMyTurn}, Mode: ${buildMode}`
       );
 
-      if (!isMyTurn || buildMode !== "settlement") {
+      if (!isMyTurn || (buildMode !== "settlement" && buildMode !== "city")) {
         console.log("Click rejected - not my turn or wrong build mode");
         return;
       }
@@ -388,7 +396,7 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                 </>
               )}
 
-              {/* Wierzchołki (dla osad) */}
+              {/* ✅ POPRAWIONE - Wierzchołki z różnymi rozmiarami dla miast */}
               {vertices.map((vertex, vertexIndex) => {
                 const globalVertexId = getVertexIdForHexAndIndex(
                   hexIndex,
@@ -403,10 +411,16 @@ const OnlineCatanSVGBoard: React.FC<OnlineCatanSVGBoardProps> = ({
                     <Vertex
                       cx={vertex.x}
                       cy={vertex.y}
-                      r={hasSettlement ? 8 : 6}
+                      // ✅ POPRAWIONE - różne rozmiary dla miast i osad
+                      r={
+                        settlement?.buildingType === "city" ? 12 : // Duże miasto
+                        hasSettlement ? 8 : // Normalna osada
+                        6 // Pusty wierzchołek
+                      }
                       active={buildMode === "settlement" && isMyTurn}
                       hasSettlement={hasSettlement}
                       playerColor={settlement?.color}
+                      buildingType={settlement?.buildingType} // ✅ DODANE
                       onClick={() => handleVertexClick(globalVertexId)}
                     />
                     <VertexLabel

@@ -321,6 +321,33 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                                 error_msg = "Cannot place road there"
                     else:
                         error_msg = "Missing edge_id"
+
+                elif action == 'build_city':
+                    vertex_id = data.get('vertex_id')
+                    if vertex_id is not None:
+                        if game_state.phase == GamePhase.SETUP:
+                            error_msg = "Cannot build city during setup phase"
+                        else:
+                            success = game_state.place_city(vertex_id, self.player_id)
+                            if not success:
+                                error_msg = "Cannot build city there"
+                    else:
+                        error_msg = "Missing vertex_id"
+                elif message_type == 'seed_resources':
+                    print(f"🎯 Seed resources requested")
+                    
+                    game_state.seed_resources_for_testing()
+                    
+                    # Wyślij zaktualizowany stan
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_update_notification',
+                            'action': 'seed_resources',
+                            'player_id': self.player_id,
+                            'game_state': game_state.serialize()
+                        }
+                    )
                 
                 elif action == 'end_turn':
                   if game_state.phase != GamePhase.SETUP:

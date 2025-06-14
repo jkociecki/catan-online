@@ -293,6 +293,29 @@ class SimpleGameService {
     });
   }
 
+  public buildCity(vertexId: number): void {
+  if (!this.healthCheck()) {
+    console.error("❌ Cannot build city - connection unhealthy");
+    return;
+  }
+
+  
+
+  console.log("Building city at vertex:", vertexId);
+  this.sendMessage({
+    type: "game_action",
+    action: "build_city", 
+    vertex_id: vertexId,
+  });
+}
+
+public seedResources(): void {
+  console.log("🎯 Seeding resources for testing");
+  this.sendMessage({
+    type: "seed_resources",
+  });
+}
+
   public rollDice(): void {
     if (!this.healthCheck()) {
       console.error("❌ Cannot roll dice - connection unhealthy");
