@@ -1,4 +1,4 @@
-// frontend/src/view/game/SimpleOnlineGame.tsx - Z HANDLEM
+// frontend/src/view/game/SimpleOnlineGame.tsx - COMPLETE VERSION WITH GAME END MODAL
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import SimpleGameService from "../../view/board/SimpleGameService";
@@ -9,6 +9,7 @@ import GameActions from "./GameActions";
 import TradeModal from "../trade/TradeModal";
 import TradeOfferNotification from "../trade/TradeOfferNotification";
 import { useAuth } from "../../context/AuthContext";
+import GameEndModal from "./GameEndModal"; // ← DODAJ IMPORT
 
 const AppContainer = styled.div`
   display: flex;
@@ -593,6 +594,20 @@ interface HistoryItem {
   icon: string;
 }
 
+// ✅ DODAJ INTERFEJS dla gracza w końcowych wynikach
+interface FinalPlayer {
+  player_id: string;
+  display_name: string;
+  color: string;
+  victory_points: number;
+  settlements_built: number;
+  cities_built: number;
+  roads_built: number;
+  longest_road: boolean;
+  largest_army: boolean;
+  is_winner: boolean;
+}
+
 export default function SimpleOnlineGame() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -620,6 +635,12 @@ export default function SimpleOnlineGame() {
   // Trade states
   const [showTradeModal, setShowTradeModal] = useState<boolean>(false);
   const [activeTradeOffers, setActiveTradeOffers] = useState<any[]>([]);
+
+  // ✅ NOWY STATE dla końca gry
+  const [isGameEnded, setIsGameEnded] = useState(false);
+  const [winner, setWinner] = useState<FinalPlayer | null>(null);
+  const [finalStandings, setFinalStandings] = useState<FinalPlayer[]>([]);
+  const [gameStartTime] = useState<Date>(new Date()); // Do obliczania czasu gry
 
   const { user, logout } = useAuth();
 
@@ -770,6 +791,38 @@ export default function SimpleOnlineGame() {
     },
     [addHistoryEntry, getPlayerName, showSuccessIndicator]
   );
+
+  // ✅ DODAJ handleGameEnded
+  const handleGameEnded = useCallback((data: any) => {
+    console.log("🏆 GAME ENDED!", data);
+    
+    setIsGameEnded(true);
+    
+    // Ustaw zwycięzcę
+    if (data.final_standings && data.final_standings.length > 0) {
+      const winnerData = data.final_standings.find((p: any) => p.is_winner);
+      setWinner(winnerData || data.final_standings[0]);
+      setFinalStandings(data.final_standings);
+    }
+    
+    // Zaktualizuj stan gry
+    if (data.game_state) {
+      setGameState(data.game_state);
+    }
+    
+    // Dodaj do historii
+    if (data.final_standings) {
+      const winnerData = data.final_standings.find((p: any) => p.is_winner);
+      if (winnerData) {
+        addHistoryEntry(
+          winnerData.player_id,
+          `🎉 Game ended! ${winnerData.display_name} wins!`,
+          "👑",
+          winnerData.color
+        );
+      }
+    }
+  }, [addHistoryEntry]);
 
   // ✅ Automatyczne ustawianie currentPlayerId
   useEffect(() => {
@@ -1046,6 +1099,8 @@ export default function SimpleOnlineGame() {
     };
 
     if (isConnected) {
+      // ✅ DODAJ event handler dla końca gry
+      SimpleGameService.addEventHandler("game_ended", handleGameEnded);
       SimpleGameService.addEventHandler("game_update", handleGameUpdate);
       SimpleGameService.addEventHandler("game_state", handleGameState);
       SimpleGameService.addEventHandler("client_id", handleClientId);
@@ -1066,6 +1121,8 @@ export default function SimpleOnlineGame() {
 
     return () => {
       if (isConnected) {
+        // ✅ DODAJ usuwanie event handlera dla końca gry
+        SimpleGameService.removeEventHandler("game_ended", handleGameEnded);
         SimpleGameService.removeEventHandler("game_update", handleGameUpdate);
         SimpleGameService.removeEventHandler("game_state", handleGameState);
         SimpleGameService.removeEventHandler("client_id", handleClientId);
@@ -1090,6 +1147,7 @@ export default function SimpleOnlineGame() {
   }, [
     isConnected,
     handleGameUpdate,
+    handleGameEnded, // ✅ DODAJ
     myPlayerId,
     showSuccessIndicator,
     addHistoryEntry,
@@ -1098,6 +1156,30 @@ export default function SimpleOnlineGame() {
     handleTradeCompleted,
   ]);
 
+  // ✅ DODAJ funkcje obsługi końca gry
+  const handleGameEndClose = () => {
+    setIsGameEnded(false);
+  };
+
+  const handlePlayAgain = () => {
+    navigate('/room/new');
+  };
+
+  const handleMainMenu = () => {
+    navigate('/');
+  };
+
+  const calculateGameStats = () => {
+    const now = new Date();
+    const durationMs = now.getTime() - gameStartTime.getTime();
+    const durationMinutes = Math.floor(durationMs / 60000);
+    
+    return {
+      duration: `${durationMinutes} min`,
+      totalTurns: gameState?.current_turn || 0
+    };
+  };
+
   // Helper functions
   const getMyResources = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
@@ -1105,10 +1187,11 @@ export default function SimpleOnlineGame() {
   }, [players, myPlayerId]);
 
   const isMyTurn = useCallback(() => {
-    return myPlayerId === currentPlayerId;
-  }, [myPlayerId, currentPlayerId]);
+    return myPlayerId === currentPlayerId && !isGameEnded; // ✅ DODAJ !isGameEnded
+  }, [myPlayerId, currentPlayerId, isGameEnded]);
 
   const canBuildSettlement = useCallback(() => {
+    if (isGameEnded) return false; // ✅ DODAJ sprawdzenie
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
 
@@ -1124,9 +1207,10 @@ export default function SimpleOnlineGame() {
       resources.sheep >= 1 &&
       resources.wheat >= 1
     );
-  }, [players, myPlayerId, gamePhase]);
+  }, [players, myPlayerId, gamePhase, isGameEnded]);
 
   const canBuildCity = useCallback(() => {
+    if (isGameEnded) return false; // ✅ DODAJ sprawdzenie
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
 
@@ -1138,9 +1222,10 @@ export default function SimpleOnlineGame() {
     return (
       myPlayer.cities_left > 0 && resources.ore >= 3 && resources.wheat >= 2
     );
-  }, [players, myPlayerId, gamePhase]);
+  }, [players, myPlayerId, gamePhase, isGameEnded]);
 
   const canBuildRoad = useCallback(() => {
+    if (isGameEnded) return false; // ✅ DODAJ sprawdzenie
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
 
@@ -1152,7 +1237,7 @@ export default function SimpleOnlineGame() {
     return (
       myPlayer.roads_left > 0 && resources.wood >= 1 && resources.brick >= 1
     );
-  }, [players, myPlayerId, gamePhase]);
+  }, [players, myPlayerId, gamePhase, isGameEnded]);
 
   // Action handlers
   const handleEndTurn = useCallback(() => {
@@ -1169,37 +1254,28 @@ export default function SimpleOnlineGame() {
   }, [isMyTurn, gamePhase, showSuccessIndicator]);
 
   // Click handlers
-  // const handleVertexClick = useCallback(
-  //   (vertexId: number) => {
-  //     if (!isMyTurn() || buildMode !== "settlement") return;
-  //     SimpleGameService.buildSettlement(vertexId);
-  //     showSuccessIndicator("Building settlement...");
-  //   },
-  //   [isMyTurn, buildMode, showSuccessIndicator]
-  // );
-
   const handleVertexClick = useCallback(
-  (vertexId: number) => {
-    if (!isMyTurn()) return;
-    
-    if (buildMode === "settlement") {
-      SimpleGameService.buildSettlement(vertexId);
-      showSuccessIndicator("Building settlement...");
-    } else if (buildMode === "city") {
-      SimpleGameService.buildCity(vertexId);
-      showSuccessIndicator("Building city...");
-    }
-  },
-  [isMyTurn, buildMode, showSuccessIndicator]
-);
+    (vertexId: number) => {
+      if (!isMyTurn() || isGameEnded) return; // ✅ DODAJ isGameEnded
+      
+      if (buildMode === "settlement") {
+        SimpleGameService.buildSettlement(vertexId);
+        showSuccessIndicator("Building settlement...");
+      } else if (buildMode === "city") {
+        SimpleGameService.buildCity(vertexId);
+        showSuccessIndicator("Building city...");
+      }
+    },
+    [isMyTurn, buildMode, showSuccessIndicator, isGameEnded]
+  );
 
   const handleEdgeClick = useCallback(
     (edgeId: number) => {
-      if (!isMyTurn() || buildMode !== "road") return;
+      if (!isMyTurn() || buildMode !== "road" || isGameEnded) return; // ✅ DODAJ isGameEnded
       SimpleGameService.buildRoad(edgeId);
       showSuccessIndicator("Building road...");
     },
-    [isMyTurn, buildMode, showSuccessIndicator]
+    [isMyTurn, buildMode, showSuccessIndicator, isGameEnded]
   );
 
   const handleLeaveGame = () => {
@@ -1209,7 +1285,7 @@ export default function SimpleOnlineGame() {
 
   // Build mode toggle
   const handleBuild = (type: "settlement" | "city" | "road") => {
-    if (!isMyTurn()) return;
+    if (!isMyTurn() || isGameEnded) return; // ✅ DODAJ isGameEnded
     if (buildMode === type) {
       setBuildMode(null);
     } else {
@@ -1244,10 +1320,12 @@ export default function SimpleOnlineGame() {
     ORE: "⛰️",
     ore: "⛰️",
   };
-const handleSeedResources = () => {
-  SimpleGameService.seedResources();
-  showSuccessIndicator("Resources seeded! 🎯");
-};
+
+  const handleSeedResources = () => {
+    SimpleGameService.seedResources();
+    showSuccessIndicator("Resources seeded! 🎯");
+  };
+
   if (loading) {
     return (
       <LoadingMessage>
@@ -1278,7 +1356,12 @@ const handleSeedResources = () => {
             </GameInfo>
           </GameTitle>
           <TurnIndicator isMyTurn={isMyTurn()}>
-            {isMyTurn() ? "✨ Your Turn" : "⏳Waiting..."}
+            {isGameEnded 
+              ? "🏆 Game Ended" 
+              : isMyTurn() 
+                ? "✨ Your Turn" 
+                : "⏳ Waiting..."
+            }
           </TurnIndicator>
         </LeftSection>
 
@@ -1415,15 +1498,16 @@ const handleSeedResources = () => {
               <ActionsGrid>
                 {gamePhase === "setup" ? (
                   <>
-                  <ActionButton
-      onClick={handleSeedResources}
-      variant="secondary" 
-      compact
-      style={{ backgroundColor: '#f59e0b', color: 'white' }}
-    >
-      <ButtonIcon>🎯</ButtonIcon>
-      Seed
-    </ActionButton>
+                    <ActionButton
+                      onClick={handleSeedResources}
+                      variant="secondary" 
+                      compact
+                      style={{ backgroundColor: '#f59e0b', color: 'white' }}
+                    >
+                      <ButtonIcon>🎯</ButtonIcon>
+                      Seed
+                    </ActionButton>
+                    
                     <ActionButton variant="secondary" disabled={true} compact>
                       <ButtonIcon>🎲</ButtonIcon>
                       Roll
@@ -1546,6 +1630,17 @@ const handleSeedResources = () => {
           </Panel>
         </RightPanel>
       </MainContent>
+
+      {/* ✅ DODAJ GameEndModal */}
+      <GameEndModal
+        isVisible={isGameEnded}
+        winner={winner}
+        players={finalStandings}
+        gameStats={calculateGameStats()}
+        onClose={handleGameEndClose}
+        onPlayAgain={handlePlayAgain}
+        onMainMenu={handleMainMenu}
+      />
 
       {/* Trade Modal */}
       <TradeModal

@@ -53,6 +53,7 @@ class GamePhase(Enum):
     # MAIN = "main"
     # END_TURN = "end_turn"
     PLAYING = "playing"
+    FINISHED = "FINISHED"
 
 @dataclass
 class PlayerResources:
@@ -163,6 +164,9 @@ class SimpleGameState:
         self.player_settlements_order: Dict[str, List[int]] = {}
 
         self.vertex_to_tiles: Dict[int, List[int]] = {}
+
+        self.has_rolled_dice: Dict[str, bool] = {}  # player_id -> czy rzucił kośćmi
+        self.turn_phase: str = "roll"  # "roll" lub "actions"
         
         self._init_board()
     
@@ -458,7 +462,10 @@ class SimpleGameState:
             "phase": self.phase.value,
             "current_player_index": self.current_player_index,
             "player_order": self.player_order,
-            "setup_round": self.setup_round
+            "setup_round": self.setup_round,
+            'is_game_over': self.is_game_over(),
+            'winner': self.winner.player_id if hasattr(self, 'winner') and self.winner else None,
+            'final_standings': self.get_final_standings() if self.phase == GamePhase.FINISHED else None
         }
         
         print(f"   Serialized players dict: {players_dict}")
@@ -856,3 +863,153 @@ class SimpleGameState:
             player.resources.ore += 5
             
             print(f"   Player {player_id[:8]} received 5 of each resource")
+
+    def check_victory(self, player: SimplePlayer) -> bool:
+        """Sprawdź czy gracz wygrał (ma >= 10 punktów zwycięstwa)"""
+        total_points = self.get_player_victory_points(player)
+        print(f"🏆 Checking victory for {player.display_name}: {total_points} points")
+        return total_points >= 4
+    
+    def get_player_victory_points(self, player: SimplePlayer) -> int:
+        """Oblicz łączne punkty zwycięstwa gracza"""
+        total = player.victory_points
+        
+        # Dodaj punkty za najdłuższą drogę (2 punkty)
+        if hasattr(player, 'longest_road') and player.longest_road:
+            total += 2
+        
+        # Dodaj punkty za największą armię (2 punkty)  
+        if hasattr(player, 'largest_army') and player.largest_army:
+            total += 2
+        
+        return total
+    
+    def is_game_over(self) -> bool:
+        """Sprawdź czy gra się skończyła (któryś gracz ma >= 10 punktów)"""
+        for player_id, player in self.players.items():
+            if self.check_victory(player):
+                return True
+        return False
+    
+    def get_winner(self) -> Optional[SimplePlayer]:
+        """Zwróć gracza który wygrał, lub None jeśli gra trwa"""
+        for player_id, player in self.players.items():
+            if self.check_victory(player):
+                return player
+        return None
+    
+    def check_victory_after_action(self, player_id: str) -> bool:
+        """Sprawdź zwycięstwo po akcji gracza i zakończ grę jeśli wygrał"""
+        if player_id not in self.players:
+            return False
+            
+        player = self.players[player_id]
+        
+        if self.check_victory(player):
+            print(f"🎉 GAME OVER! Player {player.display_name} wins with {self.get_player_victory_points(player)} points!")
+            
+            # Ustaw fazę na zakończoną
+            self.phase = GamePhase.FINISHED
+            self.winner = player
+            
+            return True
+        
+        return False
+    
+    def end_game(self, winner: SimplePlayer):
+        """Zakończ grę z wybranym zwycięzcą"""
+        self.phase = GamePhase.FINISHED
+        self.winner = winner
+        self.end_time = datetime.now()
+        
+        print(f"🏁 Game ended! Winner: {winner.display_name} ({self.get_player_victory_points(winner)} points)")
+        
+        # Wyślij notyfikację o końcu gry przez WebSocket
+        # (to będzie obsłużone w consumer)
+    
+    def get_final_standings(self) -> List[Dict]:
+        """Zwróć końcowe wyniki wszystkich graczy"""
+        standings = []
+        
+        for player_id, player in self.players.items():
+            standings.append({
+                'player_id': player_id,
+                'display_name': player.display_name,
+                'color': player.color,
+                'victory_points': self.get_player_victory_points(player),
+                'settlements_built': 5 - player.settlements_left,
+                'cities_built': 4 - player.cities_left,
+                'roads_built': 15 - player.roads_left,
+                'longest_road': getattr(player, 'longest_road', False),
+                'largest_army': getattr(player, 'largest_army', False),
+                'is_winner': self.check_victory(player)
+            })
+        
+        # Sortuj według punktów (malejąco)
+        standings.sort(key=lambda x: x['victory_points'], reverse=True)
+        
+        return standings
+    def start_turn(self, player_id: str):
+        """Rozpocznij turę dla gracza"""
+        # Resetuj stan tury
+        self.has_rolled_dice[player_id] = False
+        self.turn_phase = "roll"
+        print(f"🎮 Started turn for player {player_id[:8]} - must roll dice first")
+    
+    def handle_dice_roll(self, player_id: str, dice_result: int):
+        """Obsłuż rzut kostką"""
+        if self.has_rolled_dice.get(player_id, False):
+            raise ValueError("Player has already rolled dice this turn")
+        
+        if self.turn_phase != "roll":
+            raise ValueError("Not in dice rolling phase")
+        
+        # Ustaw że gracz rzucił kośćmi
+        self.has_rolled_dice[player_id] = True
+        self.turn_phase = "actions"
+        
+        # Rozdaj zasoby
+        self.distribute_resources_for_dice_roll(dice_result)
+        
+        print(f"🎲 Player {player_id[:8]} rolled {dice_result}, can now take actions")
+        return dice_result
+    
+    def can_roll_dice(self, player_id: str) -> bool:
+        """Sprawdź czy gracz może rzucić kostką"""
+        current_player = self.get_current_player()
+        return (current_player.player_id == player_id and 
+                not self.has_rolled_dice.get(player_id, False) and
+                self.turn_phase == "roll")
+    
+    def can_take_actions(self, player_id: str) -> bool:
+        """Sprawdź czy gracz może podejmować akcje (budować, handlować)"""
+        current_player = self.get_current_player()
+        return (current_player.player_id == player_id and 
+                self.has_rolled_dice.get(player_id, False) and
+                self.turn_phase == "actions")
+    
+    def end_turn(self):
+        """Zakończ turę"""
+        current_player = self.get_current_player()
+        
+        # Sprawdź czy gracz rzucił kośćmi (w normalnej grze)
+        if self.phase == GamePhase.PLAYING:
+            if not self.has_rolled_dice.get(current_player.player_id, False):
+                raise ValueError("Cannot end turn without rolling dice")
+        
+        # Wyczyść stan tury
+        if current_player.player_id in self.has_rolled_dice:
+            del self.has_rolled_dice[current_player.player_id]
+        
+        # Przejdź do następnego gracza
+        self.next_turn()
+        
+        # Rozpocznij turę dla nowego gracza
+        new_current_player = self.get_current_player()
+        self.start_turn(new_current_player.player_id)
+    
+
+    
+
+    
+    
