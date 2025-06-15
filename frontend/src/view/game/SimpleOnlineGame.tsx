@@ -9,6 +9,7 @@ import TradeModal from "../trade/TradeModal";
 import TradeOfferNotification from "../trade/TradeOfferNotification";
 import { useAuth } from "../../context/AuthContext";
 import GameEndModal from "./GameEndModal";
+import BuildingCostTooltip from "./BuildingCostTooltip";
 
 const AppContainer = styled.div`
   display: flex;
@@ -351,6 +352,11 @@ const BuildGrid = styled.div`
   gap: 8px;
 `;
 
+const ButtonWrapper = styled.div`
+  position: relative;
+  display: flex;
+`;
+
 const ActionButton = styled.button<{
   variant?: "primary" | "secondary" | "danger" | "disabled";
   active?: boolean;
@@ -369,6 +375,7 @@ const ActionButton = styled.button<{
   justify-content: center;
   gap: 4px;
   min-height: ${(props) => (props.compact ? "50px" : "60px")};
+  width: 100%;
 
   ${(props) => {
     if (props.active) {
@@ -640,6 +647,9 @@ export default function SimpleOnlineGame() {
   const [finalStandings, setFinalStandings] = useState<FinalPlayer[]>([]);
   const [gameStartTime] = useState<Date>(new Date());
   const [hasCurrentPlayerRolledDice, setHasCurrentPlayerRolledDice] = useState<boolean>(false);
+
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
 
   const { user, logout } = useAuth();
 
@@ -1025,6 +1035,21 @@ export default function SimpleOnlineGame() {
   const handleSeedResources = () => {
     SimpleGameService.seedResources();
     showSuccessIndicator("Resources seeded! 🎯");
+  };
+
+  const handleTooltipShow = (buildingType: string, event: React.MouseEvent) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setActiveTooltip(buildingType);
+    setTooltipPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top
+    });
+  };
+  
+  
+  const handleTooltipHide = () => {
+    setActiveTooltip(null);
+    setTooltipPosition(null);
   };
 
   // Resource processing
@@ -1599,50 +1624,74 @@ export default function SimpleOnlineGame() {
             <Section>
               <SectionHeader>Build</SectionHeader>
               <BuildGrid>
-                <ActionButton
-                  active={buildMode === "settlement"}
-                  onClick={() => handleBuild("settlement")}
-                  disabled={
-                    gamePhase === "setup" 
-                      ? !canBuildInSetup('settlement')
-                      : (!canTakeActionsInGame() || !canBuildSettlement())
-                  }
-                  compact
+                <ButtonWrapper
+                  onMouseEnter={(e: React.MouseEvent) => handleTooltipShow("settlement", e)}
+                  onMouseLeave={handleTooltipHide}
                 >
-                  <ButtonIcon>🏠</ButtonIcon>
-                  Settlement
-                </ActionButton>
+                  <ActionButton
+                    active={buildMode === "settlement"}
+                    onClick={() => handleBuild("settlement")}
+                    disabled={
+                      gamePhase === "setup" 
+                        ? !canBuildInSetup('settlement')
+                        : (!canTakeActionsInGame() || !canBuildSettlement())
+                    }
+                    compact
+                  >
+                    <ButtonIcon>🏠</ButtonIcon>
+                    Settlement
+                  </ActionButton>
+                </ButtonWrapper>
 
-                <ActionButton
-                  active={buildMode === "road"}
-                  onClick={() => handleBuild("road")}
-                  disabled={
-                    gamePhase === "setup" 
-                      ? !canBuildInSetup('road')
-                      : (!canTakeActionsInGame() || !canBuildRoad())
-                  }
-                  compact
+                <ButtonWrapper
+                  onMouseEnter={(e: React.MouseEvent) => handleTooltipShow("road", e)}
+                  onMouseLeave={handleTooltipHide}
                 >
-                  <ButtonIcon>🛣️</ButtonIcon>
-                  Road
-                </ActionButton>
+                  <ActionButton
+                    active={buildMode === "road"}
+                    onClick={() => handleBuild("road")}
+                    disabled={
+                      gamePhase === "setup" 
+                        ? !canBuildInSetup('road')
+                        : (!canTakeActionsInGame() || !canBuildRoad())
+                    }
+                    compact
+                  >
+                    <ButtonIcon>🛣️</ButtonIcon>
+                    Road
+                  </ActionButton>
+                </ButtonWrapper>
 
-                <ActionButton
-                  active={buildMode === "city"}
-                  onClick={() => handleBuild("city")}
-                  disabled={
-                    !canTakeActionsInGame() || !canBuildCity() || gamePhase === "setup"
-                  }
-                  compact
+                <ButtonWrapper
+                  onMouseEnter={(e: React.MouseEvent) => handleTooltipShow("city", e)}
+                  onMouseLeave={handleTooltipHide}
                 >
-                  <ButtonIcon>🏰</ButtonIcon>
-                  City
-                </ActionButton>
+                  <ActionButton
+                    active={buildMode === "city"}
+                    onClick={() => handleBuild("city")}
+                    disabled={
+                      !canTakeActionsInGame() || !canBuildCity() || gamePhase === "setup"
+                    }
+                    compact
+                  >
+                    <ButtonIcon>🏰</ButtonIcon>
+                    City
+                  </ActionButton>
+                </ButtonWrapper>
 
-                <ActionButton variant="disabled" disabled={true} compact>
-                  <ButtonIcon>🃏</ButtonIcon>
-                  Dev Card
-                </ActionButton>
+                <ButtonWrapper
+                  onMouseEnter={(e: React.MouseEvent) => handleTooltipShow("dev_card", e)}
+                  onMouseLeave={handleTooltipHide}
+                >
+                  <ActionButton 
+                    variant="disabled" 
+                    disabled={true} 
+                    compact
+                  >
+                    <ButtonIcon>🃏</ButtonIcon>
+                    Dev Card
+                  </ActionButton>
+                </ButtonWrapper>
               </BuildGrid>
             </Section>
 
@@ -1716,6 +1765,37 @@ export default function SimpleOnlineGame() {
       <SuccessIndicator show={showSuccess}>{successMessage}</SuccessIndicator>
 
       {diceResult && <DiceResult>🎲 {diceResult}</DiceResult>}
+
+        {/* DODAJ TE TOOLTIPS: */}
+      {/* Building Cost Tooltips */}
+      <BuildingCostTooltip
+        buildingType="settlement"
+        isVisible={activeTooltip === "settlement"}
+        myResources={getMyResources()}
+        position={tooltipPosition || undefined}
+      />
+      
+      <BuildingCostTooltip
+        buildingType="city"
+        isVisible={activeTooltip === "city"}
+        myResources={getMyResources()}
+        position={tooltipPosition || undefined}
+      />
+      
+      <BuildingCostTooltip
+        buildingType="road"
+        isVisible={activeTooltip === "road"}
+        myResources={getMyResources()}
+        position={tooltipPosition || undefined}
+      />
+      
+      <BuildingCostTooltip
+        buildingType="dev_card"
+        isVisible={activeTooltip === "dev_card"}
+        myResources={getMyResources()}
+        position={tooltipPosition || undefined}
+      />
+
     </AppContainer>
   );
 }

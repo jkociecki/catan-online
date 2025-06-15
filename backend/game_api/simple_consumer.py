@@ -1,9 +1,11 @@
-# backend/game_api/simple_consumer.py - POPRAWKI dla startowania gry
+# backend/game_api/simple_consumer.py - NAPRAWIONA WERSJA + rozkład kostki
 import json
 import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from game_engine.simple.models import SimpleGameState, GamePhase
+from game_api.game_saver import GameSaver
+from datetime import datetime
 
 # Store active game rooms - w prawdziwej aplikacji użyj Redis
 game_rooms = {}
@@ -26,16 +28,28 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
         
         # Initialize or get room
         if self.room_id not in game_rooms:
+            game_state = SimpleGameState()
+            
+            # ✅ INICJALIZUJ ROZKŁAD KOSTKI
+            if not hasattr(game_state, 'dice_distribution'):
+                game_state.dice_distribution = {}
+                print(f"🎲 Initialized dice_distribution for room {self.room_id}")
+            
             game_rooms[self.room_id] = {
                 'connected_players': [],
                 'max_players': 4,
-                'game_state': SimpleGameState(),
+                'game_state': game_state,
                 'is_started': False
             }
             print(f"🏠 Created new room {self.room_id}")
         
         room = game_rooms[self.room_id]
         print(f"🎯 Room {self.room_id} currently has {len(room['connected_players'])} players")
+        
+        # ✅ UPEWNIJ SIĘ ŻE DICE_DISTRIBUTION ISTNIEJE
+        if not hasattr(room['game_state'], 'dice_distribution'):
+            room['game_state'].dice_distribution = {}
+            print(f"🎲 Added dice_distribution to existing game_state")
         
         # Wait for user data - don't add player yet
         print(f"✅ Player {self.player_id[:8]} connected, waiting for user data")
@@ -83,6 +97,9 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
             # Remove from game state
             if self.player_id in room['game_state'].players:
+                removed_player = room['game_state'].players[self.player_id]
+                print(f"👋 Player {getattr(removed_player, 'display_name', self.player_id[:8])} disconnected")
+                
                 del room['game_state'].players[self.player_id]
                 if self.player_id in room['game_state'].player_order:
                     room['game_state'].player_order.remove(self.player_id)
@@ -99,6 +116,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
             # Remove room if empty
             if not room['connected_players']:
+                print(f"🗑️ Removing empty room {self.room_id}")
                 del game_rooms[self.room_id]
 
     async def receive(self, text_data):
@@ -107,7 +125,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             message_type = data.get('type')
             
             print(f"📨 Received {message_type} from player {self.player_id[:8]}")
-            print(f"📨 Data: {data}")  # Added debug
             
             if self.room_id not in game_rooms:
                 await self.send(text_data=json.dumps({
@@ -118,6 +135,9 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
             room = game_rooms[self.room_id]
             game_state = room['game_state']
+
+            if not hasattr(room, 'start_time'):
+                room['start_time'] = datetime.now()
             
             if message_type == 'get_game_state':
                 print(f"🎮 Sending game state to player {self.player_id[:8]}")
@@ -143,23 +163,30 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 
                 print(f"📋 User data: name='{display_name}', color='{desired_color}'")
                 
-                # Rozwiąż konflikty
-                final_name = game_state.resolve_name_conflict(display_name)
-                final_color = game_state.resolve_color_conflict(desired_color)
-                
-                print(f"✅ Final data: name='{final_name}', color='{final_color}'")
-                
-                # Dodaj gracza do gry (TYLKO TUTAJ!)
-                game_state.add_player(self.player_id, final_color, final_name)
-                
-                # Dodaj do connected_players
-                room['connected_players'].append({
-                    'player_id': self.player_id,
-                    'color': final_color,
-                    'display_name': final_name
-                })
-                
-                print(f"🎮 Added player to game: {len(game_state.players)} total players")
+                # ✅ SPRAWDŹ CZY GRACZ JUŻ ISTNIEJE (zapobiegnie duplikatom)
+                if self.player_id in game_state.players:
+                    print(f"⚠️ Player {self.player_id[:8]} already exists in game, updating data")
+                    existing_player = game_state.players[self.player_id]
+                    existing_player.display_name = display_name
+                    existing_player.color = desired_color
+                else:
+                    # Rozwiąż konflikty
+                    final_name = game_state.resolve_name_conflict(display_name)
+                    final_color = game_state.resolve_color_conflict(desired_color)
+                    
+                    print(f"✅ Final data: name='{final_name}', color='{final_color}'")
+                    
+                    # Dodaj gracza do gry (TYLKO TUTAJ!)
+                    game_state.add_player(self.player_id, final_color, final_name)
+                    
+                    # Dodaj do connected_players
+                    room['connected_players'].append({
+                        'player_id': self.player_id,
+                        'color': final_color,
+                        'display_name': final_name
+                    })
+                    
+                    print(f"🎮 Added player to game: {len(game_state.players)} total players")
                 
                 # Wyślij zaktualizowany stan
                 await self.channel_layer.group_send(
@@ -170,17 +197,18 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                     }
                 )
                 
-                # Powiadom o dołączeniu gracza
-                await self.channel_layer.group_send(
-                    self.room_group_name,
-                    {
-                        'type': 'player_joined_notification',
-                        'player_id': self.player_id,
-                        'player_color': final_color,
-                        'player_name': final_name,
-                        'player_count': len(room['connected_players'])
-                    }
-                )
+                # Powiadom o dołączeniu gracza (tylko dla nowych)
+                if self.player_id not in [p['player_id'] for p in room['connected_players'][:-1]]:
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'player_joined_notification',
+                            'player_id': self.player_id,
+                            'player_color': game_state.players[self.player_id].color,
+                            'player_name': game_state.players[self.player_id].display_name,
+                            'player_count': len(room['connected_players'])
+                        }
+                    )
             
             # ✅ NOWA AKCJA: start_game_manual - pozwala każdemu graczowi rozpocząć grę
             elif message_type == 'start_game_manual':
@@ -405,6 +433,20 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                             
                             try:
                                 game_state.handle_dice_roll(self.player_id, dice_total)
+                                
+                                # ✅ AKTUALIZUJ ROZKŁAD KOSTKI W GAME_STATE
+                                if not hasattr(game_state, 'dice_distribution'):
+                                    game_state.dice_distribution = {}
+                                
+                                # Zwiększ licznik dla tej sumy
+                                dice_str = str(dice_total)
+                                if dice_str in game_state.dice_distribution:
+                                    game_state.dice_distribution[dice_str] += 1
+                                else:
+                                    game_state.dice_distribution[dice_str] = 1
+                                
+                                print(f"🎲 Updated dice distribution: {game_state.dice_distribution}")
+                                
                                 success = True
                                 
                                 print(f"✅ Dice rolled: {dice1} + {dice2} = {dice_total}")
@@ -482,15 +524,75 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 'message': f'Server error: {str(e)}'
             }))
             
-    # ✅ DODAJ NOWY EVENT HANDLER dla końca gry
+    # ✅ POPRAWIONY HANDLER - lepsze logowanie + nie duplikuje zapisów
     async def game_end_notification(self, event):
-        """Powiadom o końcu gry"""
-        await self.send(text_data=json.dumps({
-            'type': 'game_ended',
-            'winner_id': event['winner_id'],
-            'final_standings': event['final_standings'],
-            'game_state': event['game_state']
-        }))
+        """Powiadom o końcu gry i zapisz do bazy danych - TYLKO RAZ"""
+        try:
+            # Wyślij notyfikację do klienta
+            await self.send(text_data=json.dumps({
+                'type': 'game_ended',
+                'winner_id': event['winner_id'],
+                'final_standings': event['final_standings'],
+                'game_state': event['game_state']
+            }))
+            
+            # ✅ ZAPISZ GRĘ TYLKO RAZ - sprawdź czy jesteś pierwszym graczem w pokoju
+            if self.room_id in game_rooms:
+                room = game_rooms[self.room_id]
+                
+                # Sprawdź czy gra już została zapisana
+                if hasattr(room, 'game_saved') and room['game_saved']:
+                    print(f"⚠️ Game {self.room_id} already saved, skipping...")
+                    return
+                
+                # Oznacz że gra zostanie zapisana
+                room['game_saved'] = True
+                
+                # Sprawdź czy jesteś pierwszym graczem w player_order (tylko on zapisuje)
+                game_state = room['game_state']
+                if (hasattr(game_state, 'player_order') and 
+                    len(game_state.player_order) > 0 and 
+                    game_state.player_order[0] == self.player_id):
+                    
+                    print(f"💾 First player {self.player_id[:8]} saving game to database...")
+                    print(f"🎲 Game dice distribution: {getattr(game_state, 'dice_distribution', {})}")
+                    
+                    # Zapisz grę do bazy danych w tle
+                    from django.db import transaction
+                    
+                    def save_game_to_db():
+                        try:
+                            with transaction.atomic():
+                                # Ustaw czas rozpoczęcia gry
+                                start_time = getattr(room, 'start_time', None) or datetime.now()
+                                
+                                saved_game = GameSaver.save_completed_game(
+                                    game_state=game_state,
+                                    start_time=start_time
+                                )
+                                
+                                if saved_game:
+                                    print(f"✅ Game {saved_game.id} saved to database successfully by player {self.player_id[:8]}")
+                                    print(f"📊 Game players saved: {saved_game.gameplayer_set.count()}")
+                                else:
+                                    print(f"❌ Failed to save game to database")
+                                    
+                        except Exception as e:
+                            print(f"❌ Database save error: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    # Wykonaj zapis w osobnym wątku
+                    import threading
+                    save_thread = threading.Thread(target=save_game_to_db)
+                    save_thread.start()
+                else:
+                    print(f"⏭️ Player {self.player_id[:8]} is not first player, skipping save")
+                    
+        except Exception as e:
+            print(f"❌ Error in game_end_notification: {e}")
+            import traceback
+            traceback.print_exc()
     
     # ✅ POPRAWIONE Event handlers - dodano _notification sufiksy
     async def player_joined_notification(self, event):
@@ -535,7 +637,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             'game_state': event['game_state']
         }))
 
-    # Trade handling methods
+    # Trade handling methods - BEZ ZMIAN
     async def handle_create_trade_offer(self, data):
         """Gracz tworzy ofertę handlową"""
         try:
@@ -664,7 +766,6 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                     }))
                     return
             
-            # Sprawdź czy oferujący nadal ma zasoby
             # Sprawdź czy oferujący nadal ma zasoby
             offering_player = game_state.players[trade_offer['from_player_id']]
             for resource, amount in trade_offer['offering'].items():
