@@ -326,43 +326,46 @@ class SimpleGameState:
         return True
     
     def place_settlement(self, vertex_id: int, player_id: str, is_setup: bool = False) -> bool:
-      if not self.can_place_settlement(vertex_id, player_id, is_setup):
-          return False
-      
-      player = self.players[player_id]
-      
-      if not is_setup:
-          if not player.can_afford_settlement():
-              return False
-          player.pay_for_settlement()
-      else:
-          player.settlements_left -= 1
-          player.victory_points += 1
-      
-      self.vertices[vertex_id].building_type = BuildingType.SETTLEMENT
-      self.vertices[vertex_id].player_id = player_id
-      
-      if is_setup:
-          # ✅ ZABEZPIECZ PRZED KeyError
-          if player_id not in self.player_settlements_order:
-              self.player_settlements_order[player_id] = []
-              print(f"⚠️ WARNING: player_settlements_order not initialized for {player_id}, creating now")
-          
-          self.player_settlements_order[player_id].append(vertex_id)
-          settlement_count = len(self.player_settlements_order[player_id])
-          
-          # ✅ POPRAW LOGIKĘ DAWANIA SUROWCÓW
-          # Daj surowce tylko za DRUGĄ osadę (w drugiej rundzie setup)
-          if settlement_count == 2:
-              print(f"🎁 Giving initial resources for second settlement")
-              self.give_initial_resources_for_second_settlement(player_id, vertex_id)
-          
-          self.setup_progress[player_id]["settlements"] += 1
-      
-      return True
+        """POPRAWIONA - Place settlement z prawidłową logiką setup"""
+        if not self.can_place_settlement(vertex_id, player_id, is_setup):
+            return False
+        
+        player = self.players[player_id]
+        
+        if not is_setup:
+            if not player.can_afford_settlement():
+                return False
+            player.pay_for_settlement()
+        else:
+            player.settlements_left -= 1
+            player.victory_points += 1
+        
+        self.vertices[vertex_id].building_type = BuildingType.SETTLEMENT
+        self.vertices[vertex_id].player_id = player_id
+        
+        if is_setup:
+            # Zabezpiecz przed KeyError
+            if player_id not in self.player_settlements_order:
+                self.player_settlements_order[player_id] = []
+            
+            self.player_settlements_order[player_id].append(vertex_id)
+            settlement_count = len(self.player_settlements_order[player_id])
+            
+            # POPRAWIONA LOGIKA: Daj surowce tylko za DRUGĄ osadę
+            if settlement_count == 2:
+                print(f"🎁 Giving initial resources for second settlement")
+                self.give_initial_resources_for_second_settlement(player_id, vertex_id)
+            
+            # Zwiększ licznik osad w setup_progress
+            self.setup_progress[player_id]["settlements"] += 1
+            
+            print(f"✅ Settlement placed by {player_id[:8]} at vertex {vertex_id}")
+            print(f"   Progress: {self.setup_progress[player_id]}")
+        
+        return True
     
     def place_road(self, edge_id: int, player_id: str, is_setup: bool = False) -> bool:
-        """PRZYWRÓCONA METODA"""
+        """POPRAWIONA - Place road z prawidłową logiką setup"""
         if not self.can_place_road(edge_id, player_id, is_setup):
             return False
         
@@ -380,6 +383,9 @@ class SimpleGameState:
         
         if is_setup:
             self.setup_progress[player_id]["roads"] += 1
+            
+            print(f"✅ Road placed by {player_id[:8]} at edge {edge_id}")
+            print(f"   Progress: {self.setup_progress[player_id]}")
         
         return True
     
@@ -417,8 +423,10 @@ class SimpleGameState:
     # Dodaj wszystkie pozostałe metody (serialize, next_turn, etc.)
     # W backend/game_engine/simple/models.py - NAPRAW METODĘ SERIALIZE
 
+# backend/game_engine/simple/models.py - DODAJ has_rolled_dice do serialize
+
     def serialize(self) -> dict:
-        """Serializuj stan gry do JSON - JEDNOLITA WERSJA"""
+        """Serializuj stan gry do JSON - DODANE has_rolled_dice"""
         print(f"🔄 Serializing game state with {len(self.players)} players")
         
         # ZAWSZE używaj obiektu (nie tablicy) dla zgodności z frontendem
@@ -463,6 +471,11 @@ class SimpleGameState:
             "current_player_index": self.current_player_index,
             "player_order": self.player_order,
             "setup_round": self.setup_round,
+            "setup_progress": self.setup_progress,
+            
+            # ✅ DODAJ TEN STAN - kluczowe dla kontroli przycisków
+            "has_rolled_dice": getattr(self, 'has_rolled_dice', {}),
+            
             'is_game_over': self.is_game_over(),
             'winner': self.winner.player_id if hasattr(self, 'winner') and self.winner else None,
             'final_standings': self.get_final_standings() if self.phase == GamePhase.FINISHED else None
@@ -470,6 +483,7 @@ class SimpleGameState:
         
         print(f"   Serialized players dict: {players_dict}")
         print(f"   Player order: {self.player_order}")
+        print(f"   Has rolled dice: {getattr(self, 'has_rolled_dice', {})}")  # Debug
         
         return serialized
     
@@ -504,70 +518,85 @@ class SimpleGameState:
         return self.setup_progress[player_id]
 
     def can_player_build_settlement_in_setup(self, player_id: str) -> bool:
-        """Sprawdź czy gracz może budować osadę w setup"""
+        """POPRAWIONA - Sprawdź czy gracz może budować osadę w setup"""
+        if not self.is_current_player(player_id):
+            return False
+            
         progress = self.get_setup_progress(player_id)
         
         if self.setup_round == 1:
-            # Pierwsza runda: każdy może postawić 1 osadę
-            return progress["settlements"] < 1
-        else:
-            # Druga runda: każdy może postawić drugą osadę (jeśli ma już pierwszą)
+            # Pierwsza runda: może postawić osadę jeśli nie ma jeszcze żadnej w tej rundzie
+            return progress["settlements"] == 0
+        else:  # setup_round == 2
+            # Druga runda: może postawić drugą osadę jeśli ma już jedną (z pierwszej rundy)
             return progress["settlements"] == 1
 
     def can_player_build_road_in_setup(self, player_id: str) -> bool:
-        """Sprawdź czy gracz może budować drogę w setup"""
+        """POPRAWIONA - Sprawdź czy gracz może budować drogę w setup"""
+        if not self.is_current_player(player_id):
+            return False
+            
         progress = self.get_setup_progress(player_id)
         
         if self.setup_round == 1:
-            # Pierwsza runda: może postawić drogę tylko jeśli ma już osadę w tej rundzie
-            return progress["settlements"] >= 1 and progress["roads"] < 1
-        else:
-            # Druga runda: może postawić drugą drogę jeśli ma już drugą osadę
-            return progress["settlements"] == 2 and progress["roads"] < 2
+            # Pierwsza runda: może postawić drogę tylko JEŚLI ma już osadę w tej rundzie
+            return progress["settlements"] >= 1 and progress["roads"] == 0
+        else:  # setup_round == 2
+            # Druga runda: może postawić drugą drogę JEŚLI ma już drugą osadę
+            return progress["settlements"] >= 2 and progress["roads"] == 1
 
     def should_advance_to_next_player(self, current_player_id: str) -> bool:
-        """Sprawdź czy powinniśmy przejść do następnego gracza"""
+        """POPRAWIONA - Sprawdź czy powinniśmy przejść do następnego gracza"""
+        if not self.is_current_player(current_player_id):
+            return False
+            
         progress = self.get_setup_progress(current_player_id)
         
         if self.setup_round == 1:
             # W pierwszej rundzie: przejdź jeśli gracz ma 1 osadę i 1 drogę
-            return progress["settlements"] == 1 and progress["roads"] == 1
-        else:
+            return progress["settlements"] >= 1 and progress["roads"] >= 1
+        else:  # setup_round == 2
             # W drugiej rundzie: przejdź jeśli gracz ma 2 osady i 2 drogi
-            return progress["settlements"] == 2 and progress["roads"] == 2
+            return progress["settlements"] >= 2 and progress["roads"] >= 2
 
     def advance_setup_turn(self):
-      """Przejdź do następnego gracza w fazie setup"""
-      print(f"BEFORE advance_setup_turn: round={self.setup_round}, current_index={self.current_player_index}")
-      
-      if self.setup_round == 1:
-          # Pierwsza runda: w przód (clockwise)
-          self.current_player_index += 1
-          if self.current_player_index >= len(self.player_order):
-              # Koniec pierwszej rundy, rozpocznij drugą rundę
-              print("Ending round 1, starting round 2")
-              self.setup_round = 2
-              self.current_player_index = len(self.player_order) - 1  # Zacznij od ostatniego gracza
-      else:
-          # Druga runda: w tył (counter-clockwise)
-          self.current_player_index -= 1
-          if self.current_player_index < 0:
-              # Koniec fazy setup
-              print("Setup phase complete, checking if all players finished")
-              if self.is_setup_complete():
-                  print("All players completed setup, moving to main game")
-                  self.phase = GamePhase.PLAYING  # ← TUTAJ JEST OK
-                  self.current_player_index = 0  # Rozpocznij grę od pierwszego gracza
-                  
-                  # NOWA POPRAWKA: Ustaw prawidłową fazę gry
-                  print(f"Game phase changed to: {self.phase}")
-              else:
-                  # Coś poszło nie tak, resetuj
-                  print("Setup not complete, resetting to first player")
-                  self.current_player_index = 0
-      
-      print(f"AFTER advance_setup_turn: round={self.setup_round}, current_index={self.current_player_index}, phase={self.phase}")
-    
+        """POPRAWIONA - Przejdź do następnego gracza w fazie setup"""
+        print(f"\n=== ADVANCE SETUP TURN ===")
+        print(f"BEFORE: round={self.setup_round}, current_index={self.current_player_index}")
+        print(f"Player order: {[p[:8] for p in self.player_order]}")
+        
+        if self.setup_round == 1:
+            # Pierwsza runda: w przód (0->1->2->3)
+            self.current_player_index += 1
+            if self.current_player_index >= len(self.player_order):
+                # Koniec pierwszej rundy, rozpocznij drugą rundę
+                print("🔄 Ending round 1, starting round 2")
+                self.setup_round = 2
+                self.current_player_index = len(self.player_order) - 1  # Zacznij od ostatniego gracza
+        else:  # setup_round == 2
+            # Druga runda: w tył (3->2->1->0)
+            self.current_player_index -= 1
+            if self.current_player_index < 0:
+                # Koniec fazy setup
+                print("🏁 Setup phase complete!")
+                if self.is_setup_complete():
+                    print("✅ All players completed setup, moving to main game")
+                    self.phase = GamePhase.PLAYING
+                    self.current_player_index = 0  # Rozpocznij grę od pierwszego gracza
+                    
+                    # Zresetuj flagi rzutu kości dla wszystkich graczy
+                    for player_id in self.player_order:
+                        self.has_rolled_dice[player_id] = False
+                else:
+                    # Coś poszło nie tak, resetuj
+                    print("❌ Setup not complete, resetting to first player")
+                    self.current_player_index = 0
+        
+        current_player = self.get_current_player()
+        print(f"AFTER: round={self.setup_round}, current_index={self.current_player_index}, phase={self.phase}")
+        print(f"Current player: {current_player.player_id[:8]}")
+        print("=== END ADVANCE ===\n")
+
     def distribute_resources_for_dice_roll(self, dice_value: int):
       """Rozdaj surowce za rzut kością - dla głównej gry"""
       print(f"\n=== DISTRIBUTING RESOURCES FOR DICE {dice_value} ===")
@@ -609,15 +638,15 @@ class SimpleGameState:
       print("=== END RESOURCE DISTRIBUTION ===\n")
 
     def is_setup_complete(self) -> bool:
-        """Sprawdź czy setup jest zakończony"""
-        print("Checking if setup is complete:")
+        """Sprawdź czy setup jest zakończony - wszyscy gracze mają 2 osady i 2 drogi"""
+        print("🔍 Checking if setup is complete:")
         for player_id in self.player_order:
             progress = self.setup_progress.get(player_id, {"settlements": 0, "roads": 0})
-            print(f"  Player {player_id}: settlements={progress['settlements']}, roads={progress['roads']}")
+            print(f"  Player {player_id[:8]}: settlements={progress['settlements']}, roads={progress['roads']}")
             if progress["settlements"] < 2 or progress["roads"] < 2:
-                print(f"  Player {player_id} not complete")
+                print(f"  ❌ Player {player_id[:8]} not complete")
                 return False
-        print("All players completed setup!")
+        print("✅ All players completed setup!")
         return True
 
     def give_initial_resources_for_second_settlement(self, player_id: str, second_settlement_vertex_id: int):
@@ -951,63 +980,106 @@ class SimpleGameState:
         return standings
     def start_turn(self, player_id: str):
         """Rozpocznij turę dla gracza"""
-        # Resetuj stan tury
-        self.has_rolled_dice[player_id] = False
-        self.turn_phase = "roll"
-        print(f"🎮 Started turn for player {player_id[:8]} - must roll dice first")
+        if self.phase == GamePhase.PLAYING:
+            # W normalnej grze resetuj flagę rzutu kości
+            self.has_rolled_dice[player_id] = False
+            print(f"🎮 Started turn for player {player_id[:8]} - must roll dice first")
     
     def handle_dice_roll(self, player_id: str, dice_result: int):
         """Obsłuż rzut kostką"""
-        if self.has_rolled_dice.get(player_id, False):
-            raise ValueError("Player has already rolled dice this turn")
-        
-        if self.turn_phase != "roll":
-            raise ValueError("Not in dice rolling phase")
+        if not self.can_roll_dice(player_id):
+            if self.has_rolled_dice.get(player_id, False):
+                raise ValueError("Player has already rolled dice this turn")
+            else:
+                raise ValueError("Player cannot roll dice right now")
         
         # Ustaw że gracz rzucił kośćmi
         self.has_rolled_dice[player_id] = True
-        self.turn_phase = "actions"
         
         # Rozdaj zasoby
-        self.distribute_resources_for_dice_roll(dice_result)
+        if dice_result == 7:
+            print(f"🎲 Robber activated! (dice: {dice_result})")
+            # TODO: obsługa robbera
+        else:
+            self.distribute_resources_for_dice_roll(dice_result)
         
         print(f"🎲 Player {player_id[:8]} rolled {dice_result}, can now take actions")
         return dice_result
     
     def can_roll_dice(self, player_id: str) -> bool:
         """Sprawdź czy gracz może rzucić kostką"""
-        current_player = self.get_current_player()
-        return (current_player.player_id == player_id and 
-                not self.has_rolled_dice.get(player_id, False) and
-                self.turn_phase == "roll")
+        if self.phase != GamePhase.PLAYING:
+            return False
+        
+        if not self.is_current_player(player_id):
+            return False
+        
+        # Nie może rzucić jeśli już rzucił w tej turze
+        return not self.has_rolled_dice.get(player_id, False)
     
     def can_take_actions(self, player_id: str) -> bool:
-        """Sprawdź czy gracz może podejmować akcje (budować, handlować)"""
-        current_player = self.get_current_player()
-        return (current_player.player_id == player_id and 
-                self.has_rolled_dice.get(player_id, False) and
-                self.turn_phase == "actions")
-    
-    def end_turn(self):
-        """Zakończ turę"""
-        current_player = self.get_current_player()
+        """Sprawdź czy gracz może budować/handlować w normalnej grze"""
+        if self.phase == GamePhase.SETUP:
+            return self.is_current_player(player_id)
         
-        # Sprawdź czy gracz rzucił kośćmi (w normalnej grze)
         if self.phase == GamePhase.PLAYING:
-            if not self.has_rolled_dice.get(current_player.player_id, False):
-                raise ValueError("Cannot end turn without rolling dice")
+            return (self.is_current_player(player_id) and 
+                    self.has_rolled_dice.get(player_id, False))
         
-        # Wyczyść stan tury
-        if current_player.player_id in self.has_rolled_dice:
-            del self.has_rolled_dice[current_player.player_id]
+        return False
         
-        # Przejdź do następnego gracza
-        self.next_turn()
+    def end_turn(self):
+        """Zakończ turę i przejdź do następnego gracza"""
+        current_player = self.get_current_player()
         
-        # Rozpocznij turę dla nowego gracza
-        new_current_player = self.get_current_player()
-        self.start_turn(new_current_player.player_id)
-    
+        if self.phase == GamePhase.SETUP:
+            # W setup - automatycznie przejdź do następnego
+            self.advance_setup_turn()
+        
+        elif self.phase == GamePhase.PLAYING:
+            # W normalnej grze - sprawdź czy może zakończyć
+            if not self.can_end_turn_in_game(current_player.player_id):
+                raise ValueError("Cannot end turn - must roll dice first")
+            
+            # Wyczyść flagę rzutu kości
+            self.has_rolled_dice[current_player.player_id] = False
+            
+            # Przejdź do następnego gracza
+            self.current_player_index = (self.current_player_index + 1) % len(self.player_order)
+            new_current_player = self.get_current_player()
+            
+            print(f"🔄 Turn ended, next player: {new_current_player.player_id[:8]}")
+
+    def can_end_turn_in_setup(self, player_id: str) -> bool:
+        """POPRAWIONA - Sprawdź czy gracz może zakończyć turę w fazie setup"""
+        if self.phase != GamePhase.SETUP:
+            return False
+        
+        if not self.is_current_player(player_id):
+            return False
+        
+        # Użyj tej samej logiki co should_advance_to_next_player
+        return self.should_advance_to_next_player(player_id)
+
+    def can_end_turn_in_game(self, player_id: str) -> bool:
+        """Sprawdź czy gracz może zakończyć turę w normalnej grze"""
+        if self.phase != GamePhase.PLAYING:
+            return False
+        
+        if not self.is_current_player(player_id):
+            return False
+        
+        # Musi najpierw rzucić kostką
+        return self.has_rolled_dice.get(player_id, False)
+
+    def is_current_player(self, player_id: str) -> bool:
+        """Sprawdź czy to tura danego gracza"""
+        if not self.player_order:
+            return False
+        
+        current_player_id = self.player_order[self.current_player_index]
+        return current_player_id == player_id
+        
 
     
 

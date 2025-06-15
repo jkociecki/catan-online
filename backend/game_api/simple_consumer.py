@@ -235,29 +235,24 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             elif message_type == 'game_action':
                 action = data.get('action')
                 
-                # ✅ SPECJALNE PRZYPADKI które nie wymagają sprawdzania tury:
-                if action == 'roll_dice' and room['game_state'].phase.value == 'setup':
-                    # Ten przypadek był używany do startowania gry - teraz używamy start_game_manual
-                    if len(room['connected_players']) >= 2:
-                        print("🏁 Starting game via old roll_dice method")
-                        await self.channel_layer.group_send(
-                            self.room_group_name,
-                            {
-                                'type': 'game_start_notification',
-                                'game_state': room['game_state'].serialize()
-                            }
-                        )
-                        return
-                    else:
-                        await self.send(text_data=json.dumps({
-                            'type': 'error',
-                            'message': 'Need at least 2 players to start'
-                        }))
-                        return
+                # SPECJALNE PRZYPADKI które nie wymagają sprawdzania tury
+                if action == 'seed_resources':
+                    print(f"🎯 Seed resources requested")
+                    game_state.seed_resources_for_testing()
+                    
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'game_update_notification',
+                            'action': 'seed_resources',
+                            'player_id': self.player_id,
+                            'game_state': game_state.serialize()
+                        }
+                    )
+                    return
                 
-                # ✅ DLA WSZYSTKICH INNYCH AKCJI: Sprawdź turę
-                current_player = game_state.get_current_player()
-                if current_player.player_id != self.player_id:
+                # DLA WSZYSTKICH INNYCH AKCJI: Sprawdź turę
+                if not game_state.is_current_player(self.player_id):
                     await self.send(text_data=json.dumps({
                         'type': 'error',
                         'message': 'Not your turn'
@@ -266,8 +261,8 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 
                 success = False
                 error_msg = None
+                game_ended = False
                 should_advance_turn = False
-                game_ended = False  # ✅ NOWA FLAGA dla końca gry
 
                 if action == 'build_settlement':
                     vertex_id = data.get('vertex_id')
@@ -275,20 +270,19 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                         is_setup = game_state.phase == GamePhase.SETUP
                         
                         if is_setup:
-                            # W fazie setup sprawdź czy gracz może budować osadę
+                            # W setup - sprawdź czy może budować osadę
                             if not game_state.can_player_build_settlement_in_setup(self.player_id):
-                                error_msg = f"Cannot build settlement in setup - round {game_state.setup_round}"
-                                print(f"Settlement build rejected for player {self.player_id}: {error_msg}")
-                                print(f"Current progress: {game_state.get_setup_progress(self.player_id)}")
+                                progress = game_state.get_setup_progress(self.player_id)
+                                error_msg = f"Cannot build settlement now. Round: {game_state.setup_round}, Progress: {progress}"
+                                print(f"❌ Settlement rejected: {error_msg}")
                             else:
                                 success = game_state.place_settlement(vertex_id, self.player_id, is_setup)
                                 if not success:
                                     error_msg = "Cannot place settlement there"
                                 else:
-                                    print(f"Settlement placed successfully for player {self.player_id}")
-                                    print(f"New progress: {game_state.get_setup_progress(self.player_id)}")
+                                    print(f"✅ Settlement placed in setup by {self.player_id[:8]}")
                         else:
-                            # Normalna gra - sprawdź czy może rzucić kostką
+                            # W normalnej grze - sprawdź czy rzucił kostką
                             if not game_state.can_take_actions(self.player_id):
                                 error_msg = "You must roll dice first before building"
                             else:
@@ -296,10 +290,9 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                                 if not success:
                                     error_msg = "Cannot place settlement there"
                                 else:
-                                    # ✅ SPRAWDŹ ZWYCIĘSTWO po zbudowaniu osady
+                                    # Sprawdź zwycięstwo
                                     if game_state.check_victory_after_action(self.player_id):
                                         game_ended = True
-                                        print(f"🎉 GAME ENDED! {self.player_id} wins!")
                     else:
                         error_msg = "Missing vertex_id"
                 
@@ -309,37 +302,24 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                         is_setup = game_state.phase == GamePhase.SETUP
                         
                         if is_setup:
-                            # W fazie setup sprawdź czy gracz może budować drogę
+                            # W setup - sprawdź czy może budować drogę
                             if not game_state.can_player_build_road_in_setup(self.player_id):
-                                error_msg = f"Cannot build road in setup - round {game_state.setup_round}"
-                                print(f"Road build rejected for player {self.player_id}: {error_msg}")
-                                print(f"Current progress: {game_state.get_setup_progress(self.player_id)}")
+                                progress = game_state.get_setup_progress(self.player_id)
+                                error_msg = f"Cannot build road now. Round: {game_state.setup_round}, Progress: {progress}"
+                                print(f"❌ Road rejected: {error_msg}")
                             else:
                                 success = game_state.place_road(edge_id, self.player_id, is_setup)
-                                if success:
-                                    print(f"Road placed successfully for player {self.player_id}")
-                                    print(f"New progress: {game_state.get_setup_progress(self.player_id)}")
-                                    
-                                    # Sprawdź czy powinniśmy przejść do następnego gracza
-                                    should_advance_turn = game_state.should_advance_to_next_player(self.player_id)
-                                    print(f"Should advance turn: {should_advance_turn}")
-                                    
-                                    if should_advance_turn:
-                                        # Daj surowce za drugą osadę jeśli to druga runda
-                                        if game_state.setup_round == 2:
-                                            print(f"Giving initial resources to player {self.player_id}")
-                                            game_state.give_initial_resources_for_second_settlement(self.player_id, 0)
-                                        
-                                        # Przejdź do następnego gracza
-                                        old_player = game_state.get_current_player().player_id
-                                        game_state.advance_setup_turn()
-                                        new_player = game_state.get_current_player().player_id
-                                        print(f"Turn advanced from {old_player} to {new_player}")
-                                        print(f"Game phase is now: {game_state.phase}")
-                                else:
+                                if not success:
                                     error_msg = "Cannot place road there"
+                                else:
+                                    print(f"✅ Road placed in setup by {self.player_id[:8]}")
+                                    
+                                    # KLUCZOWE: Sprawdź czy powinniśmy przejść do następnego gracza
+                                    if game_state.should_advance_to_next_player(self.player_id):
+                                        print(f"🔄 Should advance turn after road placement")
+                                        should_advance_turn = True
                         else:
-                            # Normalna gra - sprawdź czy może budować
+                            # W normalnej grze
                             if not game_state.can_take_actions(self.player_id):
                                 error_msg = "You must roll dice first before building"
                             else:
@@ -361,40 +341,55 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                             if not success:
                                 error_msg = "Cannot build city there"
                             else:
-                                # ✅ SPRAWDŹ ZWYCIĘSTWO po zbudowaniu miasta
                                 if game_state.check_victory_after_action(self.player_id):
                                     game_ended = True
-                                    print(f"🎉 GAME ENDED! {self.player_id} wins!")
                     else:
                         error_msg = "Missing vertex_id"
                         
                 elif action == 'end_turn':
-                    if game_state.phase != GamePhase.SETUP:
-                        # ✅ SPRAWDŹ CZY GRACZ RZUCIŁ KOŚĆMI
-                        if hasattr(game_state, 'has_rolled_dice') and not game_state.has_rolled_dice.get(self.player_id, False):
+                    print(f"⏭️ End turn request from {self.player_id[:8]}")
+                    
+                    if game_state.phase == GamePhase.SETUP:
+                        # W fazie setup sprawdź czy może zakończyć turę
+                        if not game_state.can_end_turn_in_setup(self.player_id):
+                            progress = game_state.get_setup_progress(self.player_id)
+                            error_msg = f"Cannot end turn - incomplete setup. Progress: {progress}"
+                            print(f"❌ {error_msg}")
+                        else:
+                            # Wykonaj advance_setup_turn
+                            old_phase = game_state.phase
+                            game_state.advance_setup_turn()
+                            success = True
+                            should_advance_turn = True
+                            
+                            # Sprawdź czy gra przeszła do fazy głównej
+                            if old_phase == GamePhase.SETUP and game_state.phase == GamePhase.PLAYING:
+                                print("🎉 Setup complete! Moving to main game phase")
+                            
+                            print(f"✅ Setup turn ended by {self.player_id[:8]}")
+                    
+                    elif game_state.phase == GamePhase.PLAYING:
+                        # W normalnej grze sprawdź czy rzucił kostką
+                        if not game_state.can_end_turn_in_game(self.player_id):
                             error_msg = "You must roll dice before ending turn"
                             print(f"❌ {error_msg}")
                         else:
-                            # ✅ WYCZYŚĆ FLAGĘ RZUTU KOŚCI
-                            if hasattr(game_state, 'has_rolled_dice'):
-                                game_state.has_rolled_dice[self.player_id] = False
-                            
-                            old_player = game_state.get_current_player().player_id
                             game_state.end_turn()
-                            new_player = game_state.get_current_player().player_id
-                            print(f"Turn ended by {old_player}, new turn: {new_player}")
                             success = True
+                            should_advance_turn = True
+                            print(f"✅ Game turn ended by {self.player_id[:8]}")
+                    
                     else:
-                        error_msg = "Cannot manually end turn in setup phase"
-                
+                        error_msg = "Cannot end turn in this game phase"
+
                 elif action == 'roll_dice':
                     print(f"🎲 Roll dice request from {self.player_id[:8]}")
-                    print(f"   Current phase: {game_state.phase}")
-                    print(f"   Current player: {game_state.get_current_player().player_id[:8]}")
                     
-                    # ✅ WYKONAJ RZUT KOŚCI w fazie PLAYING
-                    if game_state.phase == GamePhase.PLAYING:
-                        # Sprawdź czy gracz może rzucić kostką
+                    if game_state.phase == GamePhase.SETUP:
+                        error_msg = "Cannot roll dice in setup phase"
+                        print(f"❌ {error_msg}")
+                    
+                    elif game_state.phase == GamePhase.PLAYING:
                         if not game_state.can_roll_dice(self.player_id):
                             if game_state.has_rolled_dice.get(self.player_id, False):
                                 error_msg = "You have already rolled dice this turn"
@@ -406,31 +401,35 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                             import random
                             dice1 = random.randint(1, 6)
                             dice2 = random.randint(1, 6)
-                            total = dice1 + dice2
+                            dice_total = dice1 + dice2
                             
-                            print(f"   Dice result: {dice1} + {dice2} = {total}")
-                            
-                            # Obsłuż rzut przez game state
-                            game_state.handle_dice_roll(self.player_id, total)
-                            success = True
-                            
-                            # Wyślij wynik rzutu
-                            await self.channel_layer.group_send(
-                                self.room_group_name,
-                                {
-                                    'type': 'dice_roll_notification',
-                                    'player_id': self.player_id,
-                                    'dice1': dice1,
-                                    'dice2': dice2,
-                                    'total': total,
-                                    'game_state': game_state.serialize()
-                                }
-                            )
+                            try:
+                                game_state.handle_dice_roll(self.player_id, dice_total)
+                                success = True
+                                
+                                print(f"✅ Dice rolled: {dice1} + {dice2} = {dice_total}")
+                                
+                                # Wyślij informację o rzucie kości do wszystkich graczy
+                                await self.channel_layer.group_send(
+                                    self.room_group_name,
+                                    {
+                                        'type': 'dice_roll_notification',
+                                        'player_id': self.player_id,
+                                        'dice1': dice1,
+                                        'dice2': dice2,
+                                        'total': dice_total,
+                                        'game_state': game_state.serialize()
+                                    }
+                                )
+                                
+                            except ValueError as e:
+                                error_msg = str(e)
+                                print(f"❌ Dice roll failed: {error_msg}")
+                    
                     else:
-                        error_msg = f"Cannot roll dice in phase {game_state.phase.value}"
-                        print(f"❌ {error_msg}")
-                
-                # ✅ OBSŁUGA KOŃCA GRY
+                        error_msg = "Cannot roll dice in this game phase"
+
+                # OBSŁUGA WYNIKÓW
                 if game_ended:
                     # Wyślij informację o końcu gry
                     await self.channel_layer.group_send(
@@ -458,20 +457,20 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                         update_message['new_current_player'] = current_player.player_id
                         
                         # Jeśli skończyła się faza setup
-                        if game_state.phase != GamePhase.SETUP:
+                        if game_state.phase == GamePhase.PLAYING:
                             update_message['setup_complete'] = True
                     
-                    print(f"SENDING UPDATE: {update_message['type']}, action: {update_message['action']}")
+                    print(f"📤 SENDING UPDATE: {update_message['type']}, action: {update_message['action']}")
                     
                     await self.channel_layer.group_send(
                         self.room_group_name,
                         update_message
                     )
                 elif error_msg:
-                    print(f"ACTION FAILED: {action}, error: {error_msg}")
+                    print(f"❌ ACTION FAILED: {action}, error: {error_msg}")
                     await self.send(text_data=json.dumps({
                         'type': 'error',
-                        'message': error_msg or f'Failed to execute {action}'
+                        'message': error_msg
                     }))
                 
         except Exception as e:
@@ -482,7 +481,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 'type': 'error',
                 'message': f'Server error: {str(e)}'
             }))
-
+            
     # ✅ DODAJ NOWY EVENT HANDLER dla końca gry
     async def game_end_notification(self, event):
         """Powiadom o końcu gry"""
