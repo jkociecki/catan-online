@@ -87,14 +87,20 @@ const AuthCallback: React.FC = () => {
           setUser(userData);
           setToken(token);
 
-          // Set user data in SimpleGameService
-          SimpleGameService.setUserData(
-            userData.display_name || userData.username,
-            userData.preferred_color || 'blue'
-          );
+          // ✅ KRYTYCZNA POPRAWKA - Ustaw dane użytkownika w SimpleGameService PRZED nawigacją
+          const displayName = userData.display_name || userData.username;
+          const color = userData.preferred_color || 'blue';
+          
+          console.log('🔧 Setting user data in SimpleGameService:', { displayName, color });
+          SimpleGameService.setUserData(displayName, color);
 
-          // Redirect to game room
-          navigate('/room/new');
+          // ✅ DODATKOWA WERYFIKACJA - Sprawdź czy dane zostały ustawione
+          setTimeout(() => {
+            console.log('✅ User data should now be set, navigating to room creation');
+            // Redirect to game room
+            navigate('/room/new');
+          }, 100); // Krótkie opóźnienie dla pewności
+
         } else {
           throw new Error(`Failed to fetch user data: ${response.status}`);
         }
@@ -132,4 +138,4 @@ const AuthCallback: React.FC = () => {
   );
 };
 
-export default AuthCallback; 
+export default AuthCallback;

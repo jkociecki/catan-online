@@ -1,4 +1,4 @@
-// frontend/src/view/board/SimpleGameService.ts - DEBUGGING VERSION
+// frontend/src/view/board/SimpleGameService.ts - POPRAWIONA WERSJA
 
 class SimpleGameService {
   private static instance: SimpleGameService;
@@ -13,6 +13,8 @@ class SimpleGameService {
 
   private constructor() {
     console.log("SimpleGameService instance created");
+    // ✅ DODANE - Odczytaj userData z localStorage przy starcie
+    this.loadUserDataFromStorage();
   }
 
   public static getInstance(): SimpleGameService {
@@ -20,6 +22,25 @@ class SimpleGameService {
       SimpleGameService.instance = new SimpleGameService();
     }
     return SimpleGameService.instance;
+  }
+
+  // ✅ NOWA METODA - Odczytuj userData z localStorage
+  private loadUserDataFromStorage(): void {
+    try {
+      const userDataStr = localStorage.getItem('user_data');
+      if (userDataStr) {
+        const userData = JSON.parse(userDataStr);
+        if (userData) {
+          this.userData = {
+            displayName: userData.display_name || userData.username,
+            color: userData.preferred_color || 'blue'
+          };
+          console.log("🔄 Loaded user data from localStorage:", this.userData);
+        }
+      }
+    } catch (error) {
+      console.warn("❌ Failed to load user data from localStorage:", error);
+    }
   }
 
   public async createRoom(): Promise<string> {
@@ -51,6 +72,17 @@ class SimpleGameService {
   public setUserData(displayName: string, color: string): void {
     this.userData = { displayName, color };
     console.log("✅ Set user data:", this.userData);
+    
+    // ✅ DODANE - Zapisz do localStorage
+    try {
+      const existingData = JSON.parse(localStorage.getItem('user_data') || '{}');
+      existingData.display_name = displayName;
+      existingData.preferred_color = color;
+      localStorage.setItem('user_data', JSON.stringify(existingData));
+      console.log("💾 Saved user data to localStorage");
+    } catch (error) {
+      console.warn("❌ Failed to save user data to localStorage:", error);
+    }
   }
 
   public connectToRoom(roomId: string): Promise<void> {
@@ -58,10 +90,25 @@ class SimpleGameService {
       this.disconnectFromRoom();
       this.currentRoomId = roomId;
 
+      // ✅ KRYTYCZNA POPRAWKA - Sprawdź userData przed połączeniem
+      if (!this.userData) {
+        console.log("🔄 No userData set, trying to load from localStorage...");
+        this.loadUserDataFromStorage();
+        
+        if (!this.userData) {
+          console.warn("⚠️ Still no userData available, using defaults");
+          this.userData = {
+            displayName: `Player_${Date.now().toString(36)}`,
+            color: 'blue'
+          };
+        }
+      }
+
       try {
         const token = localStorage.getItem("auth_token");
         const wsUrl = `${SimpleGameService.WS_URL}/game/${roomId}/?token=${token}`;
         console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
+        console.log(`👤 With user data:`, this.userData);
 
         this.socket = new WebSocket(wsUrl);
 
@@ -96,12 +143,17 @@ class SimpleGameService {
             const data = JSON.parse(event.data);
             console.log("📨 WebSocket message received:", data);
 
-            // ✅ KROK 2: Gdy dostaniemy client_id, wyślij dane użytkownika
+            // ✅ KROK 2: Gdy dostaniemy client_id, NATYCHMIAST wyślij dane użytkownika
             if (data.type === "client_id" && data.player_id) {
               this.clientId = data.player_id;
               console.log("✅ Set client ID:", this.clientId);
               
-              // ✅ NATYCHMIAST WYŚLIJ DANE UŻYTKOWNIKA
+              // ✅ KRYTYCZNA POPRAWKA - Sprawdź userData jeszcze raz
+              if (!this.userData) {
+                console.log("🔄 Still no userData after client_id, loading again...");
+                this.loadUserDataFromStorage();
+              }
+              
               if (this.userData) {
                 console.log("📤 Sending user data immediately:", this.userData);
                 this.sendMessage({
@@ -110,7 +162,13 @@ class SimpleGameService {
                   color: this.userData.color,
                 });
               } else {
-                console.warn("⚠️ No user data available to send!");
+                console.error("❌ CRITICAL: No user data available after all attempts!");
+                // Wyślij dane domyślne
+                this.sendMessage({
+                  type: "set_user_data",
+                  display_name: `Player_${this.clientId?.substring(0, 8) || 'default'}`,
+                  color: 'blue',
+                });
               }
             }
 
