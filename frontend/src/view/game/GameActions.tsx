@@ -15,6 +15,7 @@ interface GameActionsProps {
   buildMode?: "settlement" | "city" | "road" | null;
   onEndTurn?: () => void;
   onRollDice?: () => void;
+  gameState?: any;
 }
 
 const RightPanel = styled.div`
@@ -212,6 +213,7 @@ export default function GameActions({
   buildMode,
   onEndTurn,
   onRollDice,
+  gameState,
 }: GameActionsProps) {
   const [hasRolled, setHasRolled] = useState<boolean>(false);
   const [setupProgress, setSetupProgress] = useState<{
@@ -251,7 +253,7 @@ export default function GameActions({
   // Calculate setup progress
   useEffect(() => {
     if (isSetupPhase) {
-      const myPlayer = players.find((p) => p.id === myPlayerId);
+      const myPlayer = players.find((p) => p.player_id === myPlayerId);
       if (myPlayer) {
         const settlementCount = 5 - (myPlayer.settlements_left || 5);
         const roadCount = 15 - (myPlayer.roads_left || 15);
@@ -272,9 +274,89 @@ export default function GameActions({
     }
   }, [isMyTurn, setBuildMode]);
 
+  // POPRAWIONE funkcje kontrolne
+  const canEndTurnInSetup = () => {
+    console.log("🔍 canEndTurnInSetup called");
+    if (!isSetupPhase || !isMyTurn) {
+      console.log("  -> false (not setup or not my turn)");
+      return false;
+    }
+    
+    // Użyj setup_progress z gameState zamiast liczyć settlements_left
+    const setupProgressFromBackend = gameState?.setup_progress?.[myPlayerId];
+    console.log("  -> setupProgress:", setupProgressFromBackend);
+    
+    if (!setupProgressFromBackend) {
+      console.log("  -> false (no setup progress)");
+      return false;
+    }
+    
+    const setupRound = gameState?.setup_round || 1;
+    console.log("  -> setupRound:", setupRound);
+    
+    if (setupRound === 1) {
+      // Pierwsza runda: potrzeba 1 osada + 1 droga
+      const result = setupProgressFromBackend.settlements >= 1 && setupProgressFromBackend.roads >= 1;
+      console.log(`  -> Round 1: settlements=${setupProgressFromBackend.settlements}, roads=${setupProgressFromBackend.roads}, result=${result}`);
+      return result;
+    } else {
+      // Druga runda: potrzeba 2 osady + 2 drogi
+      const result = setupProgressFromBackend.settlements >= 2 && setupProgressFromBackend.roads >= 2;
+      console.log(`  -> Round 2: settlements=${setupProgressFromBackend.settlements}, roads=${setupProgressFromBackend.roads}, result=${result}`);
+      return result;
+    }
+  };
+
+  const canEndTurnInGame = () => {
+    console.log("🔍 canEndTurnInGame called");
+    console.log("  -> isSetupPhase:", isSetupPhase, "isMyTurn:", isMyTurn, "hasRolled:", hasRolled);
+    if (isSetupPhase || !isMyTurn) return false;
+    return hasRolled;
+  };
+
+  const canRollDice = () => {
+    console.log("🔍 canRollDice called");
+    console.log("  -> isSetupPhase:", isSetupPhase, "isMyTurn:", isMyTurn, "hasRolled:", hasRolled);
+    if (isSetupPhase || !isMyTurn) return false;
+    return !hasRolled;
+  };
+
+  const canTakeActions = () => {
+    console.log("🔍 canTakeActions called");
+    if (isSetupPhase) {
+      console.log("  -> setup phase, checking if can build...");
+      
+      // W setup sprawdź czy może budować według setup_progress
+      const setupProgressFromBackend = gameState?.setup_progress?.[myPlayerId];
+      const setupRound = gameState?.setup_round || 1;
+      
+      if (!setupProgressFromBackend) {
+        console.log("  -> false (no setup progress)");
+        return false;
+      }
+      
+      console.log(`  -> setupProgress: ${JSON.stringify(setupProgressFromBackend)}, round: ${setupRound}`);
+      
+      if (setupRound === 1) {
+        // W pierwszej rundzie może budować jeśli nie ma jeszcze 1 osady i 1 drogi
+        const canBuild = setupProgressFromBackend.settlements < 1 || setupProgressFromBackend.roads < 1;
+        console.log(`  -> Round 1: can build = ${canBuild}`);
+        return isMyTurn && canBuild;
+      } else {
+        // W drugiej rundzie może budować jeśli nie ma jeszcze 2 osad i 2 dróg
+        const canBuild = setupProgressFromBackend.settlements < 2 || setupProgressFromBackend.roads < 2;
+        console.log(`  -> Round 2: can build = ${canBuild}`);
+        return isMyTurn && canBuild;
+      }
+    }
+    
+    console.log("  -> normal game, isMyTurn:", isMyTurn, "hasRolled:", hasRolled);
+    return isMyTurn && hasRolled;
+  };
+
   // Handle build mode toggle
   const handleBuild = (type: "settlement" | "city" | "road") => {
-    if (!isMyTurn) return;
+    if (!canTakeActions()) return;
 
     if (buildMode === type) {
       setBuildMode?.(null);
@@ -285,7 +367,7 @@ export default function GameActions({
 
   // Handle dice roll
   const handleRollDice = () => {
-    if (!isMyTurn || hasRolled || isSetupPhase) return;
+    if (!canRollDice()) return;
 
     if (onRollDice) {
       onRollDice();
@@ -295,18 +377,46 @@ export default function GameActions({
 
   // Handle end turn
   const handleEndTurn = () => {
-    if (!isMyTurn) return;
+    let canEnd = false;
+    
+    if (isSetupPhase) {
+      canEnd = canEndTurnInSetup();
+    } else {
+      canEnd = canEndTurnInGame();
+    }
+    
+    if (!canEnd) return;
 
     if (onEndTurn) {
       onEndTurn();
       setBuildMode?.(null);
-      setHasRolled(false);
+      
+      // Reset stanu dla następnej tury
+      if (!isSetupPhase) {
+        setHasRolled(false);
+      }
     }
   };
 
   return (
     <RightPanel>
       <Panel>
+        {/* DEBUG PANEL */}
+        <Section>
+          <SectionHeader>DEBUG INFO</SectionHeader>
+          <div style={{fontSize: '10px', background: '#f0f0f0', padding: '8px', borderRadius: '4px'}}>
+            <div>Turn: {isMyTurn ? "YES" : "NO"}</div>
+            <div>Phase: {gamePhase}</div>
+            <div>Round: {gameState?.setup_round || "?"}</div>
+            <div>HasRolled: {hasRolled ? "YES" : "NO"}</div>
+            <div>SetupProgress: {JSON.stringify(gameState?.setup_progress?.[myPlayerId] || {})}</div>
+            <div>CanRoll: {canRollDice() ? "YES" : "NO"}</div>
+            <div>CanEndSetup: {canEndTurnInSetup() ? "YES" : "NO"}</div>
+            <div>CanEndGame: {canEndTurnInGame() ? "YES" : "NO"}</div>
+            <div>CanTakeActions: {canTakeActions() ? "YES" : "NO"}</div>
+          </div>
+        </Section>
+
         <Section>
           <SectionHeader>Resources</SectionHeader>
           <ResourceGrid>
@@ -344,14 +454,7 @@ export default function GameActions({
                 <ActionButton
                   variant="danger"
                   onClick={handleEndTurn}
-                  disabled={
-                    !isMyTurn ||
-                    setupProgress.roads <= setupProgress.settlements ||
-                    (setupProgress.settlements === 1 &&
-                      setupProgress.roads === 0) ||
-                    (setupProgress.settlements === 2 &&
-                      setupProgress.roads === 1)
-                  }
+                  disabled={!canEndTurnInSetup()}
                 >
                   ⏭️ End Turn
                 </ActionButton>
@@ -359,9 +462,9 @@ export default function GameActions({
             ) : (
               <>
                 <ActionButton
-                  variant="secondary"
+                  variant="primary"
                   onClick={handleRollDice}
-                  disabled={!isMyTurn || hasRolled}
+                  disabled={!canRollDice()}
                 >
                   🎲 Roll Dice
                 </ActionButton>
@@ -369,7 +472,7 @@ export default function GameActions({
                 <ActionButton
                   variant="danger"
                   onClick={handleEndTurn}
-                  disabled={!isMyTurn}
+                  disabled={!canEndTurnInGame()}
                 >
                   ⏭️ End Turn
                 </ActionButton>
@@ -384,7 +487,7 @@ export default function GameActions({
             <ActionButton
               active={buildMode === "settlement"}
               onClick={() => handleBuild("settlement")}
-              disabled={!isMyTurn || (!canBuildSettlement && !isSetupPhase)}
+              disabled={!canTakeActions() || (!canBuildSettlement && !isSetupPhase)}
             >
               🏠 Settlement
             </ActionButton>
@@ -392,7 +495,7 @@ export default function GameActions({
             <ActionButton
               active={buildMode === "road"}
               onClick={() => handleBuild("road")}
-              disabled={!isMyTurn || (!canBuildRoad && !isSetupPhase)}
+              disabled={!canTakeActions() || (!canBuildRoad && !isSetupPhase)}
             >
               🛣️ Road
             </ActionButton>
@@ -400,12 +503,15 @@ export default function GameActions({
             <ActionButton
               active={buildMode === "city"}
               onClick={() => handleBuild("city")}
-              disabled={!isMyTurn || !canBuildCity || isSetupPhase}
+              disabled={!canTakeActions() || !canBuildCity || isSetupPhase}
             >
               🏰 City
             </ActionButton>
 
-            <ActionButton variant="disabled" disabled={true}>
+            <ActionButton 
+              variant="secondary" 
+              disabled={!canTakeActions() || isSetupPhase}
+            >
               🃏 Dev Card
             </ActionButton>
           </ActionGrid>
@@ -414,11 +520,17 @@ export default function GameActions({
         <Section>
           <SectionHeader>Trade</SectionHeader>
           <ActionGrid>
-            <ActionButton variant="disabled" disabled={true}>
+            <ActionButton 
+              variant="secondary" 
+              disabled={!canTakeActions() || isSetupPhase}
+            >
               🤝 Trade
             </ActionButton>
 
-            <ActionButton variant="disabled" disabled={true}>
+            <ActionButton 
+              variant="secondary" 
+              disabled={!canTakeActions() || isSetupPhase}
+            >
               🏪 Maritime
             </ActionButton>
           </ActionGrid>

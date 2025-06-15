@@ -5,11 +5,10 @@ import SimpleGameService from "../../view/board/SimpleGameService";
 import OnlineCatanSVGBoard from "../board/OnlineCatanSVGBoard";
 import styled from "styled-components";
 import PlayersList from "./PlayerList";
-import GameActions from "./GameActions";
 import TradeModal from "../trade/TradeModal";
 import TradeOfferNotification from "../trade/TradeOfferNotification";
 import { useAuth } from "../../context/AuthContext";
-import GameEndModal from "./GameEndModal"; // ← DODAJ IMPORT
+import GameEndModal from "./GameEndModal";
 
 const AppContainer = styled.div`
   display: flex;
@@ -594,7 +593,6 @@ interface HistoryItem {
   icon: string;
 }
 
-// ✅ DODAJ INTERFEJS dla gracza w końcowych wynikach
 interface FinalPlayer {
   player_id: string;
   display_name: string;
@@ -636,11 +634,12 @@ export default function SimpleOnlineGame() {
   const [showTradeModal, setShowTradeModal] = useState<boolean>(false);
   const [activeTradeOffers, setActiveTradeOffers] = useState<any[]>([]);
 
-  // ✅ NOWY STATE dla końca gry
+  // Game end states
   const [isGameEnded, setIsGameEnded] = useState(false);
   const [winner, setWinner] = useState<FinalPlayer | null>(null);
   const [finalStandings, setFinalStandings] = useState<FinalPlayer[]>([]);
-  const [gameStartTime] = useState<Date>(new Date()); // Do obliczania czasu gry
+  const [gameStartTime] = useState<Date>(new Date());
+  const [hasCurrentPlayerRolledDice, setHasCurrentPlayerRolledDice] = useState<boolean>(false);
 
   const { user, logout } = useAuth();
 
@@ -670,7 +669,7 @@ export default function SimpleOnlineGame() {
         icon,
       };
 
-      setGameHistory((prev) => [newEntry, ...prev].slice(0, 50)); // Keep last 50 entries
+      setGameHistory((prev) => [newEntry, ...prev].slice(0, 50));
     },
     [players]
   );
@@ -678,7 +677,6 @@ export default function SimpleOnlineGame() {
   // Get player name helper
   const getPlayerName = useCallback((playerId: string) => {
     const player = players.find(p => p.id === playerId);
-    console.log(`🔍 getPlayerName for ${playerId}: found player:`, player);
     return (player as any)?.display_name || playerId.substring(0, 8);
   }, [players]);
 
@@ -698,11 +696,6 @@ export default function SimpleOnlineGame() {
       requesting: Record<string, number>,
       targetPlayer?: string
     ) => {
-      console.log("Creating trade offer:", {
-        offering,
-        requesting,
-        targetPlayer,
-      });
       SimpleGameService.sendMessage({
         type: "create_trade_offer",
         offering,
@@ -716,13 +709,11 @@ export default function SimpleOnlineGame() {
 
   const handleAcceptTrade = useCallback(
     (offerId: string) => {
-      console.log("Accepting trade:", offerId);
       SimpleGameService.sendMessage({
         type: "accept_trade_offer",
         trade_offer_id: offerId,
       });
 
-      // Usuń ofertę z listy
       setActiveTradeOffers((prev) =>
         prev.filter((offer) => offer.id !== offerId)
       );
@@ -732,8 +723,6 @@ export default function SimpleOnlineGame() {
   );
 
   const handleRejectTrade = useCallback((offerId: string) => {
-    console.log("Rejecting trade:", offerId);
-    // Po prostu usuń z listy lokalnie
     setActiveTradeOffers((prev) =>
       prev.filter((offer) => offer.id !== offerId)
     );
@@ -742,11 +731,9 @@ export default function SimpleOnlineGame() {
   // Trade event handlers
   const handleTradeOfferReceived = useCallback(
     (data: any) => {
-      console.log("📨 Trade offer received:", data);
       if (data.trade_offer && data.trade_offer.from_player_id !== myPlayerId) {
         setActiveTradeOffers((prev) => [...prev, data.trade_offer]);
 
-        // Dodaj do historii
         const playerName = getPlayerName(data.trade_offer.from_player_id);
         addHistoryEntry(
           data.trade_offer.from_player_id,
@@ -761,21 +748,16 @@ export default function SimpleOnlineGame() {
 
   const handleTradeCompleted = useCallback(
     (data: any) => {
-      console.log("📨 Trade completed:", data);
-
-      // Usuń ofertę z aktywnych
       if (data.trade_offer) {
         setActiveTradeOffers((prev) =>
           prev.filter((offer) => offer.id !== data.trade_offer.id)
         );
       }
 
-      // Aktualizuj stan gry
       if (data.game_state) {
         handleGameUpdate(data);
       }
 
-      // Dodaj do historii
       if (data.trade_offer && data.accepting_player_id) {
         const fromPlayerName = getPlayerName(data.trade_offer.from_player_id);
         const toPlayerName = getPlayerName(data.accepting_player_id);
@@ -792,25 +774,19 @@ export default function SimpleOnlineGame() {
     [addHistoryEntry, getPlayerName, showSuccessIndicator]
   );
 
-  // ✅ DODAJ handleGameEnded
   const handleGameEnded = useCallback((data: any) => {
-    console.log("🏆 GAME ENDED!", data);
-    
     setIsGameEnded(true);
     
-    // Ustaw zwycięzcę
     if (data.final_standings && data.final_standings.length > 0) {
       const winnerData = data.final_standings.find((p: any) => p.is_winner);
       setWinner(winnerData || data.final_standings[0]);
       setFinalStandings(data.final_standings);
     }
     
-    // Zaktualizuj stan gry
     if (data.game_state) {
       setGameState(data.game_state);
     }
     
-    // Dodaj do historii
     if (data.final_standings) {
       const winnerData = data.final_standings.find((p: any) => p.is_winner);
       if (winnerData) {
@@ -824,362 +800,6 @@ export default function SimpleOnlineGame() {
     }
   }, [addHistoryEntry]);
 
-  // ✅ Automatyczne ustawianie currentPlayerId
-  useEffect(() => {
-    if (
-      gameState?.player_order &&
-      gameState?.current_player_index !== undefined
-    ) {
-      const expectedCurrentPlayer =
-        gameState.player_order[gameState.current_player_index];
-
-      if (expectedCurrentPlayer && expectedCurrentPlayer !== currentPlayerId) {
-        console.log("✅ Setting currentPlayerId to:", expectedCurrentPlayer);
-        setCurrentPlayerId(expectedCurrentPlayer);
-      }
-    }
-  }, [
-    gameState?.player_order,
-    gameState?.current_player_index,
-    currentPlayerId,
-  ]);
-
-  // Check if roomId exists
-  useEffect(() => {
-    if (!roomId) {
-      navigate("/");
-    }
-  }, [roomId, navigate]);
-
-  // WebSocket connection
-  useEffect(() => {
-    if (!roomId) {
-      navigate("/");
-      return;
-    }
-
-    const setupConnection = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        if (!SimpleGameService.isConnected()) {
-          await SimpleGameService.connectToRoom(roomId);
-          setIsConnected(true);
-        } else {
-          setIsConnected(true);
-        }
-
-        // ✅ WYMUŚ NATYCHMIASTOWE POBRANIE STANU
-        setTimeout(() => {
-          SimpleGameService.getGameState();
-        }, 100);
-
-        try {
-          const clientId = await SimpleGameService.getClientId();
-          console.log(
-            "✅ Got client ID immediately:",
-            clientId.substring(0, 8)
-          );
-          setMyPlayerId(clientId);
-        } catch (err) {
-          console.warn("Could not get client ID immediately:", err);
-          // Spróbuj ponownie po krótkim czasie
-          setTimeout(() => {
-            SimpleGameService.getClientId()
-              .then((clientId) => {
-                console.log(
-                  "✅ Got client ID after retry:",
-                  clientId.substring(0, 8)
-                );
-                setMyPlayerId(clientId);
-              })
-              .catch(console.warn);
-          }, 500);
-        }
-
-        setLoading(false);
-      } catch (err) {
-        setError(
-          `Connection error: ${err instanceof Error ? err.message : "Unknown error"
-          }`
-        );
-        setIsConnected(false);
-        setLoading(false);
-      }
-    };
-
-    setupConnection();
-  }, [roomId, navigate]);
-
-  // Game update handler
-  const handleGameUpdate = useCallback(
-    (data: any) => {
-      console.log("🎮 handleGameUpdate received:", data);
-
-      let newPlayersList = players; // Zachowaj starą listę jako backup
-
-      if (data.game_state) {
-        setGameState(data.game_state);
-
-        if (data.game_state.phase) {
-          setGamePhase(data.game_state.phase);
-        }
-
-        // Set current player
-        if (
-          data.game_state.current_player_index !== undefined &&
-          data.game_state.player_order &&
-          data.game_state.player_order.length > 0
-        ) {
-          const newCurrentPlayerId =
-            data.game_state.player_order[data.game_state.current_player_index];
-          if (newCurrentPlayerId && newCurrentPlayerId !== currentPlayerId) {
-            setCurrentPlayerId(newCurrentPlayerId);
-          }
-        }
-
-        console.log("🔍 Raw game_state.players:", data.game_state.players);
-
-        if (data.game_state.players) {
-          let playersData;
-          if (Array.isArray(data.game_state.players)) {
-            playersData = data.game_state.players;
-          } else {
-            playersData = Object.values(data.game_state.players);
-          }
-
-          console.log("🔍 Processed playersData:", playersData);
-
-          const playersList = playersData.map((p: any) => {
-            console.log("🔍 Mapping player:", p);
-            return {
-              id: p.player_id,
-              color: p.color,
-              display_name: p.display_name,
-              resources: p.resources || {},
-              victory_points: p.victory_points || 0,
-              settlements_left: p.settlements_left || 5,
-              cities_left: p.cities_left || 4,
-              roads_left: p.roads_left || 15,
-            };
-          });
-
-          console.log("🔍 Final playersList:", playersList);
-          setPlayers(playersList);
-          newPlayersList = playersList; // Użyj nowej listy
-        } else {
-          console.log("❌ No players in game_state");
-        }
-      }
-
-      // Handle turn advancement
-      if (data.turn_advanced) {
-        setCurrentPlayerId(data.new_current_player);
-      }
-
-      // Handle setup completion
-      if (data.setup_complete) {
-        setGamePhase('playing');
-      }
-
-      // ✅ ZMIENIONE - obsługa historii z kolorami
-      if (data.action && data.player_id) {
-        const player = newPlayersList.find(p => p.id === data.player_id);
-        const playerName = player?.display_name || data.player_id.substring(0, 8);
-        const playerColor = player?.color || "#64748b";
-
-        switch (data.action) {
-          case "build_settlement":
-            addHistoryEntry(data.player_id, `${playerName} built a settlement`, "🏠", playerColor);
-            break;
-          case "build_city":
-            addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰", playerColor);
-            break;
-          case "build_road":
-            addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️", playerColor);
-            break;
-          case "end_turn":
-            addHistoryEntry(data.player_id, `${playerName} ended their turn`, "⏭️", playerColor);
-            break;
-        }
-      }
-
-      // Action messages
-      if (data.action) {
-        const actionMessages: { [key: string]: string } = {
-          build_settlement: "Settlement built!",
-          build_city: "City built!",
-          build_road: "Road built!",
-          end_turn: "Turn ended",
-        };
-
-        if (actionMessages[data.action] && data.player_id === myPlayerId) {
-          showSuccessIndicator(actionMessages[data.action]);
-        }
-      }
-
-      // Auto clear build mode
-      if (data.action === "build_road" && gamePhase === "setup") {
-        setBuildMode(null);
-      }
-    },
-    [currentPlayerId, myPlayerId, gamePhase, showSuccessIndicator, addHistoryEntry, players]
-  );
-
-  // Event handlers
-  useEffect(() => {
-    const handleGameState = (data: any) => {
-      console.log("📨 handleGameState received:", data);
-      if (data.game_state) {
-        handleGameUpdate(data);
-      }
-    };
-
-    const handleClientId = (data: any) => {
-      console.log("🆔 handleClientId received:", data);
-      if (data.player_id) {
-        setMyPlayerId(data.player_id);
-      }
-    };
-
-    const handlePlayerJoined = (data: any) => {
-      console.log("👥 handlePlayerJoined received:", data);
-      // Dodaj do historii
-      if (data.player_id) {
-        const playerName = getPlayerName(data.player_id);
-        addHistoryEntry(data.player_id, `${playerName} joined the game`, "👋", data.player_color);
-      }
-      // ✅ ZAWSZE pobierz najnowszy stan gry gdy ktoś dołączy
-      SimpleGameService.getGameState();
-    };
-
-    const handleDiceRoll = (data: any) => {
-      console.log("🎲 handleDiceRoll received:", data);
-      if (data.total && data.player_id) {
-        setDiceResult(data.total);
-
-        // Add to history
-        const playerName = getPlayerName(data.player_id);
-        addHistoryEntry(
-          data.player_id,
-          `${playerName} rolled ${data.total}`,
-          "🎲",
-          data.player_color
-        );
-
-        if (data.player_id === myPlayerId) {
-          showSuccessIndicator(`Rolled ${data.total}!`);
-        }
-      }
-
-      setTimeout(() => {
-        setDiceResult(null);
-      }, 3000);
-    };
-
-    const handleError = (data: any) => {
-      setError(data.message || "An unknown error occurred");
-      setTimeout(() => {
-        setError(null);
-      }, 5000);
-    };
-
-    const handleDisconnect = () => {
-      setIsConnected(false);
-      setError("Disconnected from game server. Try refreshing the page.");
-    };
-
-    // ✅ DODANE - obsługa początkowego stanu gry
-    const handleInitialGameState = (data: any) => {
-      console.log("📨 Initial game state received:", data);
-      if (data.game_state) {
-        handleGameUpdate(data);
-      }
-    };
-
-    if (isConnected) {
-      // ✅ DODAJ event handler dla końca gry
-      SimpleGameService.addEventHandler("game_ended", handleGameEnded);
-      SimpleGameService.addEventHandler("game_update", handleGameUpdate);
-      SimpleGameService.addEventHandler("game_state", handleGameState);
-      SimpleGameService.addEventHandler("client_id", handleClientId);
-      SimpleGameService.addEventHandler("player_joined", handlePlayerJoined);
-      SimpleGameService.addEventHandler("dice_roll", handleDiceRoll);
-      SimpleGameService.addEventHandler("error", handleError);
-      SimpleGameService.addEventHandler("disconnect", handleDisconnect);
-      SimpleGameService.addEventHandler(
-        "trade_offer_received",
-        handleTradeOfferReceived
-      );
-      SimpleGameService.addEventHandler(
-        "trade_completed",
-        handleTradeCompleted
-      );
-      SimpleGameService.addEventHandler("game_state", handleInitialGameState);
-    }
-
-    return () => {
-      if (isConnected) {
-        // ✅ DODAJ usuwanie event handlera dla końca gry
-        SimpleGameService.removeEventHandler("game_ended", handleGameEnded);
-        SimpleGameService.removeEventHandler("game_update", handleGameUpdate);
-        SimpleGameService.removeEventHandler("game_state", handleGameState);
-        SimpleGameService.removeEventHandler("client_id", handleClientId);
-        SimpleGameService.removeEventHandler(
-          "player_joined",
-          handlePlayerJoined
-        );
-        SimpleGameService.removeEventHandler("dice_roll", handleDiceRoll);
-        SimpleGameService.removeEventHandler("error", handleError);
-        SimpleGameService.removeEventHandler("disconnect", handleDisconnect);
-        SimpleGameService.removeEventHandler(
-          "trade_offer_received",
-          handleTradeOfferReceived
-        );
-        SimpleGameService.removeEventHandler(
-          "trade_completed",
-          handleTradeCompleted
-        );
-        SimpleGameService.removeEventHandler("game_state", handleInitialGameState);
-      }
-    };
-  }, [
-    isConnected,
-    handleGameUpdate,
-    handleGameEnded, // ✅ DODAJ
-    myPlayerId,
-    showSuccessIndicator,
-    addHistoryEntry,
-    getPlayerName,
-    handleTradeOfferReceived,
-    handleTradeCompleted,
-  ]);
-
-  // ✅ DODAJ funkcje obsługi końca gry
-  const handleGameEndClose = () => {
-    setIsGameEnded(false);
-  };
-
-  const handlePlayAgain = () => {
-    navigate('/room/new');
-  };
-
-  const handleMainMenu = () => {
-    navigate('/');
-  };
-
-  const calculateGameStats = () => {
-    const now = new Date();
-    const durationMs = now.getTime() - gameStartTime.getTime();
-    const durationMinutes = Math.floor(durationMs / 60000);
-    
-    return {
-      duration: `${durationMinutes} min`,
-      totalTurns: gameState?.current_turn || 0
-    };
-  };
-
   // Helper functions
   const getMyResources = useCallback(() => {
     const myPlayer = players.find((p) => p.id === myPlayerId);
@@ -1187,11 +807,11 @@ export default function SimpleOnlineGame() {
   }, [players, myPlayerId]);
 
   const isMyTurn = useCallback(() => {
-    return myPlayerId === currentPlayerId && !isGameEnded; // ✅ DODAJ !isGameEnded
+    return myPlayerId === currentPlayerId && !isGameEnded;
   }, [myPlayerId, currentPlayerId, isGameEnded]);
 
   const canBuildSettlement = useCallback(() => {
-    if (isGameEnded) return false; // ✅ DODAJ sprawdzenie
+    if (isGameEnded) return false;
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
 
@@ -1210,7 +830,7 @@ export default function SimpleOnlineGame() {
   }, [players, myPlayerId, gamePhase, isGameEnded]);
 
   const canBuildCity = useCallback(() => {
-    if (isGameEnded) return false; // ✅ DODAJ sprawdzenie
+    if (isGameEnded) return false;
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
 
@@ -1225,7 +845,7 @@ export default function SimpleOnlineGame() {
   }, [players, myPlayerId, gamePhase, isGameEnded]);
 
   const canBuildRoad = useCallback(() => {
-    if (isGameEnded) return false; // ✅ DODAJ sprawdzenie
+    if (isGameEnded) return false;
     const myPlayer = players.find((p) => p.id === myPlayerId);
     if (!myPlayer) return false;
 
@@ -1239,24 +859,133 @@ export default function SimpleOnlineGame() {
     );
   }, [players, myPlayerId, gamePhase, isGameEnded]);
 
+  // NOWE FUNKCJE KONTROLNE DLA SETUP
+   const canEndTurnInSetup = useCallback(() => {
+    if (gamePhase !== "setup" || !isMyTurn()) return false;
+    
+    const setupProgress = gameState?.setup_progress?.[myPlayerId];
+    if (!setupProgress) return false;
+    
+    const setupRound = gameState?.setup_round || 1;
+    
+    if (setupRound === 1) {
+      // Pierwsza runda: potrzeba 1 osady i 1 drogi
+      return setupProgress.settlements >= 1 && setupProgress.roads >= 1;
+    } else {
+      // Druga runda: potrzeba 2 osad i 2 dróg
+      return setupProgress.settlements >= 2 && setupProgress.roads >= 2;
+    }
+  }, [gamePhase, isMyTurn, gameState, myPlayerId]);
+
+  const canTakeActionsInSetup = useCallback(() => {
+    if (gamePhase !== "setup") return isMyTurn();
+    if (!isMyTurn()) return false;
+    
+    // W setup zawsze można próbować budować (logika sprawdzania jest po stronie serwera)
+    return true;
+  }, [gamePhase, isMyTurn]);
+
+  
+
+  const canBuildInSetup = useCallback((type: 'settlement' | 'road') => {
+    if (gamePhase !== "setup" || !isMyTurn()) return false;
+    
+    const setupProgress = gameState?.setup_progress?.[myPlayerId];
+    if (!setupProgress) return true; // Pozwól próbować, serwer sprawdzi
+    
+    const setupRound = gameState?.setup_round || 1;
+    
+    if (type === 'settlement') {
+      if (setupRound === 1) {
+        // Pierwsza runda: może budować osadę jeśli nie ma jeszcze żadnej w tej rundzie
+        return setupProgress.settlements < 1;
+      } else {
+        // Druga runda: może budować drugą osadę jeśli ma już jedną
+        return setupProgress.settlements < 2;
+      }
+    } else if (type === 'road') {
+      if (setupRound === 1) {
+        // Pierwsza runda: może budować drogę tylko jeśli już ma osadę w tej rundzie
+        return setupProgress.settlements >= 1 && setupProgress.roads < 1;
+      } else {
+        // Druga runda: może budować drugą drogę jeśli ma już drugą osadę
+        return setupProgress.settlements >= 2 && setupProgress.roads < 2;
+      }
+    }
+    
+    return false;
+  }, [gamePhase, isMyTurn, gameState, myPlayerId]);
+
+  const canRollDiceInGame = useCallback(() => {
+    if (gamePhase !== "playing" || !isMyTurn()) return false;
+    
+    // Sprawdź czy gracz już rzucił kostką w tej turze (z backend state)
+    const hasRolledFromBackend = gameState?.has_rolled_dice?.[myPlayerId] || false;
+    
+    return !hasRolledFromBackend && !hasCurrentPlayerRolledDice;
+  }, [gamePhase, isMyTurn, gameState?.has_rolled_dice, myPlayerId, hasCurrentPlayerRolledDice]);
+
+  const canTakeActionsInGame = useCallback(() => {
+    if (gamePhase !== "playing" || !isMyTurn()) return false;
+    
+    // W normalnej grze można budować/handlować tylko po rzucie kości
+    const hasRolledFromBackend = gameState?.has_rolled_dice?.[myPlayerId] || false;
+    
+    return hasRolledFromBackend || hasCurrentPlayerRolledDice;
+  }, [gamePhase, isMyTurn, gameState?.has_rolled_dice, myPlayerId, hasCurrentPlayerRolledDice]);
+
+
+
+
+   const canEndTurnInGame = useCallback(() => {
+    if (gamePhase !== "playing" || !isMyTurn()) return false;
+    
+    // W normalnej grze można zakończyć turę tylko po rzucie kości
+    const hasRolledFromBackend = gameState?.has_rolled_dice?.[myPlayerId] || false;
+    
+    return hasRolledFromBackend || hasCurrentPlayerRolledDice;
+  }, [gamePhase, isMyTurn, gameState?.has_rolled_dice, myPlayerId, hasCurrentPlayerRolledDice]);
+
+   useEffect(() => {
+    if (!isMyTurn()) {
+      setHasCurrentPlayerRolledDice(false);
+    }
+  }, [isMyTurn]);
+
+  // ✅ RESETUJ STAN KOŚCI przy zmianie gracza
+  useEffect(() => {
+    const currentPlayerFromBackend = gameState?.player_order?.[gameState?.current_player_index];
+    if (currentPlayerFromBackend && currentPlayerFromBackend !== myPlayerId) {
+      setHasCurrentPlayerRolledDice(false);
+    }
+  }, [gameState?.current_player_index, gameState?.player_order, myPlayerId]);
+
+
   // Action handlers
   const handleEndTurn = useCallback(() => {
     if (!isMyTurn()) return;
     SimpleGameService.endTurn();
     setBuildMode(null);
+    setHasCurrentPlayerRolledDice(false); // ✅ RESETUJ PO KOŃCU TURY
     showSuccessIndicator("Ending turn...");
   }, [isMyTurn, showSuccessIndicator]);
 
   const handleRollDice = useCallback(() => {
-    if (!isMyTurn() || gamePhase === "setup") return;
+    if (gamePhase === "setup") {
+      showSuccessIndicator("Cannot roll dice in setup phase");
+      return;
+    }
+    if (!canRollDiceInGame()) return;
+    
     SimpleGameService.rollDice();
+    setHasCurrentPlayerRolledDice(true); // ✅ USTAW FLAGĘ LOKALNIE
     showSuccessIndicator("Rolling dice...");
-  }, [isMyTurn, gamePhase, showSuccessIndicator]);
+  }, [canRollDiceInGame, gamePhase, showSuccessIndicator]);
 
   // Click handlers
   const handleVertexClick = useCallback(
     (vertexId: number) => {
-      if (!isMyTurn() || isGameEnded) return; // ✅ DODAJ isGameEnded
+      if (!isMyTurn() || isGameEnded) return;
       
       if (buildMode === "settlement") {
         SimpleGameService.buildSettlement(vertexId);
@@ -1271,7 +1000,7 @@ export default function SimpleOnlineGame() {
 
   const handleEdgeClick = useCallback(
     (edgeId: number) => {
-      if (!isMyTurn() || buildMode !== "road" || isGameEnded) return; // ✅ DODAJ isGameEnded
+      if (!isMyTurn() || buildMode !== "road" || isGameEnded) return;
       SimpleGameService.buildRoad(edgeId);
       showSuccessIndicator("Building road...");
     },
@@ -1285,12 +1014,17 @@ export default function SimpleOnlineGame() {
 
   // Build mode toggle
   const handleBuild = (type: "settlement" | "city" | "road") => {
-    if (!isMyTurn() || isGameEnded) return; // ✅ DODAJ isGameEnded
+    if (!isMyTurn() || isGameEnded) return;
     if (buildMode === type) {
       setBuildMode(null);
     } else {
       setBuildMode(type);
     }
+  };
+
+  const handleSeedResources = () => {
+    SimpleGameService.seedResources();
+    showSuccessIndicator("Resources seeded! 🎯");
   };
 
   // Resource processing
@@ -1321,9 +1055,302 @@ export default function SimpleOnlineGame() {
     ore: "⛰️",
   };
 
-  const handleSeedResources = () => {
-    SimpleGameService.seedResources();
-    showSuccessIndicator("Resources seeded! 🎯");
+  // useEffect hooks
+  useEffect(() => {
+    if (
+      gameState?.player_order &&
+      gameState?.current_player_index !== undefined
+    ) {
+      const expectedCurrentPlayer =
+        gameState.player_order[gameState.current_player_index];
+
+      if (expectedCurrentPlayer && expectedCurrentPlayer !== currentPlayerId) {
+        setCurrentPlayerId(expectedCurrentPlayer);
+      }
+    }
+  }, [
+    gameState?.player_order,
+    gameState?.current_player_index,
+    currentPlayerId,
+  ]);
+
+  useEffect(() => {
+    if (!roomId) {
+      navigate("/");
+    }
+  }, [roomId, navigate]);
+
+  // WebSocket connection
+  useEffect(() => {
+    if (!roomId) {
+      navigate("/");
+      return;
+    }
+
+    const setupConnection = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        if (!SimpleGameService.isConnected()) {
+          await SimpleGameService.connectToRoom(roomId);
+          setIsConnected(true);
+        } else {
+          setIsConnected(true);
+        }
+
+        setTimeout(() => {
+          SimpleGameService.getGameState();
+        }, 100);
+
+        try {
+          const clientId = await SimpleGameService.getClientId();
+          setMyPlayerId(clientId);
+        } catch (err) {
+          setTimeout(() => {
+            SimpleGameService.getClientId()
+              .then((clientId) => {
+                setMyPlayerId(clientId);
+              })
+              .catch(console.warn);
+          }, 500);
+        }
+
+        setLoading(false);
+      } catch (err) {
+        setError(
+          `Connection error: ${err instanceof Error ? err.message : "Unknown error"}`
+        );
+        setIsConnected(false);
+        setLoading(false);
+      }
+    };
+
+    setupConnection();
+  }, [roomId, navigate]);
+
+  // Game update handler
+  const handleGameUpdate = useCallback(
+    (data: any) => {
+      let newPlayersList = players;
+
+      if (data.game_state) {
+        setGameState(data.game_state);
+
+        if (data.game_state.phase) {
+          setGamePhase(data.game_state.phase);
+        }
+
+        if (
+          data.game_state.current_player_index !== undefined &&
+          data.game_state.player_order &&
+          data.game_state.player_order.length > 0
+        ) {
+          const newCurrentPlayerId =
+            data.game_state.player_order[data.game_state.current_player_index];
+          if (newCurrentPlayerId && newCurrentPlayerId !== currentPlayerId) {
+            setCurrentPlayerId(newCurrentPlayerId);
+          }
+        }
+
+        if (data.game_state.players) {
+          let playersData;
+          if (Array.isArray(data.game_state.players)) {
+            playersData = data.game_state.players;
+          } else {
+            playersData = Object.values(data.game_state.players);
+          }
+
+          const playersList = playersData.map((p: any) => ({
+            id: p.player_id,
+            color: p.color,
+            display_name: p.display_name,
+            resources: p.resources || {},
+            victory_points: p.victory_points || 0,
+            settlements_left: p.settlements_left || 5,
+            cities_left: p.cities_left || 4,
+            roads_left: p.roads_left || 15,
+          }));
+
+          setPlayers(playersList);
+          newPlayersList = playersList;
+        }
+      }
+
+      if (data.turn_advanced) {
+        setCurrentPlayerId(data.new_current_player);
+      }
+
+      if (data.setup_complete) {
+        setGamePhase('playing');
+      }
+
+      if (data.action && data.player_id) {
+        const player = newPlayersList.find(p => p.id === data.player_id);
+        const playerName = player?.display_name || data.player_id.substring(0, 8);
+        const playerColor = player?.color || "#64748b";
+
+        switch (data.action) {
+          case "build_settlement":
+            addHistoryEntry(data.player_id, `${playerName} built a settlement`, "🏠", playerColor);
+            break;
+          case "build_city":
+            addHistoryEntry(data.player_id, `${playerName} built a city`, "🏰", playerColor);
+            break;
+          case "build_road":
+            addHistoryEntry(data.player_id, `${playerName} built a road`, "🛣️", playerColor);
+            break;
+          case "end_turn":
+            addHistoryEntry(data.player_id, `${playerName} ended their turn`, "⏭️", playerColor);
+            break;
+        }
+      }
+
+      if (data.action) {
+        const actionMessages: { [key: string]: string } = {
+          build_settlement: "Settlement built!",
+          build_city: "City built!",
+          build_road: "Road built!",
+          end_turn: "Turn ended",
+        };
+
+        if (actionMessages[data.action] && data.player_id === myPlayerId) {
+          showSuccessIndicator(actionMessages[data.action]);
+        }
+      }
+
+      if (data.action === "build_road" && gamePhase === "setup") {
+        setBuildMode(null);
+      }
+    },
+    [currentPlayerId, myPlayerId, gamePhase, showSuccessIndicator, addHistoryEntry, players]
+  );
+
+  // Event handlers
+  useEffect(() => {
+    const handleGameState = (data: any) => {
+      if (data.game_state) {
+        handleGameUpdate(data);
+      }
+    };
+
+    const handleClientId = (data: any) => {
+      if (data.player_id) {
+        setMyPlayerId(data.player_id);
+      }
+    };
+
+    const handlePlayerJoined = (data: any) => {
+      if (data.player_id) {
+        const playerName = getPlayerName(data.player_id);
+        addHistoryEntry(data.player_id, `${playerName} joined the game`, "👋", data.player_color);
+      }
+      SimpleGameService.getGameState();
+    };
+
+    const handleDiceRoll = (data: any) => {
+      if (data.total && data.player_id) {
+        setDiceResult(data.total);
+
+        const playerName = getPlayerName(data.player_id);
+        addHistoryEntry(
+          data.player_id,
+          `${playerName} rolled ${data.total}`,
+          "🎲",
+          data.player_color
+        );
+
+        if (data.player_id === myPlayerId) {
+          showSuccessIndicator(`Rolled ${data.total}!`);
+        }
+      }
+
+      setTimeout(() => {
+        setDiceResult(null);
+      }, 3000);
+    };
+
+    const handleError = (data: any) => {
+      setError(data.message || "An unknown error occurred");
+      setTimeout(() => {
+        setError(null);
+      }, 5000);
+    };
+
+    const handleDisconnect = () => {
+      setIsConnected(false);
+      setError("Disconnected from game server. Try refreshing the page.");
+    };
+
+    const handleInitialGameState = (data: any) => {
+      if (data.game_state) {
+        handleGameUpdate(data);
+      }
+    };
+
+    if (isConnected) {
+      SimpleGameService.addEventHandler("game_ended", handleGameEnded);
+      SimpleGameService.addEventHandler("game_update", handleGameUpdate);
+      SimpleGameService.addEventHandler("game_state", handleGameState);
+      SimpleGameService.addEventHandler("client_id", handleClientId);
+      SimpleGameService.addEventHandler("player_joined", handlePlayerJoined);
+      SimpleGameService.addEventHandler("dice_roll", handleDiceRoll);
+      SimpleGameService.addEventHandler("error", handleError);
+      SimpleGameService.addEventHandler("disconnect", handleDisconnect);
+      SimpleGameService.addEventHandler("trade_offer_received", handleTradeOfferReceived);
+      SimpleGameService.addEventHandler("trade_completed", handleTradeCompleted);
+      SimpleGameService.addEventHandler("game_state", handleInitialGameState);
+    }
+
+    return () => {
+      if (isConnected) {
+        SimpleGameService.removeEventHandler("game_ended", handleGameEnded);
+        SimpleGameService.removeEventHandler("game_update", handleGameUpdate);
+        SimpleGameService.removeEventHandler("game_state", handleGameState);
+        SimpleGameService.removeEventHandler("client_id", handleClientId);
+        SimpleGameService.removeEventHandler("player_joined", handlePlayerJoined);
+        SimpleGameService.removeEventHandler("dice_roll", handleDiceRoll);
+        SimpleGameService.removeEventHandler("error", handleError);
+        SimpleGameService.removeEventHandler("disconnect", handleDisconnect);
+        SimpleGameService.removeEventHandler("trade_offer_received", handleTradeOfferReceived);
+        SimpleGameService.removeEventHandler("trade_completed", handleTradeCompleted);
+        SimpleGameService.removeEventHandler("game_state", handleInitialGameState);
+      }
+    };
+  }, [
+    isConnected,
+    handleGameUpdate,
+    handleGameEnded,
+    myPlayerId,
+    showSuccessIndicator,
+    addHistoryEntry,
+    getPlayerName,
+    handleTradeOfferReceived,
+    handleTradeCompleted,
+  ]);
+
+  // Game end handlers
+  const handleGameEndClose = () => {
+    setIsGameEnded(false);
+  };
+
+  const handlePlayAgain = () => {
+    navigate('/room/new');
+  };
+
+  const handleMainMenu = () => {
+    navigate('/');
+  };
+
+  const calculateGameStats = () => {
+    const now = new Date();
+    const durationMs = now.getTime() - gameStartTime.getTime();
+    const durationMinutes = Math.floor(durationMs / 60000);
+    
+    return {
+      duration: `${durationMinutes} min`,
+      totalTurns: gameState?.current_turn || 0
+    };
   };
 
   if (loading) {
@@ -1389,7 +1416,7 @@ export default function SimpleOnlineGame() {
             <Panel>
               <Section>
                 <SectionHeader>Players ({players.length})</SectionHeader>
-                {players.map((player, index) => {
+                {players.map((player) => {
                   const isCurrentPlayer = player.id === currentPlayerId;
                   const isLeading =
                     player.victory_points === maxVictoryPoints &&
@@ -1453,7 +1480,7 @@ export default function SimpleOnlineGame() {
           </HistorySection>
         </LeftPanel>
 
-        <GameBoard>
+       <GameBoard>
           <OnlineCatanSVGBoard
             gameState={gameState}
             onVertexClick={handleVertexClick}
@@ -1493,6 +1520,21 @@ export default function SimpleOnlineGame() {
               </ResourceGrid>
             </Section>
 
+          <Section>
+              <SectionHeader>DEBUG INFO</SectionHeader>
+              <div style={{fontSize: '10px', background: '#f0f0f0', padding: '8px', borderRadius: '4px'}}>
+                <div>Turn: {isMyTurn() ? "YES" : "NO"}</div>
+                <div>Phase: {gamePhase}</div>
+                <div>Round: {gameState?.setup_round || "?"}</div>
+                <div>SetupProgress: {JSON.stringify(gameState?.setup_progress?.[myPlayerId] || {})}</div>
+                <div>HasRolledBackend: {gameState?.has_rolled_dice?.[myPlayerId] ? "YES" : "NO"}</div>
+                <div>HasRolledLocal: {hasCurrentPlayerRolledDice ? "YES" : "NO"}</div>
+                <div>CanRoll: {canRollDiceInGame() ? "YES" : "NO"}</div>
+                <div>CanBuild: {gamePhase === "setup" ? (canTakeActionsInSetup() ? "YES" : "NO") : (canTakeActionsInGame() ? "YES" : "NO")}</div>
+                <div>CanEndTurn: {gamePhase === "setup" ? (canEndTurnInSetup() ? "YES" : "NO") : (canEndTurnInGame() ? "YES" : "NO")}</div>
+              </div>
+            </Section>
+
             <Section>
               <SectionHeader>Actions</SectionHeader>
               <ActionsGrid>
@@ -1516,7 +1558,7 @@ export default function SimpleOnlineGame() {
                     <ActionButton
                       variant="danger"
                       onClick={handleEndTurn}
-                      disabled={!isMyTurn()}
+                      disabled={!canEndTurnInSetup()}
                       compact
                     >
                       <ButtonIcon>⏭️</ButtonIcon>
@@ -1526,23 +1568,28 @@ export default function SimpleOnlineGame() {
                 ) : (
                   <>
                     <ActionButton
-                      variant="secondary"
+                      variant={canRollDiceInGame() ? "primary" : "secondary"}
                       onClick={handleRollDice}
-                      disabled={!isMyTurn()}
+                      disabled={!canRollDiceInGame()}
                       compact
+                      style={canRollDiceInGame() ? { 
+                        backgroundColor: '#10b981', 
+                        borderColor: '#10b981',
+                        boxShadow: '0 0 0 3px rgba(16, 185, 129, 0.3)'
+                      } : {}}
                     >
                       <ButtonIcon>🎲</ButtonIcon>
-                      Roll
+                      Roll Dice
                     </ActionButton>
 
                     <ActionButton
                       variant="danger"
                       onClick={handleEndTurn}
-                      disabled={!isMyTurn()}
+                      disabled={!canEndTurnInGame()}
                       compact
                     >
                       <ButtonIcon>⏭️</ButtonIcon>
-                      End
+                      End Turn
                     </ActionButton>
                   </>
                 )}
@@ -1556,8 +1603,9 @@ export default function SimpleOnlineGame() {
                   active={buildMode === "settlement"}
                   onClick={() => handleBuild("settlement")}
                   disabled={
-                    !isMyTurn() ||
-                    (!canBuildSettlement() && gamePhase !== "setup")
+                    gamePhase === "setup" 
+                      ? !canBuildInSetup('settlement')
+                      : (!canTakeActionsInGame() || !canBuildSettlement())
                   }
                   compact
                 >
@@ -1569,7 +1617,9 @@ export default function SimpleOnlineGame() {
                   active={buildMode === "road"}
                   onClick={() => handleBuild("road")}
                   disabled={
-                    !isMyTurn() || (!canBuildRoad() && gamePhase !== "setup")
+                    gamePhase === "setup" 
+                      ? !canBuildInSetup('road')
+                      : (!canTakeActionsInGame() || !canBuildRoad())
                   }
                   compact
                 >
@@ -1581,7 +1631,7 @@ export default function SimpleOnlineGame() {
                   active={buildMode === "city"}
                   onClick={() => handleBuild("city")}
                   disabled={
-                    !isMyTurn() || !canBuildCity() || gamePhase === "setup"
+                    !canTakeActionsInGame() || !canBuildCity() || gamePhase === "setup"
                   }
                   compact
                 >
@@ -1601,7 +1651,7 @@ export default function SimpleOnlineGame() {
               <ActionsGrid>
                 <ActionButton
                   onClick={() => setShowTradeModal(true)}
-                  disabled={!isMyTurn() || gamePhase === "setup"}
+                  disabled={!canTakeActionsInGame() || gamePhase === "setup"}
                   compact
                 >
                   <ButtonIcon>🤝</ButtonIcon>
@@ -1631,7 +1681,6 @@ export default function SimpleOnlineGame() {
         </RightPanel>
       </MainContent>
 
-      {/* ✅ DODAJ GameEndModal */}
       <GameEndModal
         isVisible={isGameEnded}
         winner={winner}
@@ -1642,7 +1691,6 @@ export default function SimpleOnlineGame() {
         onMainMenu={handleMainMenu}
       />
 
-      {/* Trade Modal */}
       <TradeModal
         isOpen={showTradeModal}
         onClose={() => setShowTradeModal(false)}
@@ -1652,7 +1700,6 @@ export default function SimpleOnlineGame() {
         onCreateOffer={handleCreateTradeOffer}
       />
 
-      {/* Trade Offer Notifications */}
       {activeTradeOffers.map((offer, index) => (
         <div key={offer.id} style={{ top: `${100 + index * 200}px` }}>
           <TradeOfferNotification
