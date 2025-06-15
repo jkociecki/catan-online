@@ -1,9 +1,10 @@
-# backend/game_api/views.py
+# backend/game_api/views.py - POPRAWIONA WERSJA
 import uuid
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Avg, Count, Sum, Q
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Game, GamePlayer, PlayerResource
 from .serializers import UserSerializer, GameSerializer, GamePlayerSerializer, PlayerResourceSerializer
 from game_api.game_saver import GameSaver
+import random
 
 # ✅ Używaj właściwego modelu User
 User = get_user_model()
@@ -222,8 +224,8 @@ class StatsViewSet(viewsets.ViewSet):
             'leaderboard': user_stats[:10]  # Top 10
         })
 
-
-        @action(detail=False, methods=['post'])
+    # ✅ POPRAWIONE WCIĘCIE - metoda na właściwym poziomie klasy
+    @action(detail=False, methods=['post'])
     def create_test_game(self, request):
         """ENDPOINT DO TESTOWANIA - tworzy przykładową grę"""
         try:
@@ -274,7 +276,6 @@ class StatsViewSet(viewsets.ViewSet):
             return Response({
                 'error': f'Failed to create test game: {str(e)}'
             }, status=500)
-        
         
     @action(detail=False, methods=['get'])
     def resource_analysis(self, request):
