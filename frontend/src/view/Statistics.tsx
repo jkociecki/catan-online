@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, TrendingUp, Target, Dice6, Calendar, User, BarChart3, Activity, ChevronDown, ChevronRight, Gamepad2, Users, Clock, Award } from 'lucide-react';
 import NavBar from '../navigation/NavigationBar';
+import { useAuth } from '../context/AuthContext';
 
 // TypeScript interfaces
 interface GameData {
@@ -76,22 +77,31 @@ const CatanStatsDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [expandedGame, setExpandedGame] = useState<number | null>(null);
   const [gameDetails, setGameDetails] = useState<{ [key: number]: GameDetails }>({});
+  const { user, token } = useAuth();
 
-  const PLAYER_ID = 2; // Maria (gracz nr 2)
-  const API_BASE = 'http://localhost:8000/api';
+  const API_BASE = `${process.env.REACT_APP_API_URL}/api`;
 
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    if (user?.id) {
+      fetchAllData();
+    }
+  }, [user]);
 
   const fetchAllData = async () => {
+    if (!user?.id) return;
+
     try {
       setLoading(true);
       
+      const headers = {
+        'Authorization': `Token ${token}`,
+        'Content-Type': 'application/json',
+      };
+      
       const [statsResponse, gamesResponse, globalResponse] = await Promise.all([
-        fetch(`${API_BASE}/users/${PLAYER_ID}/statistics/`),
-        fetch(`${API_BASE}/users/${PLAYER_ID}/games/`),
-        fetch(`${API_BASE}/stats/global_stats/`)
+        fetch(`${API_BASE}/users/${user.id}/statistics/`, { headers }),
+        fetch(`${API_BASE}/users/${user.id}/games/`, { headers }),
+        fetch(`${API_BASE}/stats/global_stats/`)  // Global stats are public
       ]);
 
       if (!statsResponse.ok || !gamesResponse.ok || !globalResponse.ok) {
@@ -119,7 +129,12 @@ const CatanStatsDashboard = () => {
 
   const fetchGameDetails = async (gameId: number) => {
     try {
-      const response = await fetch(`${API_BASE}/games/${gameId}/players/`);
+      const headers = {
+        'Authorization': `Token ${token}`,
+        'Content-Type': 'application/json',
+      };
+      
+      const response = await fetch(`${API_BASE}/games/${gameId}/players/`, { headers });
       if (!response.ok) throw new Error('Błąd pobierania szczegółów gry');
       
       const details = await response.json();
@@ -305,6 +320,57 @@ const CatanStatsDashboard = () => {
                 <span className="font-medium text-gray-700">{item.name}</span>
               </div>
               <span className="font-bold text-gray-800">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderLeaderboard = () => {
+    if (!globalStats?.leaderboard) return null;
+
+    return (
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8 hover:shadow-2xl transition-all duration-300">
+        <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+          <Trophy className="h-5 w-5 text-indigo-600" />
+          Ranking Graczy
+        </h3>
+        <div className="space-y-4">
+          {globalStats.leaderboard.map((player, index) => (
+            <div
+              key={player.user_id}
+              className={`flex items-center justify-between p-4 rounded-xl transition-all duration-300 ${
+                player.user_id === user?.id
+                  ? 'bg-gradient-to-r from-amber-100 to-yellow-100 border-2 border-amber-400 shadow-lg transform scale-105'
+                  : 'bg-gray-50/80 hover:bg-gray-100/80'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">
+                  {index + 1}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-800">{player.username}</span>
+                  {player.user_id === user?.id && (
+                    <span className="bg-amber-500 text-white px-2 py-1 rounded-full text-xs font-medium">TY</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="text-center">
+                  <div className="text-sm text-gray-500">Wygrane</div>
+                  <div className="font-bold text-indigo-600">{player.wins}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm text-gray-500">% Wygranych</div>
+                  <div className="font-bold text-indigo-600">{player.win_rate}%</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-sm text-gray-500">Śr. Punkty</div>
+                  <div className="font-bold text-indigo-600">{player.avg_points}</div>
+                </div>
+              </div>
             </div>
           ))}
         </div>
@@ -523,44 +589,7 @@ const CatanStatsDashboard = () => {
             <Users className="h-6 w-6 text-indigo-600" />
             Ranking graczy
           </h2>
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
-            <div className="space-y-4">
-              {globalStats?.leaderboard?.slice(0, 8).map((player: Player, index: number) => (
-                <div 
-                  key={player.user_id} 
-                  className={`flex items-center justify-between p-4 rounded-xl transition-all duration-300 ${
-                    player.user_id === PLAYER_ID 
-                      ? 'bg-gradient-to-r from-amber-100 to-yellow-100 border-2 border-amber-400 shadow-lg transform scale-105' 
-                      : 'bg-gray-50/80 hover:bg-gray-100/80'
-                  }`}
-                >
-                  <div className="flex items-center space-x-4">
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-lg ${
-                      index === 0 ? 'bg-gradient-to-r from-yellow-400 to-yellow-600 text-white' :
-                      index === 1 ? 'bg-gradient-to-r from-gray-400 to-gray-600 text-white' :
-                      index === 2 ? 'bg-gradient-to-r from-orange-400 to-orange-600 text-white' : 
-                      'bg-gradient-to-r from-indigo-400 to-indigo-600 text-white'
-                    }`}>
-                      {index + 1}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-gray-800">{player.username}</span>
-                        {player.user_id === PLAYER_ID && (
-                          <span className="bg-amber-500 text-white px-2 py-1 rounded-full text-xs font-medium">TY</span>
-                        )}
-                      </div>
-                      <div className="text-sm text-gray-500">{player.wins}/{player.total_games} gier</div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-lg text-green-600">{player.win_rate}%</div>
-                    <div className="text-sm text-gray-500">{player.avg_points} śr. pkt</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          {renderLeaderboard()}
         </div>
 
         {/* Historia gier */}
@@ -700,7 +729,7 @@ const CatanStatsDashboard = () => {
                                   <div 
                                     key={player.user_id}
                                     className={`flex items-center justify-between p-2 rounded-lg text-sm ${
-                                      player.user_id === PLAYER_ID 
+                                      player.user_id === user?.id 
                                         ? 'bg-amber-100 border border-amber-300' 
                                         : 'bg-gray-50'
                                     }`}
@@ -715,7 +744,7 @@ const CatanStatsDashboard = () => {
                                         {playerIndex + 1}
                                       </span>
                                       <span className="font-medium">{player.username}</span>
-                                      {player.user_id === PLAYER_ID && (
+                                      {player.user_id === user?.id && (
                                         <span className="text-xs bg-amber-500 text-white px-1 rounded">TY</span>
                                       )}
                                     </div>
@@ -753,13 +782,13 @@ const CatanStatsDashboard = () => {
                                     <tr 
                                       key={player.user_id}
                                       className={`border-b border-gray-100 ${
-                                        player.user_id === PLAYER_ID ? 'bg-amber-50' : ''
+                                        player.user_id === user?.id ? 'bg-amber-50' : ''
                                       }`}
                                     >
                                       <td className="py-3 px-3">
                                         <div className="flex items-center gap-2">
                                           <span className="font-medium">{player.username}</span>
-                                          {player.user_id === PLAYER_ID && (
+                                          {player.user_id === user?.id && (
                                             <span className="text-xs bg-amber-500 text-white px-1 rounded">TY</span>
                                           )}
                                         </div>

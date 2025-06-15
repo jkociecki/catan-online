@@ -213,7 +213,7 @@ const getResourceColor = (resource: string): string => {
 };
 
 // API Configuration
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = `${process.env.REACT_APP_API_URL}/api`;
 
 // Definicja planszy Catana - 19 heksagonów
 const hexData = [
