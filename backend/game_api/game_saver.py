@@ -1,5 +1,6 @@
-# backend/game_api/game_saver.py - ODPORNA WERSJA NA BŁĘDY
+# backend/game_api/game_saver.py - NAPRAWIONA WERSJA - zapisuje wszystkich graczy
 from django.contrib.auth import get_user_model
+from django.db.models import Q  # ✅ DODANY IMPORT!
 from game_api.models import Game, GamePlayer, PlayerResource
 import json
 from datetime import datetime
@@ -15,8 +16,8 @@ class GameSaver:
     @staticmethod
     def save_completed_game(game_state, start_time=None):
         """
-        Zapisz zakończoną grę do bazy danych - ODPORNA NA BŁĘDY WERSJA
-        Zapisuje zalogowanych graczy nawet jeśli goście się nie zapiszą
+        Zapisz zakończoną grę do bazy danych - POPRAWIONA WERSJA
+        Zapisuje WSZYSTKICH graczy, nawet jeśli niektórzy mają problemy
         """
         try:
             logger.info(f"🎮 Saving completed game to database")
@@ -26,102 +27,154 @@ class GameSaver:
                 logger.warning("❌ Game is not finished yet, skipping save")
                 return None
             
-            # ✅ TWORZYMY GRĘ ZAWSZE (nie w transakcji atomowej)
+            # ✅ POBIERZ ROZKŁAD KOSTEK Z GAME_STATE
+            dice_distribution = getattr(game_state, 'dice_distribution', {})
+            if not dice_distribution:
+                logger.info("📊 No dice distribution found in game_state, using empty dict")
+                dice_distribution = {}
+            else:
+                logger.info(f"🎲 Found dice distribution: {dice_distribution}")
+            
+            # ✅ TWORZYMY GRĘ Z ROZKŁADEM KOSTEK
             game = Game.objects.create(
                 start_time=start_time or datetime.now(),
                 end_time=datetime.now(),
-                dice_distribution={},  
+                dice_distribution=dice_distribution,  # ✅ PRAWDZIWY ROZKŁAD!
                 turns=getattr(game_state, 'current_turn', 0)
             )
             
-            logger.info(f"✅ Created Game object with ID: {game.id}")
+            logger.info(f"✅ Created Game object with ID: {game.id}, dice_distribution: {dice_distribution}")
             
             saved_players = []
             failed_players = []
             
-            # ✅ ZAPISUJEMY KAŻDEGO GRACZA OSOBNO - bez atomic transaction
+            # ✅ ZAPISUJEMY KAŻDEGO GRACZA OSOBNO - z lepszą logiką
             for player_id, player in game_state.players.items():
                 try:
+                    logger.info(f"🎯 Processing player {player_id[:8]} - display_name: '{getattr(player, 'display_name', 'N/A')}'")
+                    
                     # Spróbuj zapisać tego gracza w osobnej transakcji
                     with transaction.atomic():
                         user = GameSaver._get_real_user_for_player(player_id, player)
                         
                         if not user:
-                            logger.warning(f"❌ Could not find/create user for player {player_id}")
-                            failed_players.append(player_id)
+                            logger.error(f"❌ Could not find/create user for player {player_id[:8]}")
+                            failed_players.append({
+                                'player_id': player_id[:8],
+                                'display_name': getattr(player, 'display_name', 'N/A'),
+                                'reason': 'User not found/created'
+                            })
+                            continue
+                        
+                        # ✅ SPRAWDŹ CZY GRACZ JUŻ ISTNIEJE W TEJ GRZE
+                        existing = GamePlayer.objects.filter(game=game, user=user).first()
+                        if existing:
+                            logger.warning(f"⚠️ Player {user.username} already exists in game {game.id}, skipping")
                             continue
                         
                         # Utwórz GamePlayer
                         game_player = GamePlayer.objects.create(
                             game=game,
                             user=user,
-                            victory_points=player.victory_points,
-                            roads_built=15 - player.roads_left,
-                            settlements_built=5 - player.settlements_left,
-                            cities_built=4 - player.cities_left,
+                            victory_points=getattr(player, 'victory_points', 0),
+                            roads_built=15 - getattr(player, 'roads_left', 15),
+                            settlements_built=5 - getattr(player, 'settlements_left', 5),
+                            cities_built=4 - getattr(player, 'cities_left', 4),
                             longest_road=getattr(player, 'longest_road', False),
                             largest_army=getattr(player, 'largest_army', False)
                         )
                         
-                        logger.info(f"✅ Created GamePlayer for {player.display_name} (User ID: {user.id})")
+                        logger.info(f"✅ Created GamePlayer for {player.display_name} (User: {user.username}, ID: {user.id})")
                         
                         # Zapisz zasoby gracza
-                        GameSaver._save_player_resources(game_player, player.resources)
+                        GameSaver._save_player_resources(game_player, getattr(player, 'resources', None))
                         
-                        saved_players.append(player_id)
+                        saved_players.append({
+                            'player_id': player_id[:8],
+                            'username': user.username,
+                            'display_name': getattr(player, 'display_name', 'N/A'),
+                            'victory_points': getattr(player, 'victory_points', 0)
+                        })
                         
                 except Exception as e:
-                    logger.error(f"❌ Error saving player {player_id}: {e}")
-                    failed_players.append(player_id)
+                    logger.error(f"❌ Error saving player {player_id[:8]}: {e}")
+                    failed_players.append({
+                        'player_id': player_id[:8],
+                        'display_name': getattr(player, 'display_name', 'N/A'),
+                        'reason': str(e)
+                    })
                     # ✅ NIE PRZERYWAMY - idziemy dalej do następnego gracza
                     continue
             
-            # ✅ LOGUJEMY WYNIKI
-            logger.info(f"🎉 Game {game.id} saved with {len(saved_players)} players")
+            # ✅ SZCZEGÓŁOWE LOGOWANIE WYNIKÓW
+            logger.info(f"🎉 Game {game.id} saved!")
+            logger.info(f"📊 Total players in game_state: {len(game_state.players)}")
+            logger.info(f"✅ Successfully saved: {len(saved_players)} players")
+            logger.info(f"❌ Failed to save: {len(failed_players)} players")
+            
             if saved_players:
-                logger.info(f"✅ Successfully saved players: {[p[:8] for p in saved_players]}")
+                logger.info("✅ SAVED PLAYERS:")
+                for sp in saved_players:
+                    logger.info(f"   - {sp['username']} ({sp['display_name']}) - {sp['victory_points']} pts")
+            
             if failed_players:
-                logger.warning(f"❌ Failed to save players: {[p[:8] for p in failed_players]}")
+                logger.warning("❌ FAILED PLAYERS:")
+                for fp in failed_players:
+                    logger.warning(f"   - {fp['player_id']} ({fp['display_name']}) - {fp['reason']}")
             
             # ✅ ZWRACAMY GRĘ NAWET JEŚLI NIEKTÓRZY GRACZE SIĘ NIE ZAPISALI
             return game
             
         except Exception as e:
             logger.error(f"❌ Critical error saving game to database: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @staticmethod
     def _get_real_user_for_player(player_id, player):
         """
-        ✅ ULEPSZONA - Znajdź prawdziwego użytkownika dla gracza
+        ✅ ULEPSZONA WERSJA - Znajdź prawdziwego użytkownika dla gracza
         """
         try:
             display_name = getattr(player, 'display_name', str(player_id))
-            logger.info(f"🔍 Looking for user - player_id: {player_id[:8]}, display_name: '{display_name}'")
+            color = getattr(player, 'color', 'blue')
+            logger.info(f"🔍 Looking for user - player_id: {player_id[:8]}, display_name: '{display_name}', color: '{color}'")
             
             # ✅ METODA 1: Szukaj zalogowanych użytkowników po display_name
             try:
                 user = User.objects.get(display_name=display_name, is_guest=False)
-                logger.info(f"✅ Found LOGGED IN user by display_name: {user.username} (ID: {user.id})")
+                logger.info(f"✅ Method 1: Found LOGGED IN user by display_name: {user.username} (ID: {user.id})")
                 return user
             except User.DoesNotExist:
-                pass
+                logger.info("⏭️ Method 1 failed: No logged user with this display_name")
+            except User.MultipleObjectsReturned:
+                # Jeśli jest kilku użytkowników o tej samej nazwie, weź pierwszego zalogowanego
+                user = User.objects.filter(display_name=display_name, is_guest=False).first()
+                if user:
+                    logger.info(f"✅ Method 1b: Found FIRST logged user: {user.username} (ID: {user.id})")
+                    return user
             
             # ✅ METODA 2: Szukaj zalogowanych użytkowników po username
             try:
                 user = User.objects.get(username=display_name, is_guest=False)
-                logger.info(f"✅ Found LOGGED IN user by username: {user.username} (ID: {user.id})")
+                logger.info(f"✅ Method 2: Found LOGGED IN user by username: {user.username} (ID: {user.id})")
                 return user
             except User.DoesNotExist:
-                pass
+                logger.info("⏭️ Method 2 failed: No logged user with this username")
+            except User.MultipleObjectsReturned:
+                user = User.objects.filter(username=display_name, is_guest=False).first()
+                if user:
+                    logger.info(f"✅ Method 2b: Found FIRST logged user by username: {user.username} (ID: {user.id})")
+                    return user
                 
             # ✅ METODA 3: Sprawdź czy display_name zawiera rzeczywiste imię użytkownika
-            # Czasami display_name może być "Jan Kowalski" a username "jan.kowalski"
             try:
-                # Szukaj po pierwszym słowie z display_name
-                first_name = display_name.split()[0] if display_name else ""
-                if first_name and len(first_name) > 2:
-                    # Sprawdź czy istnieje użytkownik z podobnym username
+                if display_name and len(display_name) > 2:
+                    # Szukaj po pierwszym słowie z display_name (imię)
+                    first_name = display_name.split()[0] if ' ' in display_name else display_name
+                    
+                    # Sprawdź czy istnieje użytkownik z podobnym username lub display_name
                     similar_users = User.objects.filter(
                         Q(username__icontains=first_name.lower()) | 
                         Q(display_name__icontains=first_name),
@@ -129,32 +182,48 @@ class GameSaver:
                     ).first()
                     
                     if similar_users:
-                        logger.info(f"✅ Found SIMILAR user: {similar_users.username} (ID: {similar_users.id})")
+                        logger.info(f"✅ Method 3: Found SIMILAR user: {similar_users.username} (ID: {similar_users.id})")
                         return similar_users
-            except Exception:
-                pass
+                        
+                logger.info("⏭️ Method 3 failed: No similar users found")
+            except Exception as e:
+                logger.warning(f"⚠️ Method 3 error: {e}")
             
-            # ✅ METODA 4: Szukaj istniejących gości
+            # ✅ METODA 4: Szukaj istniejących gości o tej nazwie
             try:
-                guest_username = f"guest_{display_name}".replace(' ', '_')[:50]
-                user = User.objects.get(username=guest_username, is_guest=True)
-                logger.info(f"✅ Found existing GUEST user: {user.username} (ID: {user.id})")
-                return user
-            except User.DoesNotExist:
-                pass
+                # Sprawdź różne warianty username dla gości
+                guest_variants = [
+                    f"guest_{display_name}".replace(' ', '_')[:50],
+                    f"guest_{display_name.lower()}".replace(' ', '_')[:50],
+                    display_name.replace(' ', '_')[:50]
+                ]
+                
+                for variant in guest_variants:
+                    try:
+                        user = User.objects.get(username=variant, is_guest=True)
+                        logger.info(f"✅ Method 4: Found existing GUEST user: {user.username} (ID: {user.id})")
+                        return user
+                    except User.DoesNotExist:
+                        continue
+                        
+                logger.info("⏭️ Method 4 failed: No existing guest found")
+            except Exception as e:
+                logger.warning(f"⚠️ Method 4 error: {e}")
             
-            # ✅ METODA 5: Utwórz nowego gościa - ALE TYLKO JEŚLI TO KONIECZNE
-            logger.info(f"🆕 Creating new guest user for {display_name}")
+            # ✅ METODA 5: Utwórz nowego gościa - TYLKO JEŚLI NAPRAWDĘ POTRZEBA
+            logger.info(f"🆕 Creating new guest user for '{display_name}'")
             
-            # Generuj unikalny username
-            base_username = f"guest_{display_name}".replace(' ', '_').replace('@', '_')[:40]
+            # Generuj bezpieczny i unikalny username
+            safe_name = display_name.replace(' ', '_').replace('@', '_').replace('.', '_')
+            base_username = f"guest_{safe_name}"[:40]
             username = base_username
             counter = 1
             
+            # Znajdź wolny username
             while User.objects.filter(username=username).exists():
                 username = f"{base_username}_{counter}"
                 counter += 1
-                if counter > 100:  # Zabezpieczenie
+                if counter > 100:  # Zabezpieczenie przed nieskończoną pętlą
                     username = f"guest_{int(datetime.now().timestamp())}"
                     break
             
@@ -165,20 +234,20 @@ class GameSaver:
                     email=f"{username}@guest.local",
                     is_guest=True,
                     display_name=display_name,
-                    preferred_color=getattr(player, 'color', 'blue')
+                    preferred_color=color
                 )
                 
-                logger.info(f"✅ Created new guest user: {username} (ID: {user.id})")
+                logger.info(f"✅ Method 5: Created new guest user: {username} (ID: {user.id})")
                 return user
                 
             except Exception as create_error:
                 logger.error(f"❌ Failed to create guest user: {create_error}")
                 
-                # ✅ OSTATNIA SZANSA - znajdź dowolnego istniejącego użytkownika 
+                # ✅ OSTATNIA SZANSA - znajdź dowolnego gościa jako fallback
                 try:
                     fallback_user = User.objects.filter(is_guest=True).first()
                     if fallback_user:
-                        logger.warning(f"🔄 Using fallback guest user: {fallback_user.username}")
+                        logger.warning(f"🔄 Method 6: Using fallback guest user: {fallback_user.username}")
                         return fallback_user
                 except:
                     pass
@@ -186,15 +255,21 @@ class GameSaver:
                 return None
             
         except Exception as e:
-            logger.error(f"❌ Error finding/creating user for player {player_id}: {e}")
+            logger.error(f"❌ Critical error finding/creating user for player {player_id[:8]}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     @staticmethod
     def _save_player_resources(game_player, resources):
         """
-        Zapisz zasoby gracza - BEZ ZMIAN
+        Zapisz zasoby gracza - POPRAWIONA WERSJA
         """
         try:
+            if not resources:
+                logger.warning(f"⚠️ No resources found for {game_player.user.username}")
+                return
+                
             resource_mapping = {
                 'wood': 'wood',
                 'brick': 'brick', 
@@ -203,20 +278,28 @@ class GameSaver:
                 'ore': 'ore'
             }
             
-            for resource_name, amount in resource_mapping.items():
-                resource_amount = getattr(resources, resource_name, 0)
-                
-                if resource_amount > 0:
-                    PlayerResource.objects.create(
-                        game_player=game_player,
-                        resource_type=resource_name,
-                        amount=resource_amount
-                    )
+            saved_resources = []
+            for resource_name, db_name in resource_mapping.items():
+                try:
+                    resource_amount = getattr(resources, resource_name, 0)
+                    
+                    if resource_amount > 0:
+                        PlayerResource.objects.create(
+                            game_player=game_player,
+                            resource_type=db_name,
+                            amount=resource_amount
+                        )
+                        saved_resources.append(f"{db_name}:{resource_amount}")
+                except Exception as e:
+                    logger.error(f"❌ Error saving resource {resource_name}: {e}")
             
-            logger.info(f"✅ Saved resources for {game_player.user.username}")
+            if saved_resources:
+                logger.info(f"✅ Saved resources for {game_player.user.username}: {', '.join(saved_resources)}")
+            else:
+                logger.info(f"📊 No resources to save for {game_player.user.username}")
             
         except Exception as e:
-            logger.error(f"❌ Error saving resources: {e}")
+            logger.error(f"❌ Error saving resources for {game_player.user.username}: {e}")
 
     @staticmethod
     def get_game_statistics_for_user(user_id):
