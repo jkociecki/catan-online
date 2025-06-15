@@ -4,6 +4,8 @@ import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from game_engine.simple.models import SimpleGameState, GamePhase
+from game_api.game_saver import GameSaver
+from datetime import datetime
 
 # Store active game rooms - w prawdziwej aplikacji użyj Redis
 game_rooms = {}
@@ -118,6 +120,9 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
             room = game_rooms[self.room_id]
             game_state = room['game_state']
+
+            if not hasattr(room, 'start_time'):
+                room['start_time'] = datetime.now()
             
             if message_type == 'get_game_state':
                 print(f"🎮 Sending game state to player {self.player_id[:8]}")
@@ -484,13 +489,54 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
     # ✅ DODAJ NOWY EVENT HANDLER dla końca gry
     async def game_end_notification(self, event):
-        """Powiadom o końcu gry"""
-        await self.send(text_data=json.dumps({
-            'type': 'game_ended',
-            'winner_id': event['winner_id'],
-            'final_standings': event['final_standings'],
-            'game_state': event['game_state']
-        }))
+        """Powiadom o końcu gry i zapisz do bazy danych"""
+        try:
+            # Wyślij notyfikację do klienta
+            await self.send(text_data=json.dumps({
+                'type': 'game_ended',
+                'winner_id': event['winner_id'],
+                'final_standings': event['final_standings'],
+                'game_state': event['game_state']
+            }))
+            
+            # ✅ ZAPISZ GRĘ DO BAZY DANYCH
+            if self.room_id in game_rooms:
+                room = game_rooms[self.room_id]
+                game_state = room['game_state']
+                
+                # Zapisz grę do bazy danych w tle
+                from django.db import transaction
+                
+                def save_game_to_db():
+                    try:
+                        with transaction.atomic():
+                            # Ustaw czas rozpoczęcia gry (jeśli nie jest już ustawiony)
+                            start_time = getattr(room, 'start_time', None) or datetime.now()
+                            
+                            saved_game = GameSaver.save_completed_game(
+                                game_state=game_state,
+                                start_time=start_time
+                            )
+                            
+                            if saved_game:
+                                print(f"✅ Game {saved_game.id} saved to database successfully")
+                            else:
+                                print("❌ Failed to save game to database")
+                                
+                    except Exception as e:
+                        print(f"❌ Database save error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                
+                # Wykonaj zapis w osobnym wątku, żeby nie blokować WebSocket
+                import threading
+                save_thread = threading.Thread(target=save_game_to_db)
+                save_thread.start()
+                
+        except Exception as e:
+            print(f"❌ Error in game_end_notification: {e}")
+            import traceback
+            traceback.print_exc()
     
     # ✅ POPRAWIONE Event handlers - dodano _notification sufiksy
     async def player_joined_notification(self, event):

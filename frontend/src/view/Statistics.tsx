@@ -92,17 +92,36 @@ const CatanStatsDashboard = () => {
 
     try {
       setLoading(true);
+
+      if (!token) {
+        throw new Error('No authentication token found. Please log in again.');
+      }
       
       const headers = {
         'Authorization': `Token ${token}`,
         'Content-Type': 'application/json',
       };
+
+      console.log('🔍 Making API request with:', {
+        userId: user.id,
+        hasToken: !!token,
+        tokenPrefix: token ? token.substring(0, 10) + '...' : 'none'
+      });
+      
       
       const [statsResponse, gamesResponse, globalResponse] = await Promise.all([
         fetch(`${API_BASE}/users/${user.id}/statistics/`, { headers }),
         fetch(`${API_BASE}/users/${user.id}/games/`, { headers }),
         fetch(`${API_BASE}/stats/global_stats/`)  // Global stats are public
       ]);
+
+      console.log('📊 API responses:', {
+        statsOk: statsResponse.ok,
+        statsStatus: statsResponse.status,
+        gamesOk: gamesResponse.ok,
+        gamesStatus: gamesResponse.status,
+        globalOk: globalResponse.ok
+      });
 
       if (!statsResponse.ok || !gamesResponse.ok || !globalResponse.ok) {
         throw new Error('Błąd pobierania danych');
@@ -113,6 +132,12 @@ const CatanStatsDashboard = () => {
         gamesResponse.json(),
         globalResponse.json()
       ]);
+
+      console.log('📈 Fetched data:', {
+        hasStats: !!statsData,
+        gamesCount: gamesData?.length || 0,
+        hasGlobal: !!globalData
+      });
       
       setStats(statsData);
       setGames(gamesData);
@@ -142,6 +167,20 @@ const CatanStatsDashboard = () => {
     } catch (err) {
       console.error('Error fetching game details:', err);
     }
+  };
+
+  const handleDebugAuth = () => {
+    console.log('🔍 DEBUG AUTH INFO:', {
+      hasUser: !!user,
+      userId: user?.id,
+      hasToken: !!token,
+      tokenLength: token?.length,
+      tokenPrefix: token ? token.substring(0, 10) + '...' : 'none',
+      localStorage: {
+        authToken: localStorage.getItem('auth_token')?.substring(0, 10) + '...',
+        userData: !!localStorage.getItem('user_data')
+      }
+    });
   };
 
   const toggleGameExpansion = (gameId: number) => {
@@ -411,9 +450,22 @@ const CatanStatsDashboard = () => {
 
   if (!stats) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-600 text-xl">Brak danych do wyświetlenia</p>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+        <NavBar />
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="text-center">
+            <h1 className="text-3xl font-bold text-gray-800 mb-4">📊 Statystyki</h1>
+            <div className="bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md mx-auto">
+              <p className="text-gray-600 text-xl mb-4">Brak danych statystycznych</p>
+              <p className="text-gray-500 mb-6">Zagraj kilka gier, aby zobaczyć swoje statystyki!</p>
+              <button 
+                onClick={handleDebugAuth}
+                className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition-colors font-medium"
+              >
+                Debug Info
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     );
