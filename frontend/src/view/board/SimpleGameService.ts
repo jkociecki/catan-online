@@ -9,8 +9,8 @@ class SimpleGameService {
   private userData: { displayName: string; color: string } | null = null;
 
   // NOWY URL - simple-game zamiast game
-  private static readonly API_URL = "http://localhost:8000/api";
-  private static readonly WS_URL = "ws://localhost:8000/ws";
+  private static readonly API_URL = `${process.env.REACT_APP_API_URL}/api`;
+  private static readonly WS_URL = process.env.REACT_APP_WS_URL;
 
   private constructor() {
     console.log("SimpleGameService instance created");

@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import Game, GamePlayer, PlayerResource
 from .serializers import UserSerializer, GameSerializer, GamePlayerSerializer, PlayerResourceSerializer
 
@@ -24,11 +25,16 @@ def create_room(request):
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
 
     @action(detail=True, methods=['get'])
     def games(self, request, pk=None):
         """Pobierz wszystkie gry danego użytkownika"""
         user = self.get_object()
+        # Sprawdź czy użytkownik próbuje pobrać swoje gry
+        if request.user.id != user.id:
+            return Response({'error': 'Unauthorized'}, status=403)
+            
         game_players = GamePlayer.objects.filter(user=user).select_related('game')
         games_data = []
 
@@ -53,6 +59,10 @@ class UserViewSet(viewsets.ModelViewSet):
     def statistics(self, request, pk=None):
         """Pobierz statystyki danego użytkownika"""
         user = self.get_object()
+        # Sprawdź czy użytkownik próbuje pobrać swoje statystyki
+        if request.user.id != user.id:
+            return Response({'error': 'Unauthorized'}, status=403)
+            
         game_players = GamePlayer.objects.filter(user=user)
 
         if not game_players.exists():
@@ -92,6 +102,7 @@ class UserViewSet(viewsets.ModelViewSet):
 class GameViewSet(viewsets.ModelViewSet):
     queryset = Game.objects.all()
     serializer_class = GameSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = Game.objects.all()
@@ -153,6 +164,7 @@ class GameViewSet(viewsets.ModelViewSet):
 class GamePlayerViewSet(viewsets.ModelViewSet):
     queryset = GamePlayer.objects.all()
     serializer_class = GamePlayerSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = GamePlayer.objects.all().select_related('user', 'game')
@@ -171,6 +183,7 @@ class GamePlayerViewSet(viewsets.ModelViewSet):
 class PlayerResourceViewSet(viewsets.ModelViewSet):
     queryset = PlayerResource.objects.all()
     serializer_class = PlayerResourceSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = PlayerResource.objects.all().select_related('game_player__user', 'game_player__game')
@@ -192,6 +205,7 @@ class PlayerResourceViewSet(viewsets.ModelViewSet):
 
 # Dodatkowe widoki dla globalnych statystyk
 class StatsViewSet(viewsets.ViewSet):
+    permission_classes = [AllowAny]  # Globalne statystyki są publiczne
 
     @action(detail=False, methods=['get'])
     def global_stats(self, request):

@@ -1,0 +1,9 @@
+Django==5.1.6
+gunicorn==21.2.0
+djangorestframework==3.14.0
+psycopg2-binary==2.9.9
+django-cors-headers==4.4.0
+channels==4.0.0
+django-allauth==0.61.1
+pytest==7.3.1
+daphne==4.1.0

@@ -57,7 +57,7 @@ const AuthCallback: React.FC = () => {
         localStorage.setItem('auth_token', token);
 
         // First verify the token is valid
-        const testResponse = await fetch('http://localhost:8000/api/auth/test-token/', {
+        const testResponse = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/test-token/`, {
           headers: {
             'Authorization': `Token ${token}`,
             'Content-Type': 'application/json',
@@ -69,7 +69,7 @@ const AuthCallback: React.FC = () => {
         }
 
         // Now fetch user profile
-        const response = await fetch('http://localhost:8000/api/auth/profile/', {
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/api/auth/profile/`, {
           headers: {
             'Authorization': `Token ${token}`,
             'Content-Type': 'application/json',

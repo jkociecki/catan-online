@@ -78,7 +78,7 @@ const BackLink = styled.a`
 const GoogleLogin: React.FC = () => {
   const handleGoogleLogin = () => {
     // Directly redirect to Django's OAuth endpoint
-    window.location.href = 'http://localhost:8000/accounts/google/login/';
+    window.location.href = `${process.env.REACT_APP_API_URL}/accounts/google/login/`;
   };
 
   return (
