@@ -1,14 +1,13 @@
-// frontend/src/engine/board/SimpleGameService.ts - POPRAWIONA WERSJA
+// frontend/src/view/board/SimpleGameService.ts - DEBUGGING VERSION
 
 class SimpleGameService {
   private static instance: SimpleGameService;
   private socket: WebSocket | null = null;
   private callbacks: { [key: string]: ((data: any) => void)[] } = {};
   private clientId: string | null = null;
-  private currentRoomId: string | null = null; // ✅ DODAJ TO
+  private currentRoomId: string | null = null;
   private userData: { displayName: string; color: string } | null = null;
 
-  // NOWY URL - simple-game zamiast game
   private static readonly API_URL = "http://localhost:8000/api";
   private static readonly WS_URL = "ws://localhost:8000/ws";
 
@@ -51,7 +50,7 @@ class SimpleGameService {
 
   public setUserData(displayName: string, color: string): void {
     this.userData = { displayName, color };
-    console.log("Set user data:", this.userData);
+    console.log("✅ Set user data:", this.userData);
   }
 
   public connectToRoom(roomId: string): Promise<void> {
@@ -61,30 +60,25 @@ class SimpleGameService {
 
       try {
         const token = localStorage.getItem("auth_token");
-
         const wsUrl = `${SimpleGameService.WS_URL}/game/${roomId}/?token=${token}`;
-        console.log(`Connecting to WebSocket: ${wsUrl}`);
+        console.log(`🔌 Connecting to WebSocket: ${wsUrl}`);
 
         this.socket = new WebSocket(wsUrl);
 
         this.socket.onopen = () => {
-          console.log("WebSocket connected successfully!");
+          console.log("✅ WebSocket connected successfully!");
+          
+          // ✅ KROK 1: Pobierz client ID
+          console.log("📤 Requesting client ID...");
           this.sendMessage({
             type: "get_client_id",
           });
-          if (this.userData) {
-            console.log("Sending user data:", this.userData);
-            this.sendMessage({
-              type: "set_user_data",
-              display_name: this.userData.displayName,
-              color: this.userData.color,
-            });
-          }
+          
           resolve();
         };
 
         this.socket.onclose = (event) => {
-          console.log("WebSocket disconnected:", event);
+          console.log("❌ WebSocket disconnected:", event);
           this.socket = null;
           this.dispatchEvent("disconnect", {
             code: event.code,
@@ -93,29 +87,42 @@ class SimpleGameService {
         };
 
         this.socket.onerror = (error) => {
-          console.error("WebSocket error:", error);
+          console.error("❌ WebSocket error:", error);
           reject(new Error("WebSocket connection failed"));
         };
 
         this.socket.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log("WebSocket message received:", data);
+            console.log("📨 WebSocket message received:", data);
 
+            // ✅ KROK 2: Gdy dostaniemy client_id, wyślij dane użytkownika
             if (data.type === "client_id" && data.player_id) {
               this.clientId = data.player_id;
-              console.log("Set client ID:", this.clientId);
+              console.log("✅ Set client ID:", this.clientId);
+              
+              // ✅ NATYCHMIAST WYŚLIJ DANE UŻYTKOWNIKA
+              if (this.userData) {
+                console.log("📤 Sending user data immediately:", this.userData);
+                this.sendMessage({
+                  type: "set_user_data",
+                  display_name: this.userData.displayName,
+                  color: this.userData.color,
+                });
+              } else {
+                console.warn("⚠️ No user data available to send!");
+              }
             }
 
             if (data.type) {
               this.dispatchEvent(data.type, data);
             }
           } catch (err) {
-            console.error("Error parsing WebSocket message:", err);
+            console.error("❌ Error parsing WebSocket message:", err);
           }
         };
       } catch (error) {
-        console.error("Error creating WebSocket:", error);
+        console.error("❌ Error creating WebSocket:", error);
         reject(error);
       }
     });
@@ -123,28 +130,26 @@ class SimpleGameService {
 
   public disconnectFromRoom(): void {
     if (this.socket) {
-      console.log("Disconnecting from WebSocket");
+      console.log("🔌 Disconnecting from WebSocket");
       this.socket.close();
       this.socket = null;
     }
-    this.currentRoomId = null; // ✅ DODAJ TO
+    this.currentRoomId = null;
   }
 
   public sendMessage(message: any): void {
-    console.log("🚀 Attempting to send message:", message);
+    console.log("📤 Attempting to send message:", message);
     console.log("   WebSocket state:", this.socket?.readyState);
     console.log("   Connected:", this.isConnected());
 
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       console.error("❌ WebSocket not connected, message not sent:", message);
-
-      // ✅ AUTOMATYCZNY RECONNECT
+      
       if (this.currentRoomId && message.type !== "get_client_id") {
         console.log("🔄 Attempting auto-reconnect...");
         this.connectToRoom(this.currentRoomId)
           .then(() => {
             console.log("✅ Auto-reconnected, retrying message send");
-            // Retry after short delay
             setTimeout(() => {
               if (this.isConnected()) {
                 this.socket?.send(JSON.stringify(message));
@@ -205,12 +210,11 @@ class SimpleGameService {
     return connected;
   }
 
-  // ✅ DODAJ METODĘ DO FORCE RECONNECT
   public async forceReconnect(): Promise<void> {
     if (this.currentRoomId) {
       console.log("🔄 Force reconnecting to room:", this.currentRoomId);
       this.disconnectFromRoom();
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait 1s
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       await this.connectToRoom(this.currentRoomId);
     } else {
       throw new Error("No current room to reconnect to");
@@ -294,27 +298,25 @@ class SimpleGameService {
   }
 
   public buildCity(vertexId: number): void {
-  if (!this.healthCheck()) {
-    console.error("❌ Cannot build city - connection unhealthy");
-    return;
+    if (!this.healthCheck()) {
+      console.error("❌ Cannot build city - connection unhealthy");
+      return;
+    }
+
+    console.log("Building city at vertex:", vertexId);
+    this.sendMessage({
+      type: "game_action",
+      action: "build_city", 
+      vertex_id: vertexId,
+    });
   }
 
-  
-
-  console.log("Building city at vertex:", vertexId);
-  this.sendMessage({
-    type: "game_action",
-    action: "build_city", 
-    vertex_id: vertexId,
-  });
-}
-
-public seedResources(): void {
-  console.log("🎯 Seeding resources for testing");
-  this.sendMessage({
-    type: "seed_resources",
-  });
-}
+  public seedResources(): void {
+    console.log("🎯 Seeding resources for testing");
+    this.sendMessage({
+      type: "seed_resources",
+    });
+  }
 
   public rollDice(): void {
     if (!this.healthCheck()) {

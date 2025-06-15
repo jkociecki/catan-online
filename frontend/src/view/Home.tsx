@@ -1,9 +1,10 @@
 // frontend/src/view/Home.tsx - UPDATED WITH LOGIN REDIRECT
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import { useAuth } from '../context/AuthContext';
 import NavBar from '../navigation/NavigationBar';
+import ReconnectionService from '../services/ReconnectionService';
 
 const Container = styled.div`
   min-height: 100vh;
@@ -168,6 +169,7 @@ const ActionDescription = styled.p`
 export default function Home() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [activeGames, setActiveGames] = useState<any[]>([]);
 
   // Jeśli nie ma użytkownika, przekieruj na stronę logowania
   useEffect(() => {
@@ -175,6 +177,18 @@ export default function Home() {
       navigate('/login');
     }
   }, [user, navigate]);
+
+  // Check for active games on component mount
+  useEffect(() => {
+    const checkActiveGames = async () => {
+      if (user) {
+        const games = await ReconnectionService.checkForActiveGames();
+        setActiveGames(games);
+      }
+    };
+
+    checkActiveGames();
+  }, [user]);
 
   // Jeśli nie ma użytkownika, nie renderuj nic (zostanie przekierowany)
   if (!user) {
@@ -187,6 +201,44 @@ export default function Home() {
       
       <QuickActionsSection>
         <QuickActionsTitle>Witaj ponownie, {user.display_name || user.username}!</QuickActionsTitle>
+        
+        {activeGames.length > 0 && (
+          <div style={{ 
+            marginBottom: '24px', 
+            padding: '16px', 
+            background: '#eff6ff', 
+            borderRadius: '8px', 
+            border: '1px solid #bfdbfe' 
+          }}>
+            <h3 style={{ margin: '0 0 12px 0', color: '#1e40af' }}>🎮 Active Games</h3>
+            {activeGames.map(game => (
+              <div key={game.session_id} style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center', 
+                padding: '8px 12px', 
+                background: 'white', 
+                borderRadius: '6px', 
+                marginBottom: '8px', 
+                border: '1px solid #e5e7eb' 
+              }}>
+                <div>
+                  <strong>{game.room_id}</strong> - {game.display_name}
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                    {game.players_count} players • {game.is_connected ? '🟢 Connected' : '🔴 Disconnected'}
+                  </div>
+                </div>
+                <ActionCard 
+                  to={`/room/${game.room_id}`} 
+                  style={{ margin: 0, padding: '8px 16px' }}
+                >
+                  {game.is_connected ? 'Rejoin' : 'Reconnect'}
+                </ActionCard>
+              </div>
+            ))}
+          </div>
+        )}
+
         <ActionGrid>
           <ActionCard to="/room/new">
             <ActionIcon>✨</ActionIcon>

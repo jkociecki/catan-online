@@ -40,9 +40,10 @@ INSTALLED_APPS = [
     "django.contrib.sites",
     "corsheaders",
     'channels',
-    'rest_framework',  # ← DODAJ TO
+    'rest_framework',
     'game_api',
     'users',
+    'game_session',
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
@@ -257,3 +258,26 @@ LOGGING = {
 ACCOUNT_EMAIL_VERIFICATION = 'none'
 SOCIALACCOUNT_EMAIL_VERIFICATION = 'none'
 SOCIALACCOUNT_STORE_TOKENS = True
+
+
+
+REDIS_HOST = 'localhost'
+REDIS_PORT = 6379
+REDIS_GAME_SESSION_DB = 2  # Separate DB from cache (0) and Django sessions (1)
+GAME_SESSION_TTL = 86400  # 24 hours
+
+
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/0',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
+}
+
+# Session configuration
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+SESSION_CACHE_ALIAS = 'default'

@@ -4,16 +4,47 @@ import uuid
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from game_engine.simple.models import SimpleGameState, GamePhase
+from game_session.session_manager import GameSessionManager
+from channels.db import database_sync_to_async
 
 # Store active game rooms - w prawdziwej aplikacji użyj Redis
 game_rooms = {}
 
 class SimpleGameConsumer(AsyncWebsocketConsumer):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.session_manager = GameSessionManager()
+        self.game_session_id = None
     
     async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'game_{self.room_id}'
         self.player_id = str(uuid.uuid4())
+        
+        # Sprawdź czy user ma aktywną sesję
+        user = self.scope.get('user')
+        if user and user.is_authenticated:
+            session_id = await database_sync_to_async(
+                self.session_manager.can_reconnect
+            )(user, self.room_id)
+            
+            if session_id:
+                self.game_session_id = session_id
+                # Oznacz jako połączonego
+                await database_sync_to_async(
+                    self.session_manager.update_session_connection
+                )(session_id, True)
+                
+                # Pobierz dane sesji
+                session_data = await database_sync_to_async(
+                    self.session_manager.get_game_session
+                )(session_id)
+                
+                if session_data:
+                    self.player_id = session_data.get('player_id', self.player_id)
+                
+                print(f"🔄 Reconnected player {self.player_id[:8]} to room {self.room_id}")
         
         # Join room group
         await self.channel_layer.group_add(
@@ -37,14 +68,19 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
         room = game_rooms[self.room_id]
         print(f"🎯 Room {self.room_id} currently has {len(room['connected_players'])} players")
         
-        # Wait for user data - don't add player yet
-        print(f"✅ Player {self.player_id[:8]} connected, waiting for user data")
-        
         # Send client_id immediately
         await self.send(text_data=json.dumps({
             'type': 'client_id',
             'player_id': self.player_id
         }))
+        
+        # Jeśli to reconnection, wyślij info
+        if self.game_session_id:
+            await self.send(text_data=json.dumps({
+                'type': 'reconnection_success',
+                'session_id': self.game_session_id,
+                'message': 'Reconnected to existing game session'
+            }))
         
         # Send current game state
         await self.send(text_data=json.dumps({
@@ -67,6 +103,13 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
       }))
     
     async def disconnect(self, close_code):
+        # Oznacz jako odłączonego, ale NIE usuwaj sesji
+        if self.game_session_id:
+            await database_sync_to_async(
+                self.session_manager.update_session_connection
+            )(self.game_session_id, False)
+            print(f"🔌 Player disconnected but session {self.game_session_id} remains active")
+        
         # Leave room group
         await self.channel_layer.group_discard(
             self.room_group_name,
@@ -100,6 +143,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             # Remove room if empty
             if not room['connected_players']:
                 del game_rooms[self.room_id]
+
 
     async def receive(self, text_data):
         try:
@@ -148,6 +192,19 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 final_color = game_state.resolve_color_conflict(desired_color)
                 
                 print(f"✅ Final data: name='{final_name}', color='{final_color}'")
+                
+                # Utwórz sesję gry jeśli user jest zalogowany
+                user = self.scope.get('user')
+                if user and user.is_authenticated and not self.game_session_id:
+                    player_data = {
+                        'player_id': self.player_id,
+                        'color': final_color,
+                        'display_name': final_name
+                    }
+                    self.game_session_id = await database_sync_to_async(
+                        self.session_manager.create_game_session
+                    )(user, self.room_id, player_data)
+                    print(f"💾 Created game session: {self.game_session_id}")
                 
                 # Dodaj gracza do gry (TYLKO TUTAJ!)
                 game_state.add_player(self.player_id, final_color, final_name)

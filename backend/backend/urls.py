@@ -28,5 +28,6 @@ urlpatterns = [
     path('accounts/', include('allauth.urls')),
     path('auth/token-callback/', token_callback, name='token_callback'),
     path('api/auth/', include('users.urls')),
+    path('api/game-session/', include('game_session.urls')),
     path('', RedirectView.as_view(url='http://localhost:3000/', permanent=False)),
 ] + static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
