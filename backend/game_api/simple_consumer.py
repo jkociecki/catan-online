@@ -489,7 +489,7 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
             
     # ✅ DODAJ NOWY EVENT HANDLER dla końca gry
     async def game_end_notification(self, event):
-        """Powiadom o końcu gry i zapisz do bazy danych"""
+        """Powiadom o końcu gry i zapisz do bazy danych - TYLKO RAZ"""
         try:
             # Wyślij notyfikację do klienta
             await self.send(text_data=json.dumps({
@@ -499,40 +499,57 @@ class SimpleGameConsumer(AsyncWebsocketConsumer):
                 'game_state': event['game_state']
             }))
             
-            # ✅ ZAPISZ GRĘ DO BAZY DANYCH
+            # ✅ ZAPISZ GRĘ TYLKO RAZ - sprawdź czy jesteś pierwszym graczem w pokoju
             if self.room_id in game_rooms:
                 room = game_rooms[self.room_id]
+                
+                # Sprawdź czy gra już została zapisana
+                if hasattr(room, 'game_saved') and room['game_saved']:
+                    print(f"⚠️ Game {self.room_id} already saved, skipping...")
+                    return
+                
+                # Oznacz że gra zostanie zapisana
+                room['game_saved'] = True
+                
+                # Sprawdź czy jesteś pierwszym graczem w player_order (tylko on zapisuje)
                 game_state = room['game_state']
-                
-                # Zapisz grę do bazy danych w tle
-                from django.db import transaction
-                
-                def save_game_to_db():
-                    try:
-                        with transaction.atomic():
-                            # Ustaw czas rozpoczęcia gry (jeśli nie jest już ustawiony)
-                            start_time = getattr(room, 'start_time', None) or datetime.now()
-                            
-                            saved_game = GameSaver.save_completed_game(
-                                game_state=game_state,
-                                start_time=start_time
-                            )
-                            
-                            if saved_game:
-                                print(f"✅ Game {saved_game.id} saved to database successfully")
-                            else:
-                                print("❌ Failed to save game to database")
+                if (hasattr(game_state, 'player_order') and 
+                    len(game_state.player_order) > 0 and 
+                    game_state.player_order[0] == self.player_id):
+                    
+                    print(f"💾 First player {self.player_id[:8]} saving game to database...")
+                    
+                    # Zapisz grę do bazy danych w tle
+                    from django.db import transaction
+                    
+                    def save_game_to_db():
+                        try:
+                            with transaction.atomic():
+                                # Ustaw czas rozpoczęcia gry
+                                start_time = getattr(room, 'start_time', None) or datetime.now()
                                 
-                    except Exception as e:
-                        print(f"❌ Database save error: {e}")
-                        import traceback
-                        traceback.print_exc()
-                
-                # Wykonaj zapis w osobnym wątku, żeby nie blokować WebSocket
-                import threading
-                save_thread = threading.Thread(target=save_game_to_db)
-                save_thread.start()
-                
+                                saved_game = GameSaver.save_completed_game(
+                                    game_state=game_state,
+                                    start_time=start_time
+                                )
+                                
+                                if saved_game:
+                                    print(f"✅ Game {saved_game.id} saved to database successfully by player {self.player_id[:8]}")
+                                else:
+                                    print(f"❌ Failed to save game to database")
+                                    
+                        except Exception as e:
+                            print(f"❌ Database save error: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    # Wykonaj zapis w osobnym wątku
+                    import threading
+                    save_thread = threading.Thread(target=save_game_to_db)
+                    save_thread.start()
+                else:
+                    print(f"⏭️ Player {self.player_id[:8]} is not first player, skipping save")
+                    
         except Exception as e:
             print(f"❌ Error in game_end_notification: {e}")
             import traceback

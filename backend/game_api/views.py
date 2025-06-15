@@ -1,5 +1,6 @@
 # backend/game_api/views.py - POPRAWIONA WERSJA
 import uuid
+from venv import logger
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Avg, Count, Sum, Q
@@ -32,49 +33,106 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'])
     def games(self, request, pk=None):
-        """Pobierz wszystkie gry danego użytkownika"""
-        user = self.get_object()
-        # Sprawdź czy użytkownik próbuje pobrać swoje gry
-        if request.user.id != user.id and not request.user.is_staff:
-            return Response({'error': 'Unauthorized'}, status=403)
+        """Pobierz wszystkie gry danego użytkownika - POPRAWIONA WERSJA"""
+        try:
+            user = self.get_object()
             
-        game_players = GamePlayer.objects.filter(user=user).select_related('game')
-        games_data = []
-
-        for gp in game_players:
-            games_data.append({
-                'game_id': gp.game.id,
-                'start_time': gp.game.start_time,
-                'end_time': gp.game.end_time,
-                'turns': gp.game.turns,
-                'victory_points': gp.victory_points,
-                'roads_built': gp.roads_built,
-                'settlements_built': gp.settlements_built,
-                'cities_built': gp.cities_built,
-                'longest_road': gp.longest_road,
-                'largest_army': gp.largest_army,
-                'won': gp.victory_points >= 10
-            })
-        print(f"📊 Found {len(games_data)} games for user {user.username}")
-        return Response(games_data)
+            # ✅ SPRAWDŹ AUTORYZACJĘ - ale pozwól админом i sobie
+            if request.user.id != user.id and not request.user.is_staff:
+                # Sprawdź czy to nie ten sam użytkownik z różnymi ID (gość vs zalogowany)
+                if (request.user.display_name and user.display_name and 
+                    request.user.display_name.lower() == user.display_name.lower()):
+                    logger.info(f"🔄 Allowing access - same display_name: {request.user.display_name}")
+                else:
+                    return Response({'error': 'Unauthorized'}, status=403)
+            
+            # ✅ SZUKAJ GIER PO RÓŻNYCH KRYTERIACH
+            # 1. Bezpośrednio po user_id
+            game_players = GamePlayer.objects.filter(user=user).select_related('game')
+            
+            # 2. Jeśli nie ma gier, spróbuj znaleźć po display_name (gość -> zalogowany)
+            if not game_players.exists() and user.display_name:
+                # Znajdź innych użytkowników z tym samym display_name
+                other_users = User.objects.filter(
+                    display_name=user.display_name
+                ).exclude(id=user.id)
+                
+                if other_users.exists():
+                    logger.info(f"🔍 Looking for games in other accounts with same display_name")
+                    for other_user in other_users:
+                        other_games = GamePlayer.objects.filter(user=other_user).select_related('game')
+                        if other_games.exists():
+                            logger.info(f"✅ Found {other_games.count()} games in account {other_user.username}")
+                            game_players = other_games
+                            break
+            
+            # ✅ PRZYGOTUJ DANE GRY
+            games_data = []
+            for gp in game_players:
+                games_data.append({
+                    'game_id': gp.game.id,
+                    'start_time': gp.game.start_time,
+                    'end_time': gp.game.end_time,
+                    'turns': gp.game.turns,
+                    'victory_points': gp.victory_points,
+                    'roads_built': gp.roads_built,
+                    'settlements_built': gp.settlements_built,
+                    'cities_built': gp.cities_built,
+                    'longest_road': gp.longest_road,
+                    'largest_army': gp.largest_army,
+                    'won': gp.victory_points >= 10  # Określ zwycięstwo
+                })
+            
+            # Sortuj gry od najnowszych
+            games_data.sort(key=lambda x: x['start_time'], reverse=True)
+            
+            logger.info(f"📊 Found {len(games_data)} games for user {user.username} (ID: {user.id})")
+            return Response(games_data)
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting games for user: {e}")
+            return Response({'error': 'Failed to fetch games'}, status=500)
 
     @action(detail=True, methods=['get'])
     def statistics(self, request, pk=None):
-        """Pobierz statystyki danego użytkownika"""
-        user = self.get_object()
-        
-        # ✅ SPRAWDŹ AUTORYZACJĘ  
-        if request.user.id != user.id and not request.user.is_staff:
-            return Response({'error': 'Unauthorized'}, status=403)
-        
-        # ✅ UŻYJ GAMESAVER DO POBRANIA STATYSTYK
-        stats = GameSaver.get_game_statistics_for_user(user.id)
-        
-        if stats is None:
-            return Response({'error': 'Failed to calculate statistics'}, status=500)
-        
-        print(f"📈 Statistics for user {user.username}: {stats}")
-        return Response(stats)
+        """Pobierz statystyki danego użytkownika - POPRAWIONA WERSJA"""
+        try:
+            user = self.get_object()
+            
+            # ✅ SPRAWDŹ AUTORYZACJĘ
+            if request.user.id != user.id and not request.user.is_staff:
+                # Sprawdź czy to nie ten sam użytkownik z różnymi ID
+                if (request.user.display_name and user.display_name and 
+                    request.user.display_name.lower() == user.display_name.lower()):
+                    logger.info(f"🔄 Allowing stats access - same display_name")
+                else:
+                    return Response({'error': 'Unauthorized'}, status=403)
+            
+            # ✅ UŻYJ GAMESAVER DO POBRANIA STATYSTYK
+            stats = GameSaver.get_game_statistics_for_user(user.id)
+            
+            # Jeśli nie ma statystyk dla tego ID, spróbuj innych użytkowników z tym samym display_name
+            if (not stats or stats['total_games'] == 0) and user.display_name:
+                other_users = User.objects.filter(
+                    display_name=user.display_name
+                ).exclude(id=user.id)
+                
+                for other_user in other_users:
+                    other_stats = GameSaver.get_game_statistics_for_user(other_user.id)
+                    if other_stats and other_stats['total_games'] > 0:
+                        logger.info(f"✅ Found stats in account {other_user.username}")
+                        stats = other_stats
+                        break
+            
+            if stats is None:
+                return Response({'error': 'Failed to calculate statistics'}, status=500)
+            
+            logger.info(f"📈 Statistics for user {user.username}: {stats['total_games']} games")
+            return Response(stats)
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting statistics: {e}")
+            return Response({'error': 'Failed to fetch statistics'}, status=500)
 
 
 class GameViewSet(viewsets.ModelViewSet):

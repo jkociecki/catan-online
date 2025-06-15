@@ -94,7 +94,6 @@ class GameSaver:
     def _get_real_user_for_player(player_id, player):
         """
         ✅ ULEPSZONA - Znajdź prawdziwego użytkownika dla gracza
-        Priorytet: zalogowani użytkownicy > goście
         """
         try:
             display_name = getattr(player, 'display_name', str(player_id))
@@ -115,8 +114,27 @@ class GameSaver:
                 return user
             except User.DoesNotExist:
                 pass
+                
+            # ✅ METODA 3: Sprawdź czy display_name zawiera rzeczywiste imię użytkownika
+            # Czasami display_name może być "Jan Kowalski" a username "jan.kowalski"
+            try:
+                # Szukaj po pierwszym słowie z display_name
+                first_name = display_name.split()[0] if display_name else ""
+                if first_name and len(first_name) > 2:
+                    # Sprawdź czy istnieje użytkownik z podobnym username
+                    similar_users = User.objects.filter(
+                        Q(username__icontains=first_name.lower()) | 
+                        Q(display_name__icontains=first_name),
+                        is_guest=False
+                    ).first()
+                    
+                    if similar_users:
+                        logger.info(f"✅ Found SIMILAR user: {similar_users.username} (ID: {similar_users.id})")
+                        return similar_users
+            except Exception:
+                pass
             
-            # ✅ METODA 3: Szukaj istniejących gości
+            # ✅ METODA 4: Szukaj istniejących gości
             try:
                 guest_username = f"guest_{display_name}".replace(' ', '_')[:50]
                 user = User.objects.get(username=guest_username, is_guest=True)
@@ -125,11 +143,11 @@ class GameSaver:
             except User.DoesNotExist:
                 pass
             
-            # ✅ METODA 4: Utwórz nowego gościa - ALE TYLKO JEŚLI TO KONIECZNE
+            # ✅ METODA 5: Utwórz nowego gościa - ALE TYLKO JEŚLI TO KONIECZNE
             logger.info(f"🆕 Creating new guest user for {display_name}")
             
             # Generuj unikalny username
-            base_username = f"guest_{display_name}".replace(' ', '_')[:40]
+            base_username = f"guest_{display_name}".replace(' ', '_').replace('@', '_')[:40]
             username = base_username
             counter = 1
             
@@ -140,7 +158,7 @@ class GameSaver:
                     username = f"guest_{int(datetime.now().timestamp())}"
                     break
             
-            # ✅ SPRAWDŹ CZY TABELA users_user ISTNIEJE
+            # Utwórz nowego gościa
             try:
                 user = User.objects.create_user(
                     username=username,
